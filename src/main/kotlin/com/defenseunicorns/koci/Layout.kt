@@ -23,6 +23,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
+@Suppress("detekt:TooManyFunctions")
 class Layout private constructor(
     internal val index: Index,
     private val root: String,
@@ -250,15 +251,15 @@ class Layout private constructor(
         require(descriptor.size > 0)
 
         val copy = descriptor.copy(
-            annotations = descriptor.annotations?.plus(AnnotationRefName to reference.toString())
-                ?: mapOf(AnnotationRefName to reference.toString())
+            annotations = descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())
+                ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
         )
         // untag the first manifests w/ this exact ref, there should only be one
         val prevIndex = index.manifests.indexOfFirst { it.annotations?.annotationRefName == reference.toString() }
         if (prevIndex != -1) {
             val prev = index.manifests[prevIndex]
             index.manifests[prevIndex] = prev.copy(
-                annotations = prev.annotations?.minus(AnnotationRefName)
+                annotations = prev.annotations?.minus(ANNOTATION_REF_NAME)
             )
         }
 

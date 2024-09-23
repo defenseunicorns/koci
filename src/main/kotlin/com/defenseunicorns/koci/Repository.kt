@@ -56,6 +56,7 @@ fun Headers.toUploadStatus(): UploadStatus {
     return UploadStatus(location, totalBytes, minChunk)
 }
 
+@Suppress("detekt:TooManyFunctions")
 class Repository(
     private val client: HttpClient,
     private val router: Router,

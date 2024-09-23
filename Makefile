@@ -11,7 +11,7 @@ build:
 	@ ./gradlew build
 
 test: registry-up registry-seed
-	./gradlew test
+	@ ./gradlew test
 
 lint:
 	@ ./gradlew detekt
@@ -23,14 +23,14 @@ registry-down:
 	@ docker compose down
 
 registry-reset: registry-down
-	@rm -r ./.registry/* || true
-	@$(MAKE) registry-up registry-seed
+	@ rm -r ./.registry/* 2>/dev/null || true
+	@ $(MAKE) registry-up registry-seed
 
 registry-seed:
-	@./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --insecure --oci-concurrency 5 --no-progress --no-log-file -a amd64
-	@./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --insecure --oci-concurrency 5 --no-progress --no-log-file -a arm64
-	@./bin/oras cp docker.io/library/registry:2.8.0  localhost:5005/library/registry:2.8.0
-	@./bin/oras cp docker.io/library/registry:latest localhost:5005/library/registry:latest
+	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --insecure --oci-concurrency 5 --no-progress --no-log-file -a amd64
+	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --insecure --oci-concurrency 5 --no-progress --no-log-file -a arm64
+	@ ./bin/oras cp docker.io/library/registry:2.8.0  localhost:5005/library/registry:2.8.0
+	@ ./bin/oras cp docker.io/library/registry:latest localhost:5005/library/registry:latest
 
 addlicense:
 	addlicense -l apache -s=only -v -c 'Defense Unicorns' src

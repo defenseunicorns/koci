@@ -7,8 +7,12 @@ kotlinxSerializationJson = "1.7.1"
 ktorClient = "2.3.12"
 ktorClientContentNegotiation = "2.3.12"
 ktorSerializationKotlinxJson = "2.3.12"
+kover = "0.8.3"
+detekt = "1.23.7"
+detektFormatting = "1.23.7"
 
 [libraries]
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detektFormatting" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesCore" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
@@ -19,5 +23,7 @@ ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktorCli
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorSerializationKotlinxJson" }
 
 [plugins]
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

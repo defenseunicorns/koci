@@ -6,11 +6,15 @@ ADDLICENSE_VERSION := "v1.1.1"
 ARCH := $(shell go env GOARCH)
 OS := $(shell go env GOOS)
 
+.PHONY: build
 build:
 	@ ./gradlew build
 
 test: registry-up registry-seed
 	./gradlew test
+
+lint:
+	@ ./gradlew detekt
 
 registry-up:
 	@ docker compose up -d

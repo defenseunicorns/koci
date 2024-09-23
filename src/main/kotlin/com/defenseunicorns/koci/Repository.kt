@@ -99,7 +99,7 @@ class Repository(
                     index.manifests.first { desc ->
                         desc.platform != null && resolver(desc.platform)
                     }
-                } catch (e: NoSuchElementException) {
+                } catch (_: NoSuchElementException) {
                     throw OCIException.PlatformNotFound(index)
                 }
             }
@@ -341,6 +341,10 @@ class Repository(
         }
     }
 
+    /**
+     * TODO: this function could use some love
+     */
+    @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:ThrowsCount")
     private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus {
         return when (val prev = uploading[descriptor]) {
             null -> {

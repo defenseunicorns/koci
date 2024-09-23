@@ -9,6 +9,7 @@ import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@Suppress("detekt:MaxLineLength")
 class RouteTest {
     private val base = URLBuilder(host = "127.0.0.1", port = 5000).build()
     private val router = Router(base)

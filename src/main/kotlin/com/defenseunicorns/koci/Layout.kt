@@ -169,7 +169,8 @@ class Layout private constructor(
                     val md = descriptor.digest.algorithm.hasher()
                     // If resuming a download, start calculating the SHA from the data on disk
                     //
-                    // it is up to the caller to properly resume the stream at the proper location, otherwise a DigestMismatch will occur
+                    // it is up to the caller to properly resume the stream at the proper location,
+                    // otherwise a DigestMismatch will occur
                     val fileExists = withContext(Dispatchers.IO) { file.exists() }
                     if (fileExists) {
                         withContext(Dispatchers.IO) {
@@ -247,7 +248,10 @@ class Layout private constructor(
     // TODO: unit test tagging
     suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
         require(descriptor.mediaType.isNotEmpty())
-        require(descriptor.mediaType == ManifestMediaType.toString() || descriptor.mediaType == IndexMediaType.toString())
+        require(
+            descriptor.mediaType == ManifestMediaType.toString()
+                    || descriptor.mediaType == IndexMediaType.toString()
+        )
         require(descriptor.size > 0)
 
         val copy = descriptor.copy(

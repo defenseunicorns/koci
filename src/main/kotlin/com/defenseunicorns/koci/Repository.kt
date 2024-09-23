@@ -105,8 +105,14 @@ class Repository(
             }
 
             ManifestMediaType -> {
-                // TODO: is is safe to transform the headers into a descriptor, or should we actually pull and create the descriptor from the returned data?
-                toDescriptor(response.headers)
+                client.prepareGet(endpoint) {
+                    accept(ManifestMediaType)
+                }.execute { res ->
+                    Descriptor.fromInputStream(
+                        mediaType = ManifestMediaType.toString(),
+                        stream = res.body() as InputStream
+                    )
+                }
             }
 
             else -> throw OCIException.ManifestNotSupported(
@@ -226,7 +232,8 @@ class Repository(
                     }
                     .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
-                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done via saving the index
+                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done
+                        // via saving the index
                         if (cause == null) {
                             copy(descriptor, store).collect { progress ->
                                 currentProgress += progress
@@ -384,9 +391,13 @@ class Repository(
     /**
      * [Pushing blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs)
      *
-     * If the content being pushed is > 5MB the push will be [chunked](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-a-blob-in-chunks), otherwise performed in a [single POST](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#single-post)
+     * If the content being pushed is > 5MB the push will be
+     * [chunked](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-a-blob-in-chunks),
+     * otherwise performed in a
+     * [single POST](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#single-post)
      *
-     * If errors occur, calling this function again will attempt to resume upload at whatever byte offset the previous attempt stopped at
+     * If errors occur, calling this function again will attempt to resume upload at whatever byte offset
+     * the previous attempt stopped at
      */
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     fun push(stream: InputStream, expected: Descriptor): Flow<Long> =

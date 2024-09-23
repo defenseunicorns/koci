@@ -106,9 +106,9 @@ class Layout private constructor(
         }
 
         if (descriptor.mediaType == ManifestMediaType.toString()) {
-            index.manifests.firstOrNull {
+            checkNotNull(index.manifests.firstOrNull {
                 it.digest == descriptor.digest
-            } ?: throw Exception("manifest $descriptor not found")
+            }) { "manifest $descriptor not found" }
 
             val manifests = index.manifests.filter {
                 it.digest != descriptor.digest

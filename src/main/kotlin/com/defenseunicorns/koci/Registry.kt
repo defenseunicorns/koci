@@ -131,7 +131,6 @@ class Registry private constructor(
     class Builder {
         private lateinit var registryURL: String
         private lateinit var storage: Layout
-        private lateinit var platform: Platform
         private var client: HttpClient = HttpClient(CIO)
 
         fun registryURL(registryURL: String) = apply { this.registryURL = registryURL }
@@ -179,12 +178,14 @@ class Registry private constructor(
                             // TODO: change from regex to a full spec-compliant parser https://github.com/defenseunicorns-futures/project-fox/issues/129
                             // https://datatracker.ietf.org/doc/html/rfc5988#section-5
                             val regex = Regex("<(.+)>;\\s+rel=\"next\"")
-                            val next = regex.find(linkHeader)?.groupValues?.get(1)
-                                ?: throw Exception("$linkHeader does not satisfy $regex")
+                            val next = checkNotNull(regex.find(linkHeader)?.groupValues?.get(1)){
+                                "$linkHeader does not satisfy $regex"
+                            }
 
                             val url = Url(next)
-                            val nextN = url.parameters["n"]?.toInt()
-                                ?: throw Exception("$linkHeader does not contain an 'n' parameter")
+                            val nextN = checkNotNull(url.parameters["n"]?.toInt()) {
+                                "$linkHeader does not contain an 'n' parameter"
+                            }
                             router.catalog(nextN, url.parameters["last"])
                         }
 

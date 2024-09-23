@@ -35,7 +35,7 @@ val IndexMediaType = ContentType.parse("application/vnd.oci.image.index.v1+json"
 /**
  * Zarf-specific "multi" OS
  */
-const val MultiOS = "multi"
+const val MULTI_OS = "multi"
 
 private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
     parameters.append("n", n.toString())

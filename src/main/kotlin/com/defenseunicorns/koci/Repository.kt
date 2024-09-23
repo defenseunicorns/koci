@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 private val systemArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
@@ -42,18 +41,20 @@ fun defaultResolver(platform: Platform): Boolean {
 }
 
 fun Headers.toUploadStatus(): UploadStatus {
-    val location =
-        this[HttpHeaders.Location] ?: throw Exception("missing Location header")
-    val range = this[HttpHeaders.Range] ?: throw Exception(
+    val location = checkNotNull(this[HttpHeaders.Location]) {
+        "missing Location header"
+    }
+    val range = checkNotNull(this[HttpHeaders.Range]) {
         "missing Range header"
-    )
+    }
+    val offset = checkNotNull(Regex("^([0-9]+)-([0-9]+)\$").matchEntire(range)?.groups?.get(1)) {
+        "invalid Range header"
+    }
+
     // this header MAY not exist
     val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
 
-    // ^[0-9]+-[0-9]+$
-    val totalBytes = range.split("-")[1].toLong().absoluteValue
-
-    return UploadStatus(location, totalBytes, minChunk)
+    return UploadStatus(location, offset.value.toLong(), minChunk)
 }
 
 @Suppress("detekt:TooManyFunctions")
@@ -387,6 +388,7 @@ class Repository(
      *
      * If errors occur, calling this function again will attempt to resume upload at whatever byte offset the previous attempt stopped at
      */
+    @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
         channelFlow {
             if (exists(expected).getOrDefault(false)) {

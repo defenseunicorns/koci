@@ -14,12 +14,12 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import java.security.MessageDigest
 
-enum class RegisteredAlgorithm(private val _name: String) {
+enum class RegisteredAlgorithm(private val n: String) {
     SHA256("sha256"),
     SHA512("sha512");
 
     override fun toString(): String {
-        return this._name
+        return this.n
     }
 
     fun hasher(): MessageDigest {

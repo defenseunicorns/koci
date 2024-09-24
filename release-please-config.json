@@ -2,11 +2,10 @@
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
-      "release-type": "java",
-      "bump-minor-pre-major": false,
-      "bump-patch-for-minor-pre-major": false,
+      "release-type": "simple",
       "draft": false,
-      "prerelease": false,
+      "bump-minor-pre-major": true,
+      "versioning": "default",
       "changelog-type": "github"
     }
   },

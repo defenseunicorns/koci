@@ -47,14 +47,15 @@ fun Headers.toUploadStatus(): UploadStatus {
     val range = checkNotNull(this[HttpHeaders.Range]) {
         "missing Range header"
     }
-    val offset = checkNotNull(Regex("^([0-9]+)-([0-9]+)\$").matchEntire(range)?.groups?.get(1)) {
+    val re = Regex("^([0-9]+)-([0-9]+)\$")
+    val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) {
         "invalid Range header"
     }
 
     // this header MAY not exist
     val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
 
-    return UploadStatus(location, offset.value.toLong(), minChunk)
+    return UploadStatus(location, offset.toLong(), minChunk)
 }
 
 @Suppress("detekt:TooManyFunctions")
@@ -442,11 +443,10 @@ class Repository(
                 else -> {
                     var offset = start.offset
                     stream.use { s ->
-                        if (offset > 0) s.skipNBytes(offset + 1)
+                        if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
 
-                        var chunk: ByteArray
                         while (isActive) {
-                            chunk = s.readNBytes(start.minChunkSize.toInt())
+                            val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
 
                             if (chunk.isEmpty()) {
                                 break
@@ -475,9 +475,9 @@ class Repository(
                                 offset = status.offset
 
                                 send(offset + 1)
-                            }
 
-                            yield() // Allow cancellation between chunks
+                                yield()
+                            }
                         }
                     }
 

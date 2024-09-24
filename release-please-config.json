@@ -7,9 +7,6 @@
       "bump-patch-for-minor-pre-major": false,
       "draft": false,
       "prerelease": false,
-      "extra-files": [
-        "build.gradle.kts"
-      ],
       "changelog-type": "github"
     }
   },

@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 private val systemArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
@@ -42,20 +41,24 @@ fun defaultResolver(platform: Platform): Boolean {
 }
 
 fun Headers.toUploadStatus(): UploadStatus {
-    val location =
-        this[HttpHeaders.Location] ?: throw Exception("missing Location header")
-    val range = this[HttpHeaders.Range] ?: throw Exception(
+    val location = checkNotNull(this[HttpHeaders.Location]) {
+        "missing Location header"
+    }
+    val range = checkNotNull(this[HttpHeaders.Range]) {
         "missing Range header"
-    )
+    }
+    val re = Regex("^([0-9]+)-([0-9]+)\$")
+    val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) {
+        "invalid Range header"
+    }
+
     // this header MAY not exist
     val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
 
-    // ^[0-9]+-[0-9]+$
-    val totalBytes = range.split("-")[1].toLong().absoluteValue
-
-    return UploadStatus(location, totalBytes, minChunk)
+    return UploadStatus(location, offset.toLong(), minChunk)
 }
 
+@Suppress("detekt:TooManyFunctions")
 class Repository(
     private val client: HttpClient,
     private val router: Router,
@@ -97,14 +100,20 @@ class Repository(
                     index.manifests.first { desc ->
                         desc.platform != null && resolver(desc.platform)
                     }
-                } catch (e: NoSuchElementException) {
+                } catch (_: NoSuchElementException) {
                     throw OCIException.PlatformNotFound(index)
                 }
             }
 
             ManifestMediaType -> {
-                // TODO: is is safe to transform the headers into a descriptor, or should we actually pull and create the descriptor from the returned data?
-                toDescriptor(response.headers)
+                client.prepareGet(endpoint) {
+                    accept(ManifestMediaType)
+                }.execute { res ->
+                    Descriptor.fromInputStream(
+                        mediaType = ManifestMediaType.toString(),
+                        stream = res.body() as InputStream
+                    )
+                }
             }
 
             else -> throw OCIException.ManifestNotSupported(
@@ -224,7 +233,8 @@ class Repository(
                     }
                     .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
-                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done via saving the index
+                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done
+                        // via saving the index
                         if (cause == null) {
                             copy(descriptor, store).collect { progress ->
                                 currentProgress += progress
@@ -332,6 +342,10 @@ class Repository(
         }
     }
 
+    /**
+     * TODO: this function could use some love
+     */
+    @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:ThrowsCount")
     private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus {
         return when (val prev = uploading[descriptor]) {
             null -> {
@@ -382,10 +396,15 @@ class Repository(
     /**
      * [Pushing blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs)
      *
-     * If the content being pushed is > 5MB the push will be [chunked](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-a-blob-in-chunks), otherwise performed in a [single POST](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#single-post)
+     * If the content being pushed is > 5MB the push will be
+     * [chunked](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-a-blob-in-chunks),
+     * otherwise performed in a
+     * [single POST](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#single-post)
      *
-     * If errors occur, calling this function again will attempt to resume upload at whatever byte offset the previous attempt stopped at
+     * If errors occur, calling this function again will attempt to resume upload at whatever byte offset
+     * the previous attempt stopped at
      */
+    @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
         channelFlow {
             if (exists(expected).getOrDefault(false)) {
@@ -424,11 +443,10 @@ class Repository(
                 else -> {
                     var offset = start.offset
                     stream.use { s ->
-                        if (offset > 0) s.skipNBytes(offset + 1)
+                        if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
 
-                        var chunk: ByteArray
                         while (isActive) {
-                            chunk = s.readNBytes(start.minChunkSize.toInt())
+                            val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
 
                             if (chunk.isEmpty()) {
                                 break
@@ -457,9 +475,9 @@ class Repository(
                                 offset = status.offset
 
                                 send(offset + 1)
-                            }
 
-                            yield() // Allow cancellation between chunks
+                                yield()
+                            }
                         }
                     }
 

@@ -9,6 +9,7 @@ import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@Suppress("detekt:MaxLineLength")
 class RouteTest {
     private val base = URLBuilder(host = "127.0.0.1", port = 5000).build()
     private val router = Router(base)
@@ -74,7 +75,7 @@ class RouteTest {
             mediaType = "application/vnd.zarf.layer.v1.blob",
             digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
             size = 911,
-            annotations = mutableMapOf(AnnotationTitle to "zarf.yaml")
+            annotations = mutableMapOf(ANNOTATION_TITLE to "zarf.yaml")
         )
 
         assertEquals(

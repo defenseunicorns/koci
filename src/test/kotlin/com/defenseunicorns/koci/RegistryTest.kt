@@ -29,7 +29,7 @@ import kotlin.random.Random
 import kotlin.test.*
 import kotlin.test.Test
 
-const val blobMediaType = "application/vnd.koci.test.blob.v1+text"
+const val TEST_BLOB_MEDIATYPE = "application/vnd.koci.test.blob.v1+text"
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class RegistryTest {
@@ -57,7 +57,7 @@ class RegistryTest {
     private val currentArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
 
     private fun zarfResolver(platform: Platform): Boolean {
-        return platform.architecture == currentArch && platform.os == MultiOS
+        return platform.architecture == currentArch && platform.os == MULTI_OS
     }
 
     private val registry =
@@ -336,7 +336,7 @@ class RegistryTest {
     fun `upload a layer and tag an artifact`() = runTest {
         val stream = "Hello World!".byteInputStream()
 
-        val desc = Descriptor.fromInputStream(mediaType = blobMediaType, stream = stream)
+        val desc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = stream)
 
         stream.reset()
 
@@ -425,7 +425,7 @@ fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {
         }
     }
 
-    return Descriptor.fromInputStream(mediaType = blobMediaType, stream = File(filePath).inputStream())
+    return Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = File(filePath).inputStream())
 }
 
 class ToDescriptorTest {

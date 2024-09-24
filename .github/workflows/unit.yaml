@@ -29,6 +29,7 @@ jobs:
         run: |
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           make install-deps
+          make lint
           make test
 
       - if: failure()

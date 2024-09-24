@@ -23,6 +23,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
+@Suppress("detekt:TooManyFunctions")
 class Layout private constructor(
     internal val index: Index,
     private val root: String,
@@ -105,9 +106,9 @@ class Layout private constructor(
         }
 
         if (descriptor.mediaType == ManifestMediaType.toString()) {
-            index.manifests.firstOrNull {
+            checkNotNull(index.manifests.firstOrNull {
                 it.digest == descriptor.digest
-            } ?: throw Exception("manifest $descriptor not found")
+            }) { "manifest $descriptor not found" }
 
             val manifests = index.manifests.filter {
                 it.digest != descriptor.digest
@@ -168,7 +169,8 @@ class Layout private constructor(
                     val md = descriptor.digest.algorithm.hasher()
                     // If resuming a download, start calculating the SHA from the data on disk
                     //
-                    // it is up to the caller to properly resume the stream at the proper location, otherwise a DigestMismatch will occur
+                    // it is up to the caller to properly resume the stream at the proper location,
+                    // otherwise a DigestMismatch will occur
                     val fileExists = withContext(Dispatchers.IO) { file.exists() }
                     if (fileExists) {
                         withContext(Dispatchers.IO) {
@@ -246,19 +248,22 @@ class Layout private constructor(
     // TODO: unit test tagging
     suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
         require(descriptor.mediaType.isNotEmpty())
-        require(descriptor.mediaType == ManifestMediaType.toString() || descriptor.mediaType == IndexMediaType.toString())
+        require(
+            descriptor.mediaType == ManifestMediaType.toString()
+                    || descriptor.mediaType == IndexMediaType.toString()
+        )
         require(descriptor.size > 0)
 
         val copy = descriptor.copy(
-            annotations = descriptor.annotations?.plus(AnnotationRefName to reference.toString())
-                ?: mapOf(AnnotationRefName to reference.toString())
+            annotations = descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())
+                ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
         )
         // untag the first manifests w/ this exact ref, there should only be one
         val prevIndex = index.manifests.indexOfFirst { it.annotations?.annotationRefName == reference.toString() }
         if (prevIndex != -1) {
             val prev = index.manifests[prevIndex]
             index.manifests[prevIndex] = prev.copy(
-                annotations = prev.annotations?.minus(AnnotationRefName)
+                annotations = prev.annotations?.minus(ANNOTATION_REF_NAME)
             )
         }
 

@@ -15,7 +15,9 @@ plugins {
 }
 
 group = "com.defenseunicorns"
+// x-release-please-start-version
 version = "1.0-SNAPSHOT"
+// x-release-please-end
 
 repositories {
     mavenCentral()

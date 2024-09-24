@@ -1,7 +1,12 @@
+
 import io.gitlab.arturbosch.detekt.Detekt
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import kotlinx.kover.gradle.plugin.dsl.GroupingEntityType
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import java.net.URI
 
@@ -12,6 +17,12 @@ plugins {
     alias(libs.plugins.detekt)
 
     id("maven-publish")
+}
+
+buildscript {
+    dependencies {
+        classpath(libs.kotlinx.serialization.json)
+    }
 }
 
 group = "com.defenseunicorns"
@@ -86,6 +97,14 @@ publishing {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
             }
+        }
+    }
+    publications {
+        val releasePleaseManifest = file(".release-please-manifest.json")
+        create<MavenPublication>("maven") {
+            version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
+
+            from(components["java"] )
         }
     }
 }

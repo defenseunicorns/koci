@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.5 (2024-09-25)
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.0.4...v0.0.5
+
 ## [0.0.4](https://github.com/defenseunicorns/koci/compare/v0.0.1...v0.0.4) (2024-09-24)
 
 

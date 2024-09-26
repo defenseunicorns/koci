@@ -29,8 +29,6 @@ data class TagsResponse(val name: String, val tags: List<String>?)
 val ManifestMediaType = ContentType.parse("application/vnd.oci.image.manifest.v1+json")
 val ManifestConfigMediaType = ContentType.parse("application/vnd.oci.image.config.v1+json")
 val IndexMediaType = ContentType.parse("application/vnd.oci.image.index.v1+json")
-// TODO: handle me and convert content to OCI?, does break integrity though
-//const val DockerV2ManifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 
 /**
  * Zarf-specific "multi" OS
@@ -227,20 +225,3 @@ suspend fun Registry.resolve(repository: String, tag: String, resolver: (Platfor
 
 fun Registry.pull(repository: String, tag: String, resolver: (Platform) -> Boolean = ::defaultResolver) =
     repo(repository).pull(tag, storage, resolver)
-
-/**
- * Returns an [Descriptor] from a given HTTP responses [Headers]
- *
- * Throws an [IllegalArgumentException] if any required header is missing.
- *
- */
-internal fun toDescriptor(headers: Headers): Descriptor {
-    require(headers.contains(HttpHeaders.ContentType)) { "Missing ${HttpHeaders.ContentType} header" }
-    require(headers.contains("Docker-Content-Digest")) { "Missing Docker-Content-Digest header" }
-    require(headers.contains(HttpHeaders.ContentLength)) { "Missing ${HttpHeaders.ContentLength} header" }
-    return Descriptor(
-        mediaType = headers["Content-Type"]!!,
-        digest = Digest(headers["Docker-Content-Digest"]!!),
-        size = headers["Content-Length"]!!.toLong()
-    )
-}

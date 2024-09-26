@@ -227,20 +227,3 @@ suspend fun Registry.resolve(repository: String, tag: String, resolver: (Platfor
 
 fun Registry.pull(repository: String, tag: String, resolver: (Platform) -> Boolean = ::defaultResolver) =
     repo(repository).pull(tag, storage, resolver)
-
-/**
- * Returns an [Descriptor] from a given HTTP responses [Headers]
- *
- * Throws an [IllegalArgumentException] if any required header is missing.
- *
- */
-internal fun toDescriptor(headers: Headers): Descriptor {
-    require(headers.contains(HttpHeaders.ContentType)) { "Missing ${HttpHeaders.ContentType} header" }
-    require(headers.contains("Docker-Content-Digest")) { "Missing Docker-Content-Digest header" }
-    require(headers.contains(HttpHeaders.ContentLength)) { "Missing ${HttpHeaders.ContentLength} header" }
-    return Descriptor(
-        mediaType = headers["Content-Type"]!!,
-        digest = Digest(headers["Docker-Content-Digest"]!!),
-        size = headers["Content-Length"]!!.toLong()
-    )
-}

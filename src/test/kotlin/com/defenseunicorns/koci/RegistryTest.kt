@@ -8,7 +8,6 @@ package com.defenseunicorns.koci
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
-import io.ktor.http.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
@@ -426,25 +425,4 @@ fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {
     }
 
     return Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = File(filePath).inputStream())
-}
-
-class ToDescriptorTest {
-    @Test
-    fun `simple happy path`() {
-        val desc = Descriptor(
-            mediaType = "application/vnd.zarf.layer.v1.blob",
-            digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
-            size = 911,
-        )
-        val builder = HeadersBuilder()
-
-        assertFailsWith<IllegalArgumentException> { toDescriptor(builder.build()) }
-        builder.append(HttpHeaders.ContentType, desc.mediaType)
-        assertFailsWith<IllegalArgumentException> { toDescriptor(builder.build()) }
-        builder.append("Docker-Content-Digest", desc.digest.toString())
-        assertFailsWith<IllegalArgumentException> { toDescriptor(builder.build()) }
-        builder.append(HttpHeaders.ContentLength, desc.size.toString())
-
-        assertEquals(desc, toDescriptor(builder.build()))
-    }
 }

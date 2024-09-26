@@ -29,8 +29,6 @@ data class TagsResponse(val name: String, val tags: List<String>?)
 val ManifestMediaType = ContentType.parse("application/vnd.oci.image.manifest.v1+json")
 val ManifestConfigMediaType = ContentType.parse("application/vnd.oci.image.config.v1+json")
 val IndexMediaType = ContentType.parse("application/vnd.oci.image.index.v1+json")
-// TODO: handle me and convert content to OCI?, does break integrity though
-//const val DockerV2ManifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 
 /**
  * Zarf-specific "multi" OS

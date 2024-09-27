@@ -47,10 +47,7 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
     )
 
     init {
-        require(hex.isNotEmpty()) { "hex cannot be empty" }
-
-        val hexRegex = Regex("[A-Fa-f0-9]+")
-        require(hexRegex.matches(hex)) { "$hex does not satisfy $hexRegex" }
+        requireNotNull(DigestRegex.matchEntire(this.toString())) { "$this does not satisfy $DigestRegex" }
 
         when (algorithm) {
             RegisteredAlgorithm.SHA256 -> {

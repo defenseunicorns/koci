@@ -408,6 +408,28 @@ class RegistryTest {
             }
         }
     }
+
+    @Test
+    fun `request scopes`() = runTest {
+        httpClient.plugin(HttpSend).intercept { request ->
+            val res = try {
+                execute(request)
+            } catch (e: ClientRequestException) {
+                val eres = e.response
+                println("< ${eres.headers["www-authenticate"]}")
+
+                throw Exception("bad times")
+            }
+            res
+        }
+        val ecr = Registry.Builder().client(httpClient).registryURL("https://public.ecr.aws").storage(storage).build()
+
+        val ubuntu = ecr.repo("ubuntu/redis").tags()
+
+        assertDoesNotThrow {
+            println(ubuntu.getOrThrow())
+        }
+    }
 }
 
 fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {

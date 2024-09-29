@@ -8,29 +8,6 @@ package com.defenseunicorns.koci
 import io.ktor.http.*
 import java.net.URI
 
-/*
-package main
-
-import (
-	"fmt"
-	"regexp"
-
-	"github.com/distribution/reference"
-)
-
-func printKotlin(variable string, re regexp.Regexp) {
-	fmt.Printf("val %s = Regex(\"%s\")\n", variable, re.String())
-}
-
-// go run main.go
-func main() {
-	printKotlin("DigestRegexp", *reference.DigestRegexp)
-	printKotlin("DomainRegexp", *reference.DomainRegexp)
-	printKotlin("NameRegexp", *reference.NameRegexp)
-	printKotlin("TagRegexp", *reference.TagRegexp)
-}
- */
-
 val TagRegex = Regex("^\\w[\\w.-]{0,127}")
 val RepositoryRegex = Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
 val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
@@ -42,10 +19,9 @@ data class Reference(
 ) {
     constructor(registry: Url, repository: String, reference: String) : this(
         registry = registry.toURI().let { uri ->
-            if (uri.port != -1) {
-                registry.hostWithPort
-            } else {
-                registry.host // Use host instead of uri.toString() to avoid including the scheme
+            when (uri.port) {
+                -1 -> registry.hostWithPort
+                else -> registry.host // Use host instead of uri.toString() to avoid including the scheme
             }
         }, repository = repository, reference = reference
     )
@@ -58,8 +34,9 @@ data class Reference(
         //	<=== REPOSITORY ===> : <=== TAG ======================> |      - Valid Form C
         //	<=== REPOSITORY ======================================> |    - Valid Form D
         fun parse(artifact: String): Result<Reference> = runCatching {
-            val reg = artifact.substringBefore("/")
-            val repoAndRef = artifact.substringAfter("/")
+            val reg = artifact.substringBefore("/", "")
+            require(reg.isNotEmpty()) { "registry cannot be empty" }
+            val repoAndRef = artifact.substringAfter("/", "")
 
             val (repo, ref) = if (repoAndRef.contains("@")) {
                 val ref = repoAndRef.substringAfter("@")
@@ -104,10 +81,13 @@ data class Reference(
 //        if err != nil || uri.Host != r.Registry {
 //            return fmt.Errorf("%w: invalid registry", errdef.ErrInvalidReference)
 //        }
+        require(registry.isNotEmpty()) { "registry cannot be empty" }
         val uri = URI("dummy://$registry")
-        if (uri.host != registry) {
-            throw Exception("invalid registry")
+        val hostWithPort = when (uri.port) {
+            -1 -> uri.host
+            else -> "${uri.host}:${uri.port}"
         }
+        require(hostWithPort == registry) { "invalid registry" }
 
         // validate repository
 //        if !repositoryRegexp.MatchString(r.Repository) {
@@ -130,7 +110,9 @@ data class Reference(
         if (reference == "") {
             return
         }
-
-
+        if (TagRegex.matchEntire(reference) != null) {
+            return
+        }
+        Digest(reference)
     }
 }

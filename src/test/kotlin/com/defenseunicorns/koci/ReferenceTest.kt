@@ -12,7 +12,7 @@ import kotlin.test.assertFailsWith
 class ReferenceTest {
     @Test
     @Suppress("detekt:MaxLineLength")
-    fun table() {
+    fun good() {
         val testCases = mapOf(
             // valid form A
             "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20" to (
@@ -56,7 +56,10 @@ class ReferenceTest {
 
             assertEquals(want.second, got.toString())
         }
+    }
 
+    @Test
+    fun bad() {
         data class Invalid(
             val string: String,
             val reference: Reference,
@@ -64,7 +67,7 @@ class ReferenceTest {
         )
 
         // adapted from https://github.com/containers/image/blob/main/docker/reference/reference_test.go
-        val invalidTestCases = listOf(
+        val testCases = listOf(
             Invalid(
                 "", Reference(
                     "", "", ""
@@ -120,7 +123,7 @@ class ReferenceTest {
             )
         )
 
-        for (tc in invalidTestCases) {
+        for (tc in testCases) {
             assertFailsWith<IllegalArgumentException> { Reference.parse(tc.string).getOrThrow() }.also {
                 assertEquals(tc.message, it.message)
             }

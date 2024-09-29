@@ -77,10 +77,6 @@ data class Reference(
     // currently allowing throws
     fun validate() {
         // validate registry
-//        uri, err := url.ParseRequestURI("dummy://" + r.Registry)
-//        if err != nil || uri.Host != r.Registry {
-//            return fmt.Errorf("%w: invalid registry", errdef.ErrInvalidReference)
-//        }
         require(registry.isNotEmpty()) { "registry cannot be empty" }
         val uri = URI("dummy://$registry")
         val hostWithPort = when (uri.port) {
@@ -90,23 +86,11 @@ data class Reference(
         require(hostWithPort == registry) { "invalid registry" }
 
         // validate repository
-//        if !repositoryRegexp.MatchString(r.Repository) {
-//            return fmt.Errorf("%w: invalid repository", errdef.ErrInvalidReference)
-//        }
         requireNotNull(RepositoryRegex.matchEntire(repository)) {
             "invalid repository"
         }
 
         // validate reference
-//        if r.Reference == "" {
-//            return nil
-//        }
-//        if _, err := r.Digest(); err == nil {
-//            return nil
-//        }
-//        if !tagRegexp.MatchString(r.Reference) {
-//            return fmt.Errorf("%w: invalid tag", errdef.ErrInvalidReference)
-//        }
         if (reference == "") {
             return
         }

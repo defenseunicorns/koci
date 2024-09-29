@@ -43,7 +43,11 @@ class ReferenceTest {
 
             "test:5000/repo:tag" to (Reference(
                 "test:5000", "repo", "tag"
-            ) to "test:5000/repo:tag")
+            ) to "test:5000/repo:tag"),
+
+            "docker.io/lower:Upper" to (Reference(
+                "docker.io", "lower", "Upper"
+            ) to "docker.io/lower:Upper")
         )
 
         for ((tc, want) in testCases) {
@@ -59,7 +63,7 @@ class ReferenceTest {
             val message: String,
         )
 
-        // mirrored from https://github.com/containers/image/blob/main/docker/reference/reference_test.go
+        // adapted from https://github.com/containers/image/blob/main/docker/reference/reference_test.go
         val invalidTestCases = listOf(
             Invalid(
                 "", Reference(
@@ -72,31 +76,47 @@ class ReferenceTest {
                 ), "registry cannot be empty"
             ),
             Invalid(
-                "@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "@sha256:${"f".repeat(64)}",
                 Reference(
-                    "", "", "@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    "", "", "@sha256:${"f".repeat(64)}"
                 ), "registry cannot be empty"
             ),
             Invalid(
-                "docker.io/validname@invaliddigest:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "docker.io/validname@invaliddigest:${"f".repeat(128)}",
                 Reference(
-                    "docker.io", "validname", "invaliddigest:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    "docker.io",
+                    "validname",
+                    "invaliddigest:${"f".repeat(128)}"
                 ),
                 "invaliddigest is not one of the registered algorithms"
             ),
             Invalid(
-                "docker.io/validname@sha256:fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "docker.io/validname@sha256:${"f".repeat(63)}",
                 Reference(
-                    "docker.io", "validname", "sha256:fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    "docker.io", "validname", "sha256:${"f".repeat(63)}"
                 ),
                 "sha256 algorithm specified but hex length is not 64"
             ),
             Invalid(
-                "docker.io/validname@sha512:fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "docker.io/validname@sha512:${"f".repeat(127)}",
                 Reference(
-                    "docker.io", "validname", "sha512:fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    "docker.io", "validname", "sha512:${"f".repeat(127)}"
                 ),
                 "sha512 algorithm specified but hex length is not 128"
+            ),
+            Invalid(
+                "docker.io/Uppercase:tag",
+                Reference(
+                    "docker.io", "Uppercase", "tag"
+                ),
+                "invalid repository"
+            ),
+            Invalid(
+                "docker.io/${"a/".repeat(120)}",
+                Reference(
+                    "docker.io", "a/".repeat(120), ""
+                ),
+                "invalid repository"
             )
         )
 

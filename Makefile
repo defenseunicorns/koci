@@ -11,7 +11,7 @@ build:
 	@ ./gradlew build
 
 test: registry-up registry-seed
-	@ ./gradlew test
+	@ ./gradlew test --fail-fast
 
 lint:
 	@ ./gradlew detekt

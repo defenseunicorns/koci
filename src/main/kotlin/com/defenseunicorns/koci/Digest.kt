@@ -33,12 +33,13 @@ enum class RegisteredAlgorithm(private val n: String) {
 @Serializable(with = DigestSerializer::class)
 class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
     constructor(content: String) : this(
-        algorithm = when (val algo = content.substringBefore(':')) {
+        algorithm = when (val algo = content.substringBefore(":", "")) {
             "sha256" -> RegisteredAlgorithm.SHA256
             "sha512" -> RegisteredAlgorithm.SHA512
+            "" -> throw IllegalArgumentException("missing algorithm")
             else -> throw IllegalArgumentException("$algo is not one of the registered algorithms")
         },
-        hex = content.substringAfter(':')
+        hex = content.substringAfter(":")
     )
 
     constructor(algorithm: RegisteredAlgorithm, hex: ByteArray) : this(
@@ -47,10 +48,7 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
     )
 
     init {
-        require(hex.isNotEmpty()) { "hex cannot be empty" }
-
-        val hexRegex = Regex("[A-Fa-f0-9]+")
-        require(hexRegex.matches(hex)) { "$hex does not satisfy $hexRegex" }
+        requireNotNull(DigestRegex.matchEntire(this.toString())) { "$this does not satisfy $DigestRegex" }
 
         when (algorithm) {
             RegisteredAlgorithm.SHA256 -> {

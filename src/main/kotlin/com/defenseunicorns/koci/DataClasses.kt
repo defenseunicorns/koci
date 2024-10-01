@@ -5,7 +5,6 @@
 
 package com.defenseunicorns.koci
 
-import io.ktor.http.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -97,62 +96,6 @@ data class Descriptor(
                 Digest(algorithm, md.digest()),
                 size
             )
-        }
-    }
-}
-
-data class Reference(
-    val registry: String,
-    val repository: String,
-    val reference: String,
-) {
-    constructor(registry: Url, repository: String, reference: String) : this(
-        registry = registry.toURI().let { uri ->
-            if (uri.port != -1) {
-                registry.hostWithPort
-            } else {
-                registry.host // Use host instead of uri.toString() to avoid including the scheme
-            }
-        },
-        repository = repository,
-        reference = reference
-    )
-
-    companion object {
-        //	<--- path --------------------------------------------> |  - Decode `path`
-        //	<=== REPOSITORY ===> <--- reference ------------------> |    - Decode `reference`
-        //	<=== REPOSITORY ===> @ <=================== digest ===> |      - Valid Form A
-        //	<=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> |      - Valid Form B (tag is dropped)
-        //	<=== REPOSITORY ===> : <=== TAG ======================> |      - Valid Form C
-        //	<=== REPOSITORY ======================================> |    - Valid Form D
-        fun parse(artifact: String): Result<Reference> = runCatching {
-            val reg = artifact.substringBefore("/")
-            val repoAndRef = artifact.substringAfter("/")
-
-            val (repo, ref) = if (repoAndRef.contains("@")) {
-                val ref = Digest(repoAndRef.substringAfter("@")).toString()
-
-                // drop tag if it exists (valid form B)
-                repoAndRef.substringBefore("@").substringBefore(":") to ref // valid form A
-            } else if (repoAndRef.contains(":")) {
-                repoAndRef.substringBefore(":") to repoAndRef.substringAfter(":") // valid form C
-            } else {
-                repoAndRef to "" // valid form D
-            }
-
-            return Result.success(Reference(reg, repo, ref))
-        }
-    }
-
-    override fun toString(): String {
-        return if (reference.contains(":")) {
-            "$registry/$repository@$reference" // valid form A
-        } else {
-           if (reference.isEmpty()) {
-               "$registry/$repository" // valid form D
-           } else {
-               "$registry/$repository:$reference" // valid form C
-           }
         }
     }
 }

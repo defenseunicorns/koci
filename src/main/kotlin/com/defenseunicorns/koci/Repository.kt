@@ -109,7 +109,7 @@ class Repository(
                     accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
                 }.execute { res ->
                     Descriptor.fromInputStream(
-                        mediaType = MANIFEST_MEDIA_TYPE.toString(), stream = res.body() as InputStream
+                        mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
                     )
                 }
             }
@@ -258,8 +258,8 @@ class Repository(
     private suspend fun supportsRange(descriptor: Descriptor): Boolean {
         supportsRange?.let { return it }
 
-        require(descriptor.mediaType != MANIFEST_MEDIA_TYPE.toString())
-        require(descriptor.mediaType != INDEX_MEDIA_TYPE.toString())
+        require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
+        require(descriptor.mediaType != INDEX_MEDIA_TYPE)
 
         val response = runCatching { client.head(router.blob(name, descriptor)) }.getOrNull()
         val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
@@ -282,8 +282,8 @@ class Repository(
         }
 
         val endpoint = when (descriptor.mediaType) {
-            MANIFEST_MEDIA_TYPE.toString(),
-            INDEX_MEDIA_TYPE.toString(),
+            MANIFEST_MEDIA_TYPE,
+            INDEX_MEDIA_TYPE,
                 -> router.manifest(name, descriptor)
 
             else -> router.blob(name, descriptor)
@@ -536,6 +536,6 @@ class Repository(
         // get digest from Location header
         val dg = Url(res.headers[HttpHeaders.Location]!!).pathSegments.last()
 
-        Descriptor(ct.toString(), Digest(dg), txt.length.toLong())
+        Descriptor(ct, Digest(dg), txt.length.toLong())
     }
 }

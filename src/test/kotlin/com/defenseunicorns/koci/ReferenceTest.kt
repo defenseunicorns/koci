@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci
 
+import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -56,6 +57,14 @@ class ReferenceTest {
 
             assertEquals(want.second, got.toString())
         }
+
+        val urlTestCase = Reference(
+            Url("https://localhost:5005"),
+            "repo",
+            "tag"
+        )
+
+        assertEquals("localhost:5005/repo:tag", urlTestCase.toString())
     }
 
     @Test

@@ -20,8 +20,8 @@ data class Reference(
     constructor(registry: Url, repository: String, reference: String) : this(
         registry = registry.toURI().let { uri ->
             when (uri.port) {
-                -1 -> registry.hostWithPort
-                else -> registry.host // Use host instead of uri.toString() to avoid including the scheme
+                -1 -> registry.host // Use host instead of uri.toString() to avoid including the scheme
+                else -> registry.hostWithPort
             }
         }, repository = repository, reference = reference
     )

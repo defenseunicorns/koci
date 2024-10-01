@@ -59,6 +59,7 @@ class ReferenceTest {
     }
 
     @Test
+    @Suppress("detekt:LongMethod")
     fun bad() {
         data class Invalid(
             val string: String,

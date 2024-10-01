@@ -61,7 +61,7 @@ class RouteTest {
             router.manifest(
                 "library/registry",
                 Descriptor(
-                    mediaType = ManifestMediaType.toString(),
+                    mediaType = MANIFEST_MEDIA_TYPE.toString(),
                     digest = Digest("sha256:12120425f07de11a1b899e418d4b0ea174c8d4d572d45bdb640f93bc7ca06a3d"),
                     size = 0 // dummy size
                 )

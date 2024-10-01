@@ -26,9 +26,9 @@ data class CatalogResponse(val repositories: List<String>)
 @Serializable
 data class TagsResponse(val name: String, val tags: List<String>?)
 
-val ManifestMediaType = ContentType.parse("application/vnd.oci.image.manifest.v1+json")
-val ManifestConfigMediaType = ContentType.parse("application/vnd.oci.image.config.v1+json")
-val IndexMediaType = ContentType.parse("application/vnd.oci.image.index.v1+json")
+const val MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
 
 /**
  * Zarf-specific "multi" OS
@@ -96,7 +96,7 @@ class Router(registryURL: Url) {
 class Registry private constructor(
     registryURL: String,
     val storage: Layout,
-    var client: HttpClient
+    var client: HttpClient,
 ) {
     val router = Router(URLBuilder().takeFrom(registryURL).build())
     val extensions = Extensions()
@@ -176,7 +176,7 @@ class Registry private constructor(
                             // TODO: change from regex to a full spec-compliant parser https://github.com/defenseunicorns-futures/project-fox/issues/129
                             // https://datatracker.ietf.org/doc/html/rfc5988#section-5
                             val regex = Regex("<(.+)>;\\s+rel=\"next\"")
-                            val next = checkNotNull(regex.find(linkHeader)?.groupValues?.get(1)){
+                            val next = checkNotNull(regex.find(linkHeader)?.groupValues?.get(1)) {
                                 "$linkHeader does not satisfy $regex"
                             }
 

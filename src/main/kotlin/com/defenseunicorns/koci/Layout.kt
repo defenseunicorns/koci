@@ -57,7 +57,7 @@ class Layout private constructor(
     }
 
     override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
-        if (descriptor.mediaType == ManifestMediaType.toString()) {
+        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
             if (!index.manifests.contains(descriptor)) return@runCatching false
         }
 
@@ -105,7 +105,7 @@ class Layout private constructor(
             return@runCatching true
         }
 
-        if (descriptor.mediaType == ManifestMediaType.toString()) {
+        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
             checkNotNull(index.manifests.firstOrNull {
                 it.digest == descriptor.digest
             }) { "manifest $descriptor not found" }
@@ -249,8 +249,8 @@ class Layout private constructor(
     suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
         require(descriptor.mediaType.isNotEmpty())
         require(
-            descriptor.mediaType == ManifestMediaType.toString()
-                    || descriptor.mediaType == IndexMediaType.toString()
+            descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()
+                    || descriptor.mediaType == INDEX_MEDIA_TYPE.toString()
         )
         require(descriptor.size > 0)
 

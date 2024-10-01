@@ -32,8 +32,7 @@ private val systemOS = System.getProperty("os.name").let { os ->
 
 // TODO: take into account / "discover" platform variants
 val SystemPlatform = Platform(
-    os = systemOS,
-    architecture = systemArch
+    os = systemOS, architecture = systemArch
 )
 
 fun defaultResolver(platform: Platform): Boolean {
@@ -68,8 +67,8 @@ class Repository(
 
     override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
-            ManifestMediaType.toString(),
-            IndexMediaType.toString(),
+            MANIFEST_MEDIA_TYPE,
+            INDEX_MEDIA_TYPE,
                 -> router.manifest(name, descriptor)
 
             else -> router.blob(name, descriptor)
@@ -85,14 +84,14 @@ class Repository(
     ): Result<Descriptor> = runCatching {
         val endpoint = router.manifest(name, tag)
         val response = client.head(endpoint) {
-            accept(ManifestMediaType)
-            accept(IndexMediaType)
+            accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+            accept(ContentType.parse(INDEX_MEDIA_TYPE))
         }
 
-        when (response.contentType()) {
-            IndexMediaType -> {
+        when (response.contentType()?.toString()) {
+            INDEX_MEDIA_TYPE -> {
                 val indexResponse = client.get(endpoint) {
-                    accept(IndexMediaType)
+                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
                 }
                 val index = Json.decodeFromString<Index>(indexResponse.bodyAsText())
 
@@ -105,20 +104,18 @@ class Repository(
                 }
             }
 
-            ManifestMediaType -> {
+            MANIFEST_MEDIA_TYPE -> {
                 client.prepareGet(endpoint) {
-                    accept(ManifestMediaType)
+                    accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
                 }.execute { res ->
                     Descriptor.fromInputStream(
-                        mediaType = ManifestMediaType.toString(),
-                        stream = res.body() as InputStream
+                        mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
                     )
                 }
             }
 
             else -> throw OCIException.ManifestNotSupported(
-                endpoint,
-                response.contentType()
+                endpoint, response.contentType()
             )
         }
     }
@@ -134,8 +131,8 @@ class Repository(
      */
     override suspend fun remove(descriptor: Descriptor) = runCatching {
         val endpoint = when (descriptor.mediaType) {
-            ManifestMediaType.toString(),
-            IndexMediaType.toString(),
+            MANIFEST_MEDIA_TYPE,
+            INDEX_MEDIA_TYPE,
                 -> router.manifest(name, descriptor)
 
             else -> router.blob(name, descriptor)
@@ -145,16 +142,16 @@ class Repository(
     }
 
     suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
-        require(descriptor.mediaType == ManifestMediaType.toString())
+        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString())
         client.get(router.manifest(name, descriptor)) {
-            accept(ManifestMediaType)
+            accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
         }.body()
     }
 
     suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
-        require(descriptor.mediaType == IndexMediaType.toString())
+        require(descriptor.mediaType == INDEX_MEDIA_TYPE)
         client.get(router.manifest(name, descriptor)) {
-            accept(IndexMediaType)
+            accept(ContentType.parse(INDEX_MEDIA_TYPE))
         }.body()
     }
 
@@ -165,24 +162,21 @@ class Repository(
         client.get(router.tags(name)).body()
     }
 
-    fun pull(tag: String, store: Layout, resolver: (Platform) -> Boolean = ::defaultResolver): Flow<Int> =
-        channelFlow {
-            resolve(tag, resolver).map {
-                pull(it, store).onCompletion { cause ->
-                    if (cause == null) {
-                        val ref = Reference(
-                            registry = router.base(),
-                            repository = name,
-                            reference = tag
-                        )
-                        // if pull was successful, tag the resolved desc w/ the image's ref
-                        store.tag(it, ref).getOrThrow()
-                    }
-                }.collect { progress ->
-                    send(progress)
+    fun pull(tag: String, store: Layout, resolver: (Platform) -> Boolean = ::defaultResolver): Flow<Int> = channelFlow {
+        resolve(tag, resolver).map {
+            pull(it, store).onCompletion { cause ->
+                if (cause == null) {
+                    val ref = Reference(
+                        registry = router.base(), repository = name, reference = tag
+                    )
+                    // if pull was successful, tag the resolved desc w/ the image's ref
+                    store.tag(it, ref).getOrThrow()
                 }
-            }.getOrThrow()
-        }
+            }.collect { progress ->
+                send(progress)
+            }
+        }.getOrThrow()
+    }
 
     /**
      * [Pulling An Image](https://distribution.github.io/distribution/spec/api/#pulling-an-image)
@@ -192,7 +186,7 @@ class Repository(
     @OptIn(ExperimentalCoroutinesApi::class)
     fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         when (descriptor.mediaType) {
-            IndexMediaType.toString() -> {
+            INDEX_MEDIA_TYPE.toString() -> {
                 val index = index(descriptor).getOrThrow()
                 var acc = 0
                 index.manifests.forEach { manifestDescriptor ->
@@ -203,7 +197,7 @@ class Repository(
                 }
             }
 
-            ManifestMediaType.toString() -> {
+            MANIFEST_MEDIA_TYPE -> {
                 if (store.exists(descriptor).getOrDefault(false)) {
                     send(100)
                     return@channelFlow
@@ -222,16 +216,14 @@ class Repository(
 
                 var currentProgress = 0.0
 
-                layersToFetch.asFlow()
-                    .map { layer ->
-                        flow {
-                            copy(layer, store).collect { progress ->
-                                currentProgress += progress
-                                emit((currentProgress * 100 / totalBytes).roundToInt())
-                            }
+                layersToFetch.asFlow().map { layer ->
+                    flow {
+                        copy(layer, store).collect { progress ->
+                            currentProgress += progress
+                            emit((currentProgress * 100 / totalBytes).roundToInt())
                         }
                     }
-                    .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
+                }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
                         // if there were no errors, then we can save the manifest itself and "mark" this pull as done
                         // via saving the index
@@ -241,8 +233,7 @@ class Repository(
                                 emit((currentProgress * 100 / totalBytes).roundToInt())
                             }
                         }
-                    }
-                    .collect { progress ->
+                    }.collect { progress ->
                         send(progress)
                     }
             }
@@ -267,8 +258,8 @@ class Repository(
     private suspend fun supportsRange(descriptor: Descriptor): Boolean {
         supportsRange?.let { return it }
 
-        require(descriptor.mediaType != ManifestMediaType.toString())
-        require(descriptor.mediaType != IndexMediaType.toString())
+        require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
+        require(descriptor.mediaType != INDEX_MEDIA_TYPE)
 
         val response = runCatching { client.head(router.blob(name, descriptor)) }.getOrNull()
         val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
@@ -291,8 +282,8 @@ class Repository(
         }
 
         val endpoint = when (descriptor.mediaType) {
-            ManifestMediaType.toString(),
-            IndexMediaType.toString(),
+            MANIFEST_MEDIA_TYPE,
+            INDEX_MEDIA_TYPE,
                 -> router.manifest(name, descriptor)
 
             else -> router.blob(name, descriptor)
@@ -300,12 +291,12 @@ class Repository(
 
         client.prepareGet(endpoint) {
             when (descriptor.mediaType) {
-                IndexMediaType.toString() -> {
-                    accept(IndexMediaType)
+                INDEX_MEDIA_TYPE -> {
+                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
                 }
 
-                ManifestMediaType.toString() -> {
-                    accept(ManifestMediaType)
+                MANIFEST_MEDIA_TYPE -> {
+                    accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
                 }
             }
 
@@ -405,100 +396,98 @@ class Repository(
      * the previous attempt stopped at
      */
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-    fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
-        channelFlow {
-            if (exists(expected).getOrDefault(false)) {
-                send(expected.size)
-                withContext(Dispatchers.IO) {
-                    stream.close()
-                }
-                return@channelFlow
+    fun push(stream: InputStream, expected: Descriptor): Flow<Long> = channelFlow {
+        if (exists(expected).getOrDefault(false)) {
+            send(expected.size)
+            withContext(Dispatchers.IO) {
+                stream.close()
             }
-
-            val start = startOrResumeUpload(expected).also { uploading[expected] = it }
-
-            if (start.minChunkSize == 0L) {
-                start.minChunkSize = 5 * 1024 * 1024
-            }
-
-            when (val bytesLeft = expected.size - start.offset) {
-                in 1..start.minChunkSize -> {
-                    client.put(start.location) {
-                        url {
-                            encodedParameters.append("digest", expected.digest.toString())
-                        }
-                        headers {
-                            append(HttpHeaders.ContentLength, expected.size.toString())
-                        }
-                        setBody(stream)
-                    }.also { res ->
-                        if (res.status != HttpStatusCode.Created) {
-                            throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
-                        }
-
-                        send(bytesLeft)
-                    }
-                }
-
-                else -> {
-                    var offset = start.offset
-                    stream.use { s ->
-                        if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
-
-                        while (isActive) {
-                            val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
-
-                            if (chunk.isEmpty()) {
-                                break
-                            }
-
-                            val endRange = offset + chunk.size - 1
-                            val currentLocation = checkNotNull(uploading[expected]?.location) {
-                                "upload location unexpectedly null"
-                            }
-
-                            client.patch(router.parseUploadLocation(currentLocation)) {
-                                setBody(chunk)
-                                headers {
-                                    append(HttpHeaders.ContentRange, "$offset-$endRange")
-                                }
-                            }.also { res ->
-                                if (res.status != HttpStatusCode.Accepted) {
-                                    throw OCIException.UnexpectedStatus(
-                                        HttpStatusCode.Accepted,
-                                        res
-                                    )
-                                }
-
-                                val status = res.headers.toUploadStatus()
-                                uploading[expected] = status
-                                offset = status.offset
-
-                                send(offset + 1)
-
-                                yield()
-                            }
-                        }
-                    }
-
-                    val final = checkNotNull(uploading[expected]?.location) {
-                        "upload location unexpectedly null"
-                    }
-
-                    client.put(final) {
-                        url {
-                            encodedParameters.append("digest", expected.digest.toString())
-                        }
-                    }.also { res ->
-                        if (res.status != HttpStatusCode.Created) {
-                            throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
-                        }
-                    }
-                }
-            }
-        }.onCompletion { cause ->
-            if (cause == null) uploading.remove(expected)
+            return@channelFlow
         }
+
+        val start = startOrResumeUpload(expected).also { uploading[expected] = it }
+
+        if (start.minChunkSize == 0L) {
+            start.minChunkSize = 5 * 1024 * 1024
+        }
+
+        when (val bytesLeft = expected.size - start.offset) {
+            in 1..start.minChunkSize -> {
+                client.put(start.location) {
+                    url {
+                        encodedParameters.append("digest", expected.digest.toString())
+                    }
+                    headers {
+                        append(HttpHeaders.ContentLength, expected.size.toString())
+                    }
+                    setBody(stream)
+                }.also { res ->
+                    if (res.status != HttpStatusCode.Created) {
+                        throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
+                    }
+
+                    send(bytesLeft)
+                }
+            }
+
+            else -> {
+                var offset = start.offset
+                stream.use { s ->
+                    if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
+
+                    while (isActive) {
+                        val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
+
+                        if (chunk.isEmpty()) {
+                            break
+                        }
+
+                        val endRange = offset + chunk.size - 1
+                        val currentLocation = checkNotNull(uploading[expected]?.location) {
+                            "upload location unexpectedly null"
+                        }
+
+                        client.patch(router.parseUploadLocation(currentLocation)) {
+                            setBody(chunk)
+                            headers {
+                                append(HttpHeaders.ContentRange, "$offset-$endRange")
+                            }
+                        }.also { res ->
+                            if (res.status != HttpStatusCode.Accepted) {
+                                throw OCIException.UnexpectedStatus(
+                                    HttpStatusCode.Accepted, res
+                                )
+                            }
+
+                            val status = res.headers.toUploadStatus()
+                            uploading[expected] = status
+                            offset = status.offset
+
+                            send(offset + 1)
+
+                            yield()
+                        }
+                    }
+                }
+
+                val final = checkNotNull(uploading[expected]?.location) {
+                    "upload location unexpectedly null"
+                }
+
+                client.put(final) {
+                    url {
+                        encodedParameters.append("digest", expected.digest.toString())
+                    }
+                }.also { res ->
+                    if (res.status != HttpStatusCode.Created) {
+                        throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
+                    }
+                }
+            }
+        }
+    }.onCompletion { cause ->
+        if (cause == null) uploading.remove(expected)
+    }
 
     /**
      * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
@@ -509,11 +498,11 @@ class Repository(
             is Manifest -> {
                 val ct = when (val mt = content.mediaType) {
                     null -> {
-                        ManifestMediaType
+                        MANIFEST_MEDIA_TYPE
                     }
 
                     else -> {
-                        ContentType.parse(mt)
+                        mt
                     }
                 }
                 val txt = Json.encodeToString(Manifest.serializer(), content)
@@ -523,11 +512,11 @@ class Repository(
             is Index -> {
                 val ct = when (val mt = content.mediaType) {
                     null -> {
-                        IndexMediaType
+                        INDEX_MEDIA_TYPE
                     }
 
                     else -> {
-                        ContentType.parse(mt)
+                        mt
                     }
                 }
                 val txt = Json.encodeToString(Index.serializer(), content)
@@ -536,7 +525,7 @@ class Repository(
         }
 
         val res = client.put(router.manifest(name, ref)) {
-            contentType(ct)
+            contentType(ContentType.parse(ct))
             setBody(txt)
         }
 
@@ -547,6 +536,6 @@ class Repository(
         // get digest from Location header
         val dg = Url(res.headers[HttpHeaders.Location]!!).pathSegments.last()
 
-        Descriptor(ct.toString(), Digest(dg), txt.length.toLong())
+        Descriptor(ct, Digest(dg), txt.length.toLong())
     }
 }

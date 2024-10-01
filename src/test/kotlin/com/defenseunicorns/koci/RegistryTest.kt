@@ -142,7 +142,7 @@ class RegistryTest {
         assertTrue(result.isSuccess)
         val desc = result.getOrThrow()
         // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, ManifestMediaType.toString())
+        assertEquals(desc.mediaType, MANIFEST_MEDIA_TYPE.toString())
         assertEquals(currentArch, desc.platform!!.architecture)
     }
 
@@ -389,7 +389,7 @@ class RegistryTest {
         val dummy = "{}".byteInputStream()
 
         val dummyDesc = Descriptor.fromInputStream(
-            mediaType = ManifestConfigMediaType.toString(), stream = dummy
+            mediaType = MANIFEST_CONFIG_MEDIA_TYPE.toString(), stream = dummy
         )
 
         dummy.reset()
@@ -398,7 +398,7 @@ class RegistryTest {
         repo.push(dummy, dummyDesc).collect()
 
         val manifest = Manifest(
-            schemaVersion = 2, mediaType = ManifestMediaType.toString(), config = dummyDesc, layers = listOf(desc)
+            schemaVersion = 2, mediaType = MANIFEST_MEDIA_TYPE.toString(), config = dummyDesc, layers = listOf(desc)
         )
 
         repo.tag(manifest, "latest").also { res ->

@@ -9,15 +9,12 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.net.URI
 
 @Serializable
@@ -103,11 +100,6 @@ class Registry private constructor(
 
     init {
         client = client.config {
-            install(ContentNegotiation) {
-                json(Json {
-                    encodeDefaults = false
-                })
-            }
             headers {
                 // https://distribution.github.io/distribution/spec/api/#api-version-check
                 append("Docker-Distribution-API-Version", "registry/2.0")
@@ -123,6 +115,8 @@ class Registry private constructor(
             }
 
             expectSuccess = true
+
+            install(ScopesPlugin)
         }
     }
 

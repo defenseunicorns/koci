@@ -150,16 +150,19 @@ class Repository(
 
     suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
         require(descriptor.mediaType == INDEX_MEDIA_TYPE)
-        client.get(router.manifest(name, descriptor)) {
+        val res = client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(INDEX_MEDIA_TYPE))
-        }.body()
+        }
+        Json.decodeFromString(res.body())
     }
 
     /**
      * [GET /v2/<name>/tags/list](https://distribution.github.io/distribution/spec/api/#listing-image-tags)
      */
     suspend fun tags(): Result<TagsResponse> = runCatching {
-        client.get(router.tags(name)).body()
+        val res = client.get(router.tags(name))
+
+        Json.decodeFromString(res.body())
     }
 
     fun pull(tag: String, store: Layout, resolver: (Platform) -> Boolean = ::defaultResolver): Flow<Int> = channelFlow {

@@ -43,7 +43,13 @@ fun cleanActions(scopes: List<String>): List<String> {
 }
 
 // mirrored from CleanScopes
-@Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:LoopWithTooManyJumpStatements")
+@Suppress(
+    "detekt:LongMethod",
+    "detekt:CyclomaticComplexMethod",
+    "detekt:NestedBlockDepth",
+    "detekt:ReturnCount",
+    "detekt:LoopWithTooManyJumpStatements"
+)
 fun cleanScopes(scopes: List<String>): List<String> {
     // fast paths
     when (scopes.size) {

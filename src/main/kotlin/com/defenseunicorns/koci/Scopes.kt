@@ -13,6 +13,7 @@ import io.ktor.http.auth.*
 import io.ktor.util.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.*
 
 // Actions used in scopes.
 // Reference: https://docs.docker.com/registry/spec/auth/scope/
@@ -79,14 +80,14 @@ fun cleanScopes(scopes: List<String>): List<String> {
     }
 
     // slow path
-    val list = mutableListOf<String>()
+    val set = TreeSet<String>()
 
     val resourceTypes = mutableMapOf<String, MutableMap<String, MutableSet<String>>>()
 
     for (scope in scopes) {
         val i = scope.indexOf(":")
         if (i == -1) {
-            list.add(scope)
+            set.add(scope)
             continue
         }
 
@@ -96,7 +97,7 @@ fun cleanScopes(scopes: List<String>): List<String> {
         val rest = scope.substring(i + 1)
         val actionsDivider = rest.lastIndexOf(":")
         if (actionsDivider == -1) {
-            list.add(scope)
+            set.add(scope)
             continue
         }
         val actions = rest.substring(actionsDivider + 1)
@@ -122,24 +123,22 @@ fun cleanScopes(scopes: List<String>): List<String> {
                 continue
             }
 
-            var actions = mutableListOf<String>()
+            val actions = TreeSet<String>()
             for (action in actionSet) {
                 if (action == "*") {
-                    actions = mutableListOf("*")
+                    actions.clear()
+                    actions.add("*")
                     break
                 }
                 actions.add(action)
             }
-            actions.sort()
 
             val scope = "$resourceType:$resourceName:${actions.joinToString(",")}"
-            list.add(scope)
+            set.add(scope)
         }
     }
 
-    list.sort()
-
-    return list
+    return set.toList()
 }
 
 internal val scopesKey = AttributeKey<List<String>>("scopesKey")

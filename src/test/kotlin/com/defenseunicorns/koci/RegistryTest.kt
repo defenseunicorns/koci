@@ -93,7 +93,7 @@ class RegistryTest {
         val fl = registry.extensions.catalog(1)
         val record = mutableListOf<CatalogResponse>()
         fl.collect { res ->
-            assertTrue(res.isSuccess)
+            assertTrue(res.isSuccess, res.exceptionOrNull()?.message)
             record += res.getOrThrow()
         }
         val expected = mutableListOf(

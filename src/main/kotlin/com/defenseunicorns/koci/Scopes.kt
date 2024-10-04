@@ -17,6 +17,7 @@ import java.util.*
 
 // Actions used in scopes.
 // Reference: https://docs.docker.com/registry/spec/auth/scope/
+// https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L908
 
 // ACTION_PULL represents generic read access for resources of the repository
 // type.
@@ -157,3 +158,11 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
         }
     }
 }
+
+//TODO
+//
+// cache token based upon scope
+// do this also for basic schema
+// implement reauth function
+// more testing
+//

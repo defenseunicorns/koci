@@ -187,7 +187,7 @@ class Registry private constructor(
                             router.catalog(nextN, url.parameters["last"])
                         }
 
-                        response.body()
+                        Json.decodeFromString(response.body())
                     }
 
                     emit(result)

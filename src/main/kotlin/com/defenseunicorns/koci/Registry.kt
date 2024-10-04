@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.net.URI
 
 @Serializable
@@ -147,7 +148,10 @@ class Registry private constructor(
          * [GET /v2/_catalog](https://distribution.github.io/distribution/spec/api/#listing-repositories)
          */
         suspend fun catalog(): Result<CatalogResponse> = runCatching {
-            client.get(router.catalog()).body()
+            val res = client.get(router.catalog()) {
+                attributes.put(scopesKey, listOf(ACTION_REGISTRY_CATALOG))
+            }
+            Json.decodeFromString(res.body())
         }
 
         /**
@@ -161,7 +165,9 @@ class Registry private constructor(
 
                 while (endpoint != null) {
                     val result: Result<CatalogResponse> = runCatching {
-                        val response = client.get(endpoint!!)
+                        val response = client.get(endpoint!!){
+                            attributes.put(scopesKey, listOf(ACTION_REGISTRY_CATALOG))
+                        }
 
                         // If the header is not present, the client can assume that all results have been received.
                         val linkHeader = response.headers[HttpHeaders.Link]

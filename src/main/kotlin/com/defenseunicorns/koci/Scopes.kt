@@ -114,6 +114,8 @@ fun cleanScopes(scopes: List<String>): List<String> {
 internal val scopesKey = AttributeKey<List<String>>("scopesKey")
 
 val ScopesPlugin = createClientPlugin("ScopesPlugin") {
+    val tokenCache = HashMap<String, String>()
+
     on(Send) { request ->
         val originalCall = proceed(request)
         originalCall.response.run { // this: HttpResponse
@@ -130,6 +132,16 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
                     cleanScopes(challengeScopes + requestScopes)
                 } else {
                     cleanScopes(challengeScopes)
+                }
+
+                // attempt req w/ cached token based upon scopes
+                val cachedToken = tokenCache[scopes.joinToString(" ")]
+                if (cachedToken != null) {
+                    request.bearerAuth(cachedToken)
+                    val cacheAttempt = proceed(request)
+                    if (cacheAttempt.response.status.isSuccess()) {
+                        return@on cacheAttempt
+                    }
                 }
 
                 // do auth flow
@@ -158,11 +170,3 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
         }
     }
 }
-
-//TODO
-//
-// cache token based upon scope
-// do this also for basic schema
-// implement reauth function
-// more testing
-//

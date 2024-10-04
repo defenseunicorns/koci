@@ -152,6 +152,7 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
 
                 val requestScopes = request.attributes[scopesKey]
 
+                // TODO: finish me
 
                 // do auth flow
                 val authURL = URLBuilder().takeFrom(realm).apply {

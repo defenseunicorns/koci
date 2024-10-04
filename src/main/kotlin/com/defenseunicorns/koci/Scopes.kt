@@ -42,6 +42,8 @@ fun cleanActions(scopes: List<String>): List<String> {
     return scopes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 }
 
+// mirrored from CleanScopes
+@Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:LoopWithTooManyJumpStatements")
 fun cleanScopes(scopes: List<String>): List<String> {
     // fast paths
     when (scopes.size) {
@@ -93,13 +95,12 @@ fun cleanScopes(scopes: List<String>): List<String> {
         }
         val resourceName = rest.substring(0, actionsDivider)
 
-        val namedActions = resourceTypes.getOrDefault(resourceType, mutableMapOf())
+        val namedActions = resourceTypes.getOrPut(resourceType) { mutableMapOf() }
 
         for (action in actions.split(",")) {
             if (action.isNotEmpty()) {
-                namedActions[resourceName]?.add(action)
-
-                println("adding $action to $resourceName")
+                val actionSet = namedActions.getOrPut(resourceName) { mutableSetOf() }
+                actionSet.add(action)
             }
         }
     }

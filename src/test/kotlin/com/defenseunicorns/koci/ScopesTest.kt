@@ -41,6 +41,7 @@ class ScopesTest {
         for ((dirty, clean) in testCases) {
             val actual = cleanScopes(dirty)
             assertEquals(clean, actual)
+            println(actual)
         }
     }
 

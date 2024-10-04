@@ -58,30 +58,21 @@ fun cleanActions(scopes: List<String>): List<String> {
 )
 fun cleanScopes(scopes: List<String>): List<String> {
     // fast paths
-    when (scopes.size) {
-        0 -> return emptyList()
-        1 -> {
-            val scope = scopes[0]
-            val i = scope.lastIndexOf(":")
-            if (i == -1) {
-                return listOf(scope)
-            }
-            var actionList = scope.substring(i + 1).split(",")
-            actionList = cleanActions(actionList)
-            if (actionList.isEmpty()) {
-                return emptyList()
-            }
+    if (scopes.isEmpty()) return emptyList()
+    if (scopes.size == 1) {
+        val scope = scopes[0]
+        val i = scope.lastIndexOf(":")
+        if (i == -1) return listOf(scope)
 
-            val actions = actionList.joinToString(",")
-            return listOf(
-                scope.substring(0, i + 1) + actions
-            )
-        }
+        val actionList = cleanActions(scope.substring(i + 1).split(","))
+        if (actionList.isEmpty()) return emptyList()
+
+        val actions = actionList.joinToString(",")
+        return listOf(scope.substring(0, i + 1) + actions)
     }
 
     // slow path
     val set = TreeSet<String>()
-
     val resourceTypes = mutableMapOf<String, MutableMap<String, MutableSet<String>>>()
 
     for (scope in scopes) {
@@ -92,8 +83,6 @@ fun cleanScopes(scopes: List<String>): List<String> {
         }
 
         val resourceType = scope.substring(0, i)
-
-        // extract resource name and actions
         val rest = scope.substring(i + 1)
         val actionsDivider = rest.lastIndexOf(":")
         if (actionsDivider == -1) {
@@ -101,38 +90,18 @@ fun cleanScopes(scopes: List<String>): List<String> {
             continue
         }
         val actions = rest.substring(actionsDivider + 1)
-        if (actions.isEmpty()) {
-            // drop since no actions found
-            continue
-        }
+        if (actions.isEmpty()) continue
         val resourceName = rest.substring(0, actionsDivider)
 
-        val namedActions = resourceTypes.getOrPut(resourceType) { mutableMapOf() }
-
-        for (action in actions.split(",")) {
-            if (action.isNotEmpty()) {
-                val actionSet = namedActions.getOrPut(resourceName) { mutableSetOf() }
-                actionSet.add(action)
-            }
-        }
+        resourceTypes.getOrPut(resourceType) { mutableMapOf() }.getOrPut(resourceName) { mutableSetOf() }
+            .addAll(actions.split(",").filter { it.isNotEmpty() })
     }
 
     for ((resourceType, namedActions) in resourceTypes) {
         for ((resourceName, actionSet) in namedActions) {
-            if (actionSet.isEmpty()) {
-                continue
-            }
+            if (actionSet.isEmpty()) continue
 
-            val actions = TreeSet<String>()
-            for (action in actionSet) {
-                if (action == "*") {
-                    actions.clear()
-                    actions.add("*")
-                    break
-                }
-                actions.add(action)
-            }
-
+            val actions = if ("*" in actionSet) listOf("*") else actionSet.sorted()
             val scope = "$resourceType:$resourceName:${actions.joinToString(",")}"
             set.add(scope)
         }

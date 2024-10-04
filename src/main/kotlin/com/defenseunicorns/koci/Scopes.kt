@@ -137,7 +137,7 @@ fun cleanScopes(scopes: List<String>): List<String> {
     return list
 }
 
-private val scopesKey = AttributeKey<String>("scopesKey")
+private val scopesKey = AttributeKey<List<String>>("scopesKey")
 
 val ScopesPlugin = createClientPlugin("ScopesPlugin") {
     on(Send) { request ->
@@ -148,15 +148,19 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
 
                 val realm = authHeader.parameters.first { it.name == "realm" }.value
                 val service = authHeader.parameters.first { it.name == "service" }.value
-                val challengeScope = authHeader.parameters.first { it.name == "scope" }.value
+                val challengeScopes = authHeader.parameters.first { it.name == "scope" }.value.split(" ")
 
-                val requestScopes = request.attributes[scopesKey]
+                val requestScopes = request.attributes.getOrNull(scopesKey)
 
-                // TODO: finish me
+                val scopes = if (requestScopes != null) {
+                    cleanScopes(challengeScopes + requestScopes)
+                } else {
+                    cleanScopes(challengeScopes)
+                }
 
                 // do auth flow
                 val authURL = URLBuilder().takeFrom(realm).apply {
-                    parameters.append("scope", challengeScope)
+                    parameters.append("scope", scopes.joinToString(" "))
                     parameters.append("service", service)
                 }.build()
 

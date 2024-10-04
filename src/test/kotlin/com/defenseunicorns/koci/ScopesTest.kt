@@ -19,11 +19,11 @@ class ScopesTest {
             listOf(ACTION_REGISTRY_CATALOG) to listOf(ACTION_REGISTRY_CATALOG),
             listOf(
                 scopeRepository(
-                    "ubuntu", listOf(ACTION_PULL, ACTION_PUSH)
+                    "ubuntu", ACTION_PULL, ACTION_PUSH
                 )
             ) to listOf(
                 scopeRepository(
-                    "ubuntu", listOf(ACTION_PULL, ACTION_PUSH)
+                    "ubuntu", ACTION_PULL, ACTION_PUSH
                 )
             ),
             listOf("repository:foo:push,pull,delete") to listOf("repository:foo:delete,pull,push"),
@@ -32,14 +32,14 @@ class ScopesTest {
             listOf("repository:foo:,") to emptyList(),
             listOf(
                 scopeRepository(
-                    "ubuntu", listOf(ACTION_PUSH)
+                    "ubuntu", ACTION_PUSH
                 ),
                 scopeRepository(
-                    "ubuntu", listOf(ACTION_PULL)
+                    "ubuntu", ACTION_PULL
                 ),
             ) to listOf(
                 scopeRepository(
-                    "ubuntu", listOf(ACTION_PULL, ACTION_PUSH)
+                    "ubuntu", ACTION_PULL, ACTION_PUSH
                 )
             ),
             listOf("repository:foo:pull", "repository:bar:push") to listOf(

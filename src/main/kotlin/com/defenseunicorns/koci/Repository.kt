@@ -145,6 +145,7 @@ class Repository(
         require(descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString())
         client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
         }.body()
     }
 
@@ -152,6 +153,7 @@ class Repository(
         require(descriptor.mediaType == INDEX_MEDIA_TYPE)
         val res = client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(INDEX_MEDIA_TYPE))
+            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
         }
         Json.decodeFromString(res.body())
     }

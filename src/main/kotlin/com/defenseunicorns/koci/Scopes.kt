@@ -32,8 +32,8 @@ const val ACTION_DELETE = "delete"
 // ACTION_REGISTRY_CATALOG is the scope for registry catalog access.
 const val ACTION_REGISTRY_CATALOG = "registry:catalog:*"
 
-fun scopeRepository(repo: String, actions: List<String>): String {
-    val cleaned = cleanActions(actions)
+fun scopeRepository(repo: String, vararg actions: String): String {
+    val cleaned = cleanActions(actions.toList())
 
     return listOf("repository", repo, cleaned.joinToString(",")).joinToString(":")
 }
@@ -142,7 +142,7 @@ fun cleanScopes(scopes: List<String>): List<String> {
     return list
 }
 
-private val scopesKey = AttributeKey<List<String>>("scopesKey")
+internal val scopesKey = AttributeKey<List<String>>("scopesKey")
 
 val ScopesPlugin = createClientPlugin("ScopesPlugin") {
     on(Send) { request ->

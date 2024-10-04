@@ -11,6 +11,7 @@ import kotlin.test.assertFails
 
 class ScopesTest {
     @Test
+    @Suppress("detekt:LongMethod")
     fun valid() {
         val testCases = listOf(
             emptyList<String>() to emptyList(),

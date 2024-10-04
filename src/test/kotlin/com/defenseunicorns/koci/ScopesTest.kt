@@ -1,3 +1,8 @@
+/*
+ * Copyright 2024 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci
 
 import kotlin.test.Test

@@ -39,7 +39,12 @@ fun scopeRepository(repo: String, actions: List<String>): String {
 }
 
 fun cleanActions(scopes: List<String>): List<String> {
-    return scopes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val cleaned = scopes.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+
+    if (cleaned.contains("*")) {
+        return listOf("*")
+    }
+    return cleaned
 }
 
 // mirrored from CleanScopes

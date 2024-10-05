@@ -5,12 +5,15 @@
 
 package com.defenseunicorns.koci
 
+import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.api.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.http.auth.*
 import io.ktor.util.*
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.*
@@ -111,19 +114,159 @@ fun cleanScopes(scopes: List<String>): List<String> {
     return set.toList()
 }
 
-internal val scopesKey = AttributeKey<List<String>>("scopesKey")
+internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
+internal val clientIDKey = AttributeKey<String>("ociClientIDKey")
 
-val ScopesPlugin = createClientPlugin("ScopesPlugin") {
+// fetchDistributionToken fetches an access token as defined by the distribution
+// specification.
+// It fetches anonymous tokens if no credential is provided.
+// References:
+// - https://docs.docker.com/registry/spec/auth/jwt/
+// - https://docs.docker.com/registry/spec/auth/token/
+private suspend fun HttpClient.fetchDistributionToken(
+    realm: String,
+    service: String,
+    scopes: List<String>,
+    username: String,
+    password: String,
+): String {
+    val res = get(realm) {
+        if (username.isNotEmpty() || password.isNotEmpty()) {
+            basicAuth(username, password)
+        }
+        url {
+            if (service.isNotEmpty()) {
+                parameters.append("service", service)
+            }
+            scopes.forEach { scope ->
+                parameters.append("scope", scope)
+            }
+        }
+        attributes.put(scopesKey, scopes)
+    }
+
+    if (res.status != HttpStatusCode.OK) {
+        throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
+    }
+
+    // As specified in https://docs.docker.com/registry/spec/auth/token/ section
+    // "Token Response Fields", the token is either in `token` or
+    // `access_token`. If both present, they are identical.
+    @Serializable
+    data class TokenResponse(
+        val token: String,
+        @SerialName("access_token") val accessToken: String? = null,
+    )
+
+    val json = Json {
+        ignoreUnknownKeys = true
+    }
+    val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+
+    if (tokenResponse.accessToken != null) {
+        return tokenResponse.accessToken
+    }
+    if (tokenResponse.token.isNotEmpty()) {
+        return tokenResponse.token
+    }
+    throw Exception("${res.call.request.method} ${res.call.request.url}: empty token returned")
+}
+
+data class Credential(
+    // Username is the name of the user for the remote registry.
+    val username: String,
+    // Password is the secret associated with the username.
+    val password: String,
+    // RefreshToken is a bearer token to be sent to the authorization service
+    // for fetching access tokens.
+    // A refresh token is often referred as an identity token.
+    // Reference: https://docs.docker.com/registry/spec/auth/oauth/
+    val refreshToken: String,
+    // AccessToken is a bearer token to be sent to the registry.
+    // An access token is often referred as a registry token.
+    // Reference: https://docs.docker.com/registry/spec/auth/token/
+    val accessToken: String,
+) {
+    fun isEmpty(): Boolean {
+        return username.isEmpty() && password.isEmpty() && refreshToken.isEmpty() && accessToken.isEmpty()
+    }
+}
+
+private const val defaultClientID = "koci"
+
+// fetchOAuth2Token fetches an OAuth2 access token.
+// Reference: https://docs.docker.com/registry/spec/auth/oauth/
+private suspend fun HttpClient.fetchOAuth2Token(
+    realm: String,
+    service: String,
+    scopes: List<String>,
+    cred: Credential,
+): String {
+    val res = post(realm) {
+        contentType(ContentType.Application.FormUrlEncoded)
+        formData {
+            if (cred.refreshToken.isNotEmpty()) {
+                append("grant_type", "refresh_token")
+                append("refresh_token", cred.refreshToken)
+            } else if (cred.username.isNotEmpty() && cred.password.isNotEmpty()) {
+                append("grant_type", "password")
+                append("username", cred.username)
+                append("password", cred.password)
+            } else {
+                throw Exception("missing username or password for bearer auth")
+            }
+
+            append("service", service)
+
+            val clientID = attributes.getOrNull(clientIDKey)
+            append("client_id", clientID ?: defaultClientID)
+
+            if (scopes.isNotEmpty()) {
+                append("scope", scopes.joinToString(" "))
+            }
+
+            attributes.put(scopesKey, scopes)
+        }
+    }
+
+    if (res.status != HttpStatusCode.OK) {
+        throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
+    }
+
+    @Serializable
+    data class TokenResponse(
+        @SerialName("access_token") val accessToken: String,
+    )
+
+    val json = Json {
+        ignoreUnknownKeys = true
+    }
+    val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+
+    if (tokenResponse.accessToken.isNotEmpty()) {
+        return tokenResponse.accessToken
+    }
+
+    // same error as other fn, place into OCIException
+    throw Exception("${res.call.request.method} ${res.call.request.url}: empty token returned")
+}
+
+class ScopesPluginConfig {
+    var cred: Credential = Credential("", "", "", "")
+}
+
+val ScopesPlugin = createClientPlugin("ScopesPlugin", ::ScopesPluginConfig) {
     val tokenCache = HashMap<String, String>()
 
     on(Send) { request ->
         val originalCall = proceed(request)
         originalCall.response.run { // this: HttpResponse
+//            println("${originalCall.request.method} ${originalCall.request.url} ${originalCall.request.url.parameters} $status ${headers["www-authenticate"]}")
             if (status == HttpStatusCode.Unauthorized && headers["WWW-Authenticate"]!!.contains("Bearer")) {
                 val authHeader = parseAuthorizationHeader(headers["WWW-Authenticate"]!!) as HttpAuthHeader.Parameterized
 
                 val realm = authHeader.parameters.first { it.name == "realm" }.value
-                val service = authHeader.parameters.first { it.name == "service" }.value
+                val service = authHeader.parameters.firstOrNull { it.name == "service" }?.value ?: ""
                 val challengeScopes = authHeader.parameters.first { it.name == "scope" }.value.split(" ")
 
                 val requestScopes = request.attributes.getOrNull(scopesKey)
@@ -144,26 +287,23 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin") {
                     }
                 }
 
-                // do auth flow
-                val authURL = URLBuilder().takeFrom(realm).apply {
-                    parameters.append("scope", scopes.joinToString(" "))
-                    parameters.append("service", service)
-                }.build()
+                // TODO: figure out what this is for and if we need it
+                val forceAttemptOAuth2 = false
 
-                @Serializable
-                data class TokenResponse(
-                    val token: String,
-                )
-
-                val res = client.get(authURL) {
-                    accept(ContentType.Application.Json)
+                val cred = pluginConfig.cred
+                val token = if (cred.isEmpty() || (cred.refreshToken.isEmpty() && !forceAttemptOAuth2)) {
+                    client.fetchDistributionToken(realm, service, scopes, cred.username, cred.password)
+                } else {
+                    client.fetchOAuth2Token(realm, service, scopes, cred)
                 }
 
-                val token = Json.decodeFromString<TokenResponse>(res.body())
+                request.bearerAuth(token)
 
-                request.bearerAuth(token.token)
-
-                proceed(request)
+                proceed(request).also {
+                    if (it.response.status.isSuccess()) {
+                        tokenCache[scopes.joinToString(" ")] = token
+                    }
+                }
             } else {
                 originalCall
             }

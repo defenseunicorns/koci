@@ -70,6 +70,9 @@ sealed class OCIException(message: String) : Exception(message) {
 
     class FromResponse(val fr: FailureResponse) :
         OCIException(fr.errors.joinToString { "${it.code}: ${it.message}" })
+
+    class EmptyTokenReturned(val response: HttpResponse) :
+        OCIException("${response.call.request.method} ${response.call.request.url}: empty token returned")
 }
 
 /**

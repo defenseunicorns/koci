@@ -169,7 +169,7 @@ private suspend fun HttpClient.fetchDistributionToken(
     if (tokenResponse.token.isNotEmpty()) {
         return tokenResponse.token
     }
-    throw Exception("${res.call.request.method} ${res.call.request.url}: empty token returned")
+    throw OCIException.EmptyTokenReturned(res)
 }
 
 data class Credential(
@@ -192,10 +192,11 @@ data class Credential(
     }
 }
 
-private const val defaultClientID = "koci"
+private const val DEFAULT_CLIENT_ID = "koci"
 
 // fetchOAuth2Token fetches an OAuth2 access token.
 // Reference: https://docs.docker.com/registry/spec/auth/oauth/
+@Suppress("detekt:ThrowsCount")
 private suspend fun HttpClient.fetchOAuth2Token(
     realm: String,
     service: String,
@@ -205,6 +206,11 @@ private suspend fun HttpClient.fetchOAuth2Token(
     val res = post(realm) {
         contentType(ContentType.Application.FormUrlEncoded)
         formData {
+            // little redundant, but it makes linter / IDE happier this way
+            require(
+                cred.refreshToken.isNotEmpty()
+                        || (cred.username.isNotEmpty() && cred.password.isNotEmpty())
+            ) { "missing username or password for bearer auth" }
             if (cred.refreshToken.isNotEmpty()) {
                 append("grant_type", "refresh_token")
                 append("refresh_token", cred.refreshToken)
@@ -212,14 +218,12 @@ private suspend fun HttpClient.fetchOAuth2Token(
                 append("grant_type", "password")
                 append("username", cred.username)
                 append("password", cred.password)
-            } else {
-                throw Exception("missing username or password for bearer auth")
             }
 
             append("service", service)
 
             val clientID = attributes.getOrNull(clientIDKey)
-            append("client_id", clientID ?: defaultClientID)
+            append("client_id", clientID ?: DEFAULT_CLIENT_ID)
 
             if (scopes.isNotEmpty()) {
                 append("scope", scopes.joinToString(" "))
@@ -247,8 +251,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
         return tokenResponse.accessToken
     }
 
-    // same error as other fn, place into OCIException
-    throw Exception("${res.call.request.method} ${res.call.request.url}: empty token returned")
+    throw OCIException.EmptyTokenReturned(res)
 }
 
 class ScopesPluginConfig {
@@ -261,7 +264,6 @@ val ScopesPlugin = createClientPlugin("ScopesPlugin", ::ScopesPluginConfig) {
     on(Send) { request ->
         val originalCall = proceed(request)
         originalCall.response.run { // this: HttpResponse
-//            println("${originalCall.request.method} ${originalCall.request.url} ${originalCall.request.url.parameters} $status ${headers["www-authenticate"]}")
             if (status == HttpStatusCode.Unauthorized && headers["WWW-Authenticate"]!!.contains("Bearer")) {
                 val authHeader = parseAuthorizationHeader(headers["WWW-Authenticate"]!!) as HttpAuthHeader.Parameterized
 

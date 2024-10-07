@@ -38,7 +38,7 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
     last?.let { parameters.append("last", it) }
 }
 
-class Router(registryURL: Url) {
+class Router(registryURL: String) {
     private val v2Prefix = "v2/"
 
     private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(v2Prefix)
@@ -95,7 +95,7 @@ class Registry(
     registryURL: String,
     var client: HttpClient = HttpClient(CIO),
 ) {
-    val router = Router(URLBuilder().takeFrom(registryURL).build())
+    val router = Router(registryURL)
     val extensions = Extensions()
 
     init {

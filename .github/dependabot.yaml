@@ -6,7 +6,7 @@ updates:
       interval: daily
     commit-message:
       include: scope
-      prefix: gradle
+      prefix: build
 
   - package-ecosystem: github-actions
     directory: /
@@ -14,7 +14,7 @@ updates:
       interval: daily
     commit-message:
       include: scope
-      prefix: actions
+      prefix: ci
     groups:
       github-actions:
         patterns:

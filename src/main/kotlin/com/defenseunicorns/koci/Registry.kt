@@ -38,7 +38,7 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
     last?.let { parameters.append("last", it) }
 }
 
-class Router(registryURL: Url) {
+class Router(registryURL: String) {
     private val v2Prefix = "v2/"
 
     private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(v2Prefix)
@@ -91,12 +91,11 @@ class Router(registryURL: Url) {
     }
 }
 
-class Registry private constructor(
+class Registry(
     registryURL: String,
-    val storage: Layout,
-    var client: HttpClient,
+    var client: HttpClient = HttpClient(CIO),
 ) {
-    val router = Router(URLBuilder().takeFrom(registryURL).build())
+    val router = Router(registryURL)
     val extensions = Extensions()
 
     init {
@@ -123,18 +122,6 @@ class Registry private constructor(
                 install(OCIAuthPlugin)
             }
         }
-    }
-
-    class Builder {
-        private lateinit var registryURL: String
-        private lateinit var storage: Layout
-        private var client: HttpClient = HttpClient(CIO)
-
-        fun registryURL(registryURL: String) = apply { this.registryURL = registryURL }
-        fun storage(storage: Layout) = apply { this.storage = storage }
-        fun client(client: HttpClient) = apply { this.client = client }
-
-        fun build() = Registry(registryURL, storage, client)
     }
 
     /**
@@ -227,5 +214,10 @@ suspend fun Registry.tags(repository: String) = repo(repository).tags()
 suspend fun Registry.resolve(repository: String, tag: String, resolver: (Platform) -> Boolean = ::defaultResolver) =
     repo(repository).resolve(tag, resolver)
 
-fun Registry.pull(repository: String, tag: String, resolver: (Platform) -> Boolean = ::defaultResolver) =
+fun Registry.pull(
+    repository: String,
+    tag: String,
+    storage: Layout,
+    resolver: (Platform) -> Boolean = ::defaultResolver,
+) =
     repo(repository).pull(tag, storage, resolver)

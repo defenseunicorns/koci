@@ -213,10 +213,16 @@ data class Credential(
      */
     val accessToken: String,
 ) {
+    /**
+     * Returns `true` if all properties are empty.
+     */
     fun isEmpty(): Boolean {
         return username.isEmpty() && password.isEmpty() && refreshToken.isEmpty() && accessToken.isEmpty()
     }
 
+    /**
+     * Returns `true` if any property is not empty.
+     */
     fun isNotEmpty(): Boolean {
         return username.isNotEmpty() || password.isNotEmpty() || refreshToken.isNotEmpty() || accessToken.isNotEmpty()
     }
@@ -227,7 +233,7 @@ data class Credential(
  *
  * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
  */
-@Suppress("detekt:ThrowsCount")
+@Suppress("detekt:ThrowsCount", "detekt:SpreadOperator")
 private suspend fun HttpClient.fetchOAuth2Token(
     realm: String,
     service: String,

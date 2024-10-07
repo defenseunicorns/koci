@@ -17,6 +17,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 // Actions used in scopes.
 // Reference: https://docs.docker.com/registry/spec/auth/scope/
@@ -274,7 +275,7 @@ class OCIAuthPluginConfig {
 }
 
 val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
-    val tokenCache = HashMap<String, String>()
+    val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
     on(Send) { request ->
         val originalCall = proceed(request)
@@ -282,6 +283,7 @@ val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
             if (status == HttpStatusCode.Unauthorized) {
                 var scopes = emptyList<String>()
                 var token: String? = null
+                val registryKey = request.url.build().hostWithPort
 
                 val authHeader =
                     parseAuthorizationHeader(headers[HttpHeaders.WWWAuthenticate]!!) as HttpAuthHeader.Parameterized
@@ -312,7 +314,7 @@ val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
                         }
 
                         // attempt req w/ cached token based upon scopes
-                        val cachedToken = tokenCache[scopes.joinToString(" ")]
+                        val cachedToken = tokenCache[registryKey]?.get(scopes.joinToString(" "))
                         if (cachedToken != null) {
                             request.bearerAuth(cachedToken)
                             val cacheAttempt = proceed(request)
@@ -334,7 +336,7 @@ val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
                 }
                 proceed(request).also {
                     if (it.response.status.isSuccess() && token != null) {
-                        tokenCache[scopes.joinToString(" ")] = token
+                        tokenCache[registryKey]?.set(scopes.joinToString(" "), token)
                     }
                 }
             } else {

@@ -117,7 +117,7 @@ class Registry private constructor(
 
             expectSuccess = true
 
-            install(ScopesPlugin)
+            install(OCIAuthPlugin)
         }
     }
 

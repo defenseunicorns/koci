@@ -119,7 +119,7 @@ internal val clientIDKey = AttributeKey<String>("ociClientIDKey")
 
 internal fun Attributes.appendScopes(vararg scopes: String) {
     val current = getOrNull(scopesKey)
-    if (current == null){
+    if (current == null) {
         put(scopesKey, scopes.toList())
     } else {
         put(scopesKey, cleanScopes(current + scopes.toList()))
@@ -199,6 +199,10 @@ data class Credential(
     fun isEmpty(): Boolean {
         return username.isEmpty() && password.isEmpty() && refreshToken.isEmpty() && accessToken.isEmpty()
     }
+
+    fun isNotEmpty(): Boolean {
+        return !isEmpty()
+    }
 }
 
 private const val DEFAULT_CLIENT_ID = "koci"
@@ -217,8 +221,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
         formData {
             // little redundant, but it makes linter / IDE happier this way
             require(
-                cred.refreshToken.isNotEmpty()
-                        || (cred.username.isNotEmpty() && cred.password.isNotEmpty())
+                cred.refreshToken.isNotEmpty() || (cred.username.isNotEmpty() && cred.password.isNotEmpty())
             ) { "missing username or password for bearer auth" }
             if (cred.refreshToken.isNotEmpty()) {
                 append("grant_type", "refresh_token")
@@ -263,55 +266,74 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.EmptyTokenReturned(res)
 }
 
-class ScopesPluginConfig {
+class OCIAuthPluginConfig {
     var cred: Credential = Credential("", "", "", "")
+
+    // TODO: figure out what this is for and if we need it
+    var forceAttemptOAuth2 = false
 }
 
-val ScopesPlugin = createClientPlugin("ScopesPlugin", ::ScopesPluginConfig) {
+val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = HashMap<String, String>()
 
     on(Send) { request ->
         val originalCall = proceed(request)
         originalCall.response.run { // this: HttpResponse
-            if (status == HttpStatusCode.Unauthorized && headers["WWW-Authenticate"]!!.contains("Bearer")) {
-                val authHeader = parseAuthorizationHeader(headers["WWW-Authenticate"]!!) as HttpAuthHeader.Parameterized
+            if (status == HttpStatusCode.Unauthorized) {
+                var scopes = emptyList<String>()
+                var token: String? = null
 
-                val realm = authHeader.parameters.first { it.name == "realm" }.value
-                val service = authHeader.parameters.firstOrNull { it.name == "service" }?.value ?: ""
-                val challengeScopes = authHeader.parameters.first { it.name == "scope" }.value.split(" ")
-
+                val authHeader =
+                    parseAuthorizationHeader(headers[HttpHeaders.WWWAuthenticate]!!) as HttpAuthHeader.Parameterized
                 val requestScopes = request.attributes.getOrNull(scopesKey)
 
-                val scopes = if (requestScopes != null) {
-                    cleanScopes(challengeScopes + requestScopes)
-                } else {
-                    cleanScopes(challengeScopes)
-                }
+                when (authHeader.authScheme) {
+                    AuthScheme.Basic -> {
+                        val cred = pluginConfig.cred
+                        require(cred.isNotEmpty()) { "credential required for basic auth" }
+                        require(cred.username.isNotEmpty() && cred.password.isNotEmpty()) {
+                            "missing username or password for basic auth"
+                        }
+                        if (requestScopes != null) {
+                            scopes = requestScopes
+                        }
+                        request.basicAuth(cred.username, cred.password)
+                    }
 
-                // attempt req w/ cached token based upon scopes
-                val cachedToken = tokenCache[scopes.joinToString(" ")]
-                if (cachedToken != null) {
-                    request.bearerAuth(cachedToken)
-                    val cacheAttempt = proceed(request)
-                    if (cacheAttempt.response.status.isSuccess()) {
-                        return@on cacheAttempt
+                    AuthScheme.Bearer -> {
+                        val realm = authHeader.parameters.first { it.name == "realm" }.value
+                        val service = authHeader.parameters.firstOrNull { it.name == "service" }?.value ?: ""
+                        val challengeScopes = authHeader.parameters.first { it.name == "scope" }.value.split(" ")
+
+                        scopes = if (requestScopes != null) {
+                            cleanScopes(challengeScopes + requestScopes)
+                        } else {
+                            cleanScopes(challengeScopes)
+                        }
+
+                        // attempt req w/ cached token based upon scopes
+                        val cachedToken = tokenCache[scopes.joinToString(" ")]
+                        if (cachedToken != null) {
+                            request.bearerAuth(cachedToken)
+                            val cacheAttempt = proceed(request)
+                            if (cacheAttempt.response.status.isSuccess()) {
+                                return@on cacheAttempt
+                            }
+                        }
+
+                        val cred = pluginConfig.cred
+                        token =
+                            if (cred.isEmpty() || (cred.refreshToken.isEmpty() && !pluginConfig.forceAttemptOAuth2)) {
+                                client.fetchDistributionToken(realm, service, scopes, cred.username, cred.password)
+                            } else {
+                                client.fetchOAuth2Token(realm, service, scopes, cred)
+                            }
+
+                        request.bearerAuth(token)
                     }
                 }
-
-                // TODO: figure out what this is for and if we need it
-                val forceAttemptOAuth2 = false
-
-                val cred = pluginConfig.cred
-                val token = if (cred.isEmpty() || (cred.refreshToken.isEmpty() && !forceAttemptOAuth2)) {
-                    client.fetchDistributionToken(realm, service, scopes, cred.username, cred.password)
-                } else {
-                    client.fetchOAuth2Token(realm, service, scopes, cred)
-                }
-
-                request.bearerAuth(token)
-
                 proceed(request).also {
-                    if (it.response.status.isSuccess()) {
+                    if (it.response.status.isSuccess() && token != null) {
                         tokenCache[scopes.joinToString(" ")] = token
                     }
                 }

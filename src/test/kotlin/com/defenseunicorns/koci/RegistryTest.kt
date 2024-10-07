@@ -93,7 +93,7 @@ class RegistryTest {
         val fl = registry.extensions.catalog(1)
         val record = mutableListOf<CatalogResponse>()
         fl.collect { res ->
-            assertTrue(res.isSuccess)
+            assertTrue(res.isSuccess, res.exceptionOrNull()?.message)
             record += res.getOrThrow()
         }
         val expected = mutableListOf(
@@ -407,6 +407,18 @@ class RegistryTest {
                 repo.remove(manifestDesc).getOrThrow()
             }
         }
+    }
+
+    @Test
+    fun `public scopes`() = runTest {
+        val ecr = Registry.Builder().client(httpClient).registryURL("https://public.ecr.aws").storage(storage).build()
+
+        val result = ecr.repo("ubuntu/redis").tags()
+        assertTrue(result.isSuccess, result.exceptionOrNull().toString())
+
+        val nvcr = Registry.Builder().client(httpClient).registryURL("https://nvcr.io").storage(storage).build()
+
+        nvcr.tags("nvidia/l4t-pytorch").getOrThrow()
     }
 }
 

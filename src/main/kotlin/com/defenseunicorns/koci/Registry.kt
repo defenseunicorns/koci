@@ -9,10 +9,8 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
@@ -103,11 +101,6 @@ class Registry private constructor(
 
     init {
         client = client.config {
-            install(ContentNegotiation) {
-                json(Json {
-                    encodeDefaults = false
-                })
-            }
             headers {
                 // https://distribution.github.io/distribution/spec/api/#api-version-check
                 append("Docker-Distribution-API-Version", "registry/2.0")
@@ -123,6 +116,12 @@ class Registry private constructor(
             }
 
             expectSuccess = true
+        }
+
+        if (client.pluginOrNull(OCIAuthPlugin) == null) {
+            client = client.config {
+                install(OCIAuthPlugin)
+            }
         }
     }
 
@@ -153,7 +152,10 @@ class Registry private constructor(
          * [GET /v2/_catalog](https://distribution.github.io/distribution/spec/api/#listing-repositories)
          */
         suspend fun catalog(): Result<CatalogResponse> = runCatching {
-            client.get(router.catalog()).body()
+            val res = client.get(router.catalog()) {
+                attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
+            }
+            Json.decodeFromString(res.body())
         }
 
         /**
@@ -167,7 +169,9 @@ class Registry private constructor(
 
                 while (endpoint != null) {
                     val result: Result<CatalogResponse> = runCatching {
-                        val response = client.get(endpoint!!)
+                        val response = client.get(endpoint!!) {
+                            attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
+                        }
 
                         // If the header is not present, the client can assume that all results have been received.
                         val linkHeader = response.headers[HttpHeaders.Link]
@@ -187,7 +191,7 @@ class Registry private constructor(
                             router.catalog(nextN, url.parameters["last"])
                         }
 
-                        response.body()
+                        Json.decodeFromString(response.body())
                     }
 
                     emit(result)

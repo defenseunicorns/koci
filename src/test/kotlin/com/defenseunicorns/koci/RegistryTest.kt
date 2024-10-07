@@ -63,15 +63,15 @@ class RegistryTest {
 
     @Test
     fun `can ping`() = runTest {
-        val result = registry.ping()
-        assertTrue(result.isSuccess, result.exceptionOrNull().toString())
-        assertTrue(result.getOrThrow())
+        registry.ping().run {
+            assertTrue(this.isSuccess, this.exceptionOrNull().toString())
+            assertTrue(this.getOrThrow())
+        }
 
-        val badRegistry = Registry("http://127.0.0.1:5001")
-
-        val badResult = badRegistry.ping()
-        assertTrue(badResult.isFailure)
-        assertEquals(null, badResult.getOrNull())
+        Registry("http://127.0.0.1:5001").ping().run {
+            assertTrue(this.isFailure)
+            assertNull(this.getOrNull())
+        }
     }
 
     @Test

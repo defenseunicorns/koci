@@ -4,9 +4,8 @@ Kotlin implementation of the [OCI Distribution client specification](https://git
 
 ## Auth
 
-> Currently, authorization is configured via the provided [Ktor client](https://ktor.io/docs/client-auth.html)
-
-- [ ] [Request scopes](https://distribution.github.io/distribution/spec/auth/scope/) https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L921-L930
+- [x] [Request scopes](https://distribution.github.io/distribution/spec/auth/scope/) https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L921-L930
+- [x] Basic/Bearer auth w/ Distribution auth flow
 - [ ] Docker's `~/.docker/config.json` support
 
 ## Pull
@@ -66,12 +65,8 @@ Support for SHA-256 and SHA-512 hashing algorithms.
 >
 > For now, it is best to run operations that could interfere (images sharing layers) sequentially.
 
-## Built using
+## Special Thanks
 
-- ktor
-- kotlinx.serialization
-- kotlinx.coroutines
-
-- junit5
-- kotlinx.kover
-- kotlinx.test
+- [Distribution Spec authors](https://github.com/opencontainers/distribution-spec)
+- [`oras-go` authors](https://github.com/oras-project/oras-go)
+- [`ktor` authors](https://github.com/ktorio/ktor)

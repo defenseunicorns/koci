@@ -16,7 +16,7 @@ class ScopesTest {
         val testCases = listOf(
             emptyList<String>() to emptyList(),
             listOf("") to listOf(""),
-            listOf(ACTION_REGISTRY_CATALOG) to listOf(ACTION_REGISTRY_CATALOG),
+            listOf(SCOPE_REGISTRY_CATALOG) to listOf(SCOPE_REGISTRY_CATALOG),
             listOf(
                 scopeRepository(
                     "ubuntu", ACTION_PULL, ACTION_PUSH

@@ -149,7 +149,7 @@ class Registry private constructor(
          */
         suspend fun catalog(): Result<CatalogResponse> = runCatching {
             val res = client.get(router.catalog()) {
-                attributes.put(scopesKey, listOf(ACTION_REGISTRY_CATALOG))
+                attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
             }
             Json.decodeFromString(res.body())
         }
@@ -166,7 +166,7 @@ class Registry private constructor(
                 while (endpoint != null) {
                     val result: Result<CatalogResponse> = runCatching {
                         val response = client.get(endpoint!!){
-                            attributes.put(scopesKey, listOf(ACTION_REGISTRY_CATALOG))
+                            attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
                         }
 
                         // If the header is not present, the client can assume that all results have been received.

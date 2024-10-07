@@ -34,8 +34,8 @@ const val ACTION_PUSH = "push"
 // repository type.
 const val ACTION_DELETE = "delete"
 
-// ACTION_REGISTRY_CATALOG is the scope for registry catalog access.
-const val ACTION_REGISTRY_CATALOG = "registry:catalog:*"
+// SCOPE_REGISTRY_CATALOG is the scope for registry catalog access.
+const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
 
 fun scopeRepository(repo: String, vararg actions: String): String {
     val cleaned = cleanActions(actions.toList())
@@ -117,6 +117,15 @@ fun cleanScopes(scopes: List<String>): List<String> {
 internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
 internal val clientIDKey = AttributeKey<String>("ociClientIDKey")
 
+internal fun Attributes.appendScopes(vararg scopes: String) {
+    val current = getOrNull(scopesKey)
+    if (current == null){
+        put(scopesKey, scopes.toList())
+    } else {
+        put(scopesKey, cleanScopes(current + scopes.toList()))
+    }
+}
+
 // fetchDistributionToken fetches an access token as defined by the distribution
 // specification.
 // It fetches anonymous tokens if no credential is provided.
@@ -142,7 +151,7 @@ private suspend fun HttpClient.fetchDistributionToken(
                 parameters.append("scope", scope)
             }
         }
-        attributes.put(scopesKey, scopes)
+        attributes.appendScopes(*scopes.toTypedArray())
     }
 
     if (res.status != HttpStatusCode.OK) {
@@ -229,7 +238,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
                 append("scope", scopes.joinToString(" "))
             }
 
-            attributes.put(scopesKey, scopes)
+            attributes.appendScopes(*scopes.toTypedArray())
         }
     }
 

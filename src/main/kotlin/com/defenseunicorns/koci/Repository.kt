@@ -74,7 +74,7 @@ class Repository(
             else -> router.blob(name, descriptor)
         }
         client.head(endpoint) {
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }.status.isSuccess()
     }
 
@@ -88,14 +88,14 @@ class Repository(
         val response = client.head(endpoint) {
             accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
             accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
 
         when (response.contentType()?.toString()) {
             INDEX_MEDIA_TYPE -> {
                 val indexResponse = client.get(endpoint) {
                     accept(ContentType.parse(INDEX_MEDIA_TYPE))
-                    attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
                 }
                 val index = Json.decodeFromString<Index>(indexResponse.bodyAsText())
 
@@ -111,7 +111,7 @@ class Repository(
             MANIFEST_MEDIA_TYPE -> {
                 client.prepareGet(endpoint) {
                     accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                    attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
                 }.execute { res ->
                     Descriptor.fromInputStream(
                         mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
@@ -144,7 +144,7 @@ class Repository(
         }
 
         client.delete(endpoint) {
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_DELETE)))
+            attributes.appendScopes(scopeRepository(name, ACTION_DELETE))
         }.status.isSuccess()
     }
 
@@ -152,7 +152,7 @@ class Repository(
         require(descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString())
         val res = client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
         Json.decodeFromString(res.body())
     }
@@ -161,7 +161,7 @@ class Repository(
         require(descriptor.mediaType == INDEX_MEDIA_TYPE)
         val res = client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
         Json.decodeFromString(res.body())
     }
@@ -171,7 +171,7 @@ class Repository(
      */
     suspend fun tags(): Result<TagsResponse> = runCatching {
         val res = client.get(router.tags(name)) {
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
         Json.decodeFromString(res.body())
     }
@@ -277,10 +277,7 @@ class Repository(
 
         val response = runCatching {
             client.head(router.blob(name, descriptor)) {
-                attributes.put(
-                    scopesKey,
-                    listOf(scopeRepository(name, ACTION_PULL))
-                )
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL))
             }
         }.getOrNull()
         val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
@@ -311,7 +308,7 @@ class Repository(
         }
 
         client.prepareGet(endpoint) {
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
 
             when (descriptor.mediaType) {
                 INDEX_MEDIA_TYPE -> {
@@ -365,7 +362,7 @@ class Repository(
             null -> {
                 val res = client.post(router.uploads(name)) {
                     headers[HttpHeaders.ContentLength] = 0.toString()
-                    attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL, ACTION_PUSH)))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 }
                 if (res.status != HttpStatusCode.Accepted) {
                     throw OCIException.UnexpectedStatus(HttpStatusCode.Accepted, res)
@@ -377,9 +374,7 @@ class Repository(
                 if (prev.offset > 0) {
                     try {
                         client.get(router.parseUploadLocation(prev.location)) {
-                            attributes.put(
-                                scopesKey, listOf(scopeRepository(name, ACTION_PULL))
-                            )
+                            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
                         }.also { res ->
                             if (res.status != HttpStatusCode.NoContent) {
                                 throw OCIException.UnexpectedStatus(HttpStatusCode.NoContent, res)
@@ -449,7 +444,7 @@ class Repository(
                         append(HttpHeaders.ContentLength, expected.size.toString())
                     }
                     setBody(stream)
-                    attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL, ACTION_PUSH)))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 }.also { res ->
                     if (res.status != HttpStatusCode.Created) {
                         throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
@@ -481,7 +476,7 @@ class Repository(
                             headers {
                                 append(HttpHeaders.ContentRange, "$offset-$endRange")
                             }
-                            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL, ACTION_PUSH)))
+                            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                         }.also { res ->
                             if (res.status != HttpStatusCode.Accepted) {
                                 throw OCIException.UnexpectedStatus(
@@ -508,7 +503,7 @@ class Repository(
                     url {
                         encodedParameters.append("digest", expected.digest.toString())
                     }
-                    attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL, ACTION_PUSH)))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 }.also { res ->
                     if (res.status != HttpStatusCode.Created) {
                         throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
@@ -558,7 +553,7 @@ class Repository(
         val res = client.put(router.manifest(name, ref)) {
             contentType(ContentType.parse(ct))
             setBody(txt)
-            attributes.put(scopesKey, listOf(scopeRepository(name, ACTION_PULL, ACTION_PUSH)))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         }
 
         if (res.status != HttpStatusCode.Created) {

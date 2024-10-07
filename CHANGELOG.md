@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.0 (2024-10-07)
+
+## What's Changed
+* gradle(deps): org.jetbrains.kotlinx:kotlinx-coroutines-core from 1.8.1 to 1.9.0 by @dependabot in https://github.com/defenseunicorns/koci/pull/4
+* gradle(deps): Bump org.jetbrains.kotlinx:kotlinx-serialization-json from 1.7.1 to 1.7.3 by @dependabot in https://github.com/defenseunicorns/koci/pull/5
+* gradle(deps): Bump kotlin from 2.0.0 to 2.0.20 by @dependabot in https://github.com/defenseunicorns/koci/pull/2
+* actions(deps): bump actions/setup-java from 4.3.0 to 4.4.0 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/9
+* chore: Defense Unicorns repo requirements by @Noxsios in https://github.com/defenseunicorns/koci/pull/15
+* actions(deps): bump actions/checkout from 4.1.7 to 4.2.0 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/16
+* chore: cleanup dead code by @Noxsios in https://github.com/defenseunicorns/koci/pull/17
+* test: more regexes by @Noxsios in https://github.com/defenseunicorns/koci/pull/18
+* refactor: cleanup mediatypes by @Noxsios in https://github.com/defenseunicorns/koci/pull/19
+* feat(ci): add commitlint by @Noxsios in https://github.com/defenseunicorns/koci/pull/20
+* feat: request scopes and authentication by @Noxsios in https://github.com/defenseunicorns/koci/pull/22
+* ci(deps): bump the github-actions group across 1 directory with 2 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/23
+* refactor: cleanup registry creation by @Noxsios in https://github.com/defenseunicorns/koci/pull/25
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.0.6...v0.1.0
+
 ## 0.0.6 (2024-09-25)
 
 **Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.0.5...v0.0.6

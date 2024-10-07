@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 
 @Suppress("detekt:MaxLineLength")
 class RouteTest {
-    private val base = URLBuilder(host = "127.0.0.1", port = 5000).build()
+    private val base = URLBuilder(host = "127.0.0.1", port = 5000).build().toString()
     private val router = Router(base)
 
     @Test

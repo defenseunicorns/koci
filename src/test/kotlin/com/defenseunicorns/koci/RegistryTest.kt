@@ -59,9 +59,7 @@ class RegistryTest {
         return platform.architecture == currentArch && platform.os == MULTI_OS
     }
 
-    private val registry =
-        Registry.Builder().registryURL("http://127.0.0.1:5005").storage(storage) // matches docker-compose.yaml
-            .client(httpClient).build()
+    private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
 
     @Test
     fun `can ping`() = runTest {
@@ -69,8 +67,7 @@ class RegistryTest {
         assertTrue(result.isSuccess, result.exceptionOrNull().toString())
         assertTrue(result.getOrThrow())
 
-        val badRegistry =
-            Registry.Builder().registryURL("http://127.0.0.1:5001").storage(storage).client(httpClient).build()
+        val badRegistry = Registry("http://127.0.0.1:5001")
 
         val badResult = badRegistry.ping()
         assertTrue(badResult.isFailure)
@@ -142,7 +139,7 @@ class RegistryTest {
         assertTrue(result.isSuccess)
         val desc = result.getOrThrow()
         // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, MANIFEST_MEDIA_TYPE.toString())
+        assertEquals(desc.mediaType, MANIFEST_MEDIA_TYPE)
         assertEquals(currentArch, desc.platform!!.architecture)
     }
 
@@ -249,7 +246,7 @@ class RegistryTest {
     @Test
     fun `pull and remove dos-games`() = runTest {
         val desc = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", ::zarfResolver)
+        val prog = registry.pull("dos-games", "1.1.0", storage, ::zarfResolver)
 
         assertEquals(
             100, prog.last()
@@ -270,7 +267,7 @@ class RegistryTest {
         for (at in cancelAt) {
             launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", ::zarfResolver).onCompletion { e ->
+                registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
                         assertEquals(
@@ -302,10 +299,10 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", ::zarfResolver).collect()
+                    registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest") { platform ->
+                    registry.pull("library/registry", "latest", storage) { platform ->
                         platform.os == "linux" && platform.architecture == currentArch
                     }.collect()
                 }
@@ -411,12 +408,12 @@ class RegistryTest {
 
     @Test
     fun `public scopes`() = runTest {
-        val ecr = Registry.Builder().client(httpClient).registryURL("https://public.ecr.aws").storage(storage).build()
+        val ecr = Registry("https://public.ecr.aws", httpClient)
 
         val result = ecr.repo("ubuntu/redis").tags()
         assertTrue(result.isSuccess, result.exceptionOrNull().toString())
 
-        val nvcr = Registry.Builder().client(httpClient).registryURL("https://nvcr.io").storage(storage).build()
+        val nvcr = Registry("https://nvcr.io", httpClient)
 
         nvcr.tags("nvidia/l4t-pytorch").getOrThrow()
     }

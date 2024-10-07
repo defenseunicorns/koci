@@ -7,12 +7,11 @@ package com.defenseunicorns.koci
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 
 class ScopesTest {
     @Test
     @Suppress("detekt:LongMethod")
-    fun valid() {
+    fun cleanScopes() {
         val testCases = listOf(
             emptyList<String>() to emptyList(),
             listOf("") to listOf(""),
@@ -84,15 +83,24 @@ class ScopesTest {
     }
 
     @Test
-    fun invalid() {
+    fun cleanActions() {
         val testCases = listOf(
-            listOf("") to ""
+            emptyList<String>() to emptyList(),
+            listOf("") to emptyList(),
+            listOf(ACTION_PULL) to listOf(ACTION_PULL),
+            listOf(ACTION_PULL, ACTION_PUSH) to listOf(ACTION_PULL, ACTION_PUSH),
+            listOf(ACTION_PULL, "", ACTION_PUSH) to listOf(ACTION_PULL, ACTION_PUSH),
+            listOf("", "", "") to emptyList(),
+            listOf(ACTION_PUSH, ACTION_PULL, ACTION_DELETE) to listOf(ACTION_DELETE, ACTION_PULL, ACTION_PUSH),
+            listOf("*") to listOf("*"),
+            listOf("*", ACTION_PUSH, ACTION_PULL, ACTION_DELETE) to listOf("*"),
+            listOf(ACTION_PUSH, ACTION_PULL, "*", ACTION_DELETE) to listOf("*"),
+            listOf(ACTION_PUSH, ACTION_PULL, ACTION_DELETE, "*") to listOf("*"),
         )
 
-        for ((dirty, message) in testCases) {
-            assertFails(message) {
-                cleanScopes(dirty)
-            }
+        for ((actions, expected) in testCases) {
+            val actual = cleanActions(actions)
+            assertEquals(expected, actual)
         }
     }
 }

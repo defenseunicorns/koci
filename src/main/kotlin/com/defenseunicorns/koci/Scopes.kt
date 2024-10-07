@@ -41,8 +41,8 @@ fun scopeRepository(repo: String, vararg actions: String): String {
     return listOf("repository", repo, cleaned.joinToString(",")).joinToString(":")
 }
 
-fun cleanActions(scopes: List<String>): List<String> {
-    val cleaned = scopes.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+fun cleanActions(actions: List<String>): List<String> {
+    val cleaned = actions.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
     if (cleaned.contains("*")) {
         return listOf("*")

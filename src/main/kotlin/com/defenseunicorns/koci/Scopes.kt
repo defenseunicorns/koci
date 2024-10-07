@@ -23,19 +23,16 @@ import java.util.concurrent.ConcurrentHashMap
 // Reference: https://docs.docker.com/registry/spec/auth/scope/
 // https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L908
 
-// ACTION_PULL represents generic read access for resources of the repository
-// type.
+/** ACTION_PULL represents generic read access for resources of the repository type. */
 const val ACTION_PULL = "pull"
 
-// ACTION_PUSH represents generic write access for resources of the
-// repository type.
+/** ACTION_PUSH represents generic write access for resources of the repository type. */
 const val ACTION_PUSH = "push"
 
-// ACTION_DELETE represents the delete permission for resources of the
-// repository type.
+/** ACTION_DELETE represents the delete permission for resources of the repository type. */
 const val ACTION_DELETE = "delete"
 
-// SCOPE_REGISTRY_CATALOG is the scope for registry catalog access.
+/** SCOPE_REGISTRY_CATALOG is the scope for registry catalog access. */
 const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
 
 fun scopeRepository(repo: String, vararg actions: String): String {
@@ -117,6 +114,7 @@ fun cleanScopes(scopes: List<String>): List<String> {
 
 internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
 internal val clientIDKey = AttributeKey<String>("ociClientIDKey")
+private const val DEFAULT_CLIENT_ID = "koci"
 
 internal fun Attributes.appendScopes(vararg scopes: String) {
     val current = getOrNull(scopesKey)
@@ -127,12 +125,15 @@ internal fun Attributes.appendScopes(vararg scopes: String) {
     }
 }
 
-// fetchDistributionToken fetches an access token as defined by the distribution
-// specification.
-// It fetches anonymous tokens if no credential is provided.
-// References:
-// - https://docs.docker.com/registry/spec/auth/jwt/
-// - https://docs.docker.com/registry/spec/auth/token/
+/**
+ * fetchDistributionToken fetches an access token as defined by the distribution
+ *  specification.
+ *  It fetches anonymous tokens if no credential is provided.
+ *  References:
+ *  - https://docs.docker.com/registry/spec/auth/jwt/
+ *  - https://docs.docker.com/registry/spec/auth/token/
+ */
+@Suppress("detekt:SpreadOperator")
 private suspend fun HttpClient.fetchDistributionToken(
     realm: String,
     service: String,
@@ -182,19 +183,34 @@ private suspend fun HttpClient.fetchDistributionToken(
     throw OCIException.EmptyTokenReturned(res)
 }
 
+/**
+ * Credential contains authentication credentials used to access remote registries.
+ */
 data class Credential(
-    // Username is the name of the user for the remote registry.
+    /**
+     * Username is the name of the user for the remote registry.
+     */
     val username: String,
-    // Password is the secret associated with the username.
+    /**
+     * Password is the secret associated with the username.
+     */
     val password: String,
-    // RefreshToken is a bearer token to be sent to the authorization service
-    // for fetching access tokens.
-    // A refresh token is often referred as an identity token.
-    // Reference: https://docs.docker.com/registry/spec/auth/oauth/
+    /**
+     * RefreshToken is a bearer token to be sent to the authorization service
+     * for fetching access tokens.
+     *
+     * A refresh token is often referred as an identity token.
+     *
+     * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
+     */
     val refreshToken: String,
-    // AccessToken is a bearer token to be sent to the registry.
-    // An access token is often referred as a registry token.
-    // Reference: https://docs.docker.com/registry/spec/auth/token/
+    /**
+     * AccessToken is a bearer token to be sent to the registry.
+     *
+     * An access token is often referred as a registry token.
+     *
+     * [Reference](https://docs.docker.com/registry/spec/auth/token/)
+     */
     val accessToken: String,
 ) {
     fun isEmpty(): Boolean {
@@ -202,14 +218,15 @@ data class Credential(
     }
 
     fun isNotEmpty(): Boolean {
-        return !isEmpty()
+        return username.isNotEmpty() || password.isNotEmpty() || refreshToken.isNotEmpty() || accessToken.isNotEmpty()
     }
 }
 
-private const val DEFAULT_CLIENT_ID = "koci"
-
-// fetchOAuth2Token fetches an OAuth2 access token.
-// Reference: https://docs.docker.com/registry/spec/auth/oauth/
+/**
+ * fetchOAuth2Token fetches an OAuth2 access token.
+ *
+ * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
+ */
 @Suppress("detekt:ThrowsCount")
 private suspend fun HttpClient.fetchOAuth2Token(
     realm: String,

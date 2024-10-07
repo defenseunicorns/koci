@@ -116,8 +116,12 @@ class Registry private constructor(
             }
 
             expectSuccess = true
+        }
 
-            install(OCIAuthPlugin)
+        if (client.pluginOrNull(OCIAuthPlugin) == null) {
+            client = client.config {
+                install(OCIAuthPlugin)
+            }
         }
     }
 
@@ -165,7 +169,7 @@ class Registry private constructor(
 
                 while (endpoint != null) {
                     val result: Result<CatalogResponse> = runCatching {
-                        val response = client.get(endpoint!!){
+                        val response = client.get(endpoint!!) {
                             attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
                         }
 

@@ -35,10 +35,27 @@ val SystemPlatform = Platform(
     os = systemOS, architecture = systemArch
 )
 
+/**
+ * defaultResolver is a simple check if the given platform's architecture and os match
+ * the current system's architecture and os
+ */
 fun defaultResolver(platform: Platform): Boolean {
     return platform.architecture == SystemPlatform.architecture && platform.os == SystemPlatform.os
 }
 
+const val OCI_CHUNK_MIN_LENGTH = "OCI-Chunk-Min-Length"
+
+/**
+ * Parses [Headers] into [UploadStatus]
+ *
+ * Uses:
+ *
+ * - [HttpHeaders.Location]
+ * - [HttpHeaders.Range]
+ * - [OCI_CHUNK_MIN_LENGTH]
+ *
+ * @throws IllegalStateException
+ */
 fun Headers.toUploadStatus(): UploadStatus {
     val location = checkNotNull(this[HttpHeaders.Location]) {
         "missing Location header"
@@ -52,7 +69,7 @@ fun Headers.toUploadStatus(): UploadStatus {
     }
 
     // this header MAY not exist
-    val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
+    val minChunk = this[OCI_CHUNK_MIN_LENGTH]?.toLong() ?: 0L
 
     return UploadStatus(location, offset.toLong(), minChunk)
 }

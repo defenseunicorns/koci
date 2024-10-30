@@ -27,12 +27,14 @@ data class Reference(
     )
 
     companion object {
-        //	<--- path --------------------------------------------> |  - Decode `path`
-        //	<=== REPOSITORY ===> <--- reference ------------------> |    - Decode `reference`
-        //	<=== REPOSITORY ===> @ <=================== digest ===> |      - Valid Form A
-        //	<=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> |      - Valid Form B (tag is dropped)
-        //	<=== REPOSITORY ===> : <=== TAG ======================> |      - Valid Form C
-        //	<=== REPOSITORY ======================================> |    - Valid Form D
+        /**
+         *     <--- path --------------------------------------------> |  - Decode `path`
+         *     <=== REPOSITORY ===> <--- reference ------------------> |  - Decode `reference`
+         *     <=== REPOSITORY ===> @ <=================== digest ===> |  - Valid Form A
+         *     <=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> |  - Valid Form B (tag is dropped)
+         *     <=== REPOSITORY ===> : <=== TAG ======================> |  - Valid Form C
+         *     <=== REPOSITORY ======================================> |  - Valid Form D
+         */
         fun parse(artifact: String): Result<Reference> = runCatching {
             val reg = artifact.substringBefore("/", "")
             require(reg.isNotEmpty()) { "registry cannot be empty" }
@@ -74,7 +76,9 @@ data class Reference(
         return Digest(reference)
     }
 
-    // currently allowing throws
+    /**
+     * @throws IllegalArgumentException
+     */
     fun validate() {
         // validate registry
         require(registry.isNotEmpty()) { "registry cannot be empty" }
@@ -97,6 +101,7 @@ data class Reference(
         if (TagRegex.matchEntire(reference) != null) {
             return
         }
-        Digest(reference)
+        val d = runCatching { Digest(reference) }
+        requireNotNull(d.getOrNull()) { "invalid digest: ${d.exceptionOrNull()?.message}" }
     }
 }

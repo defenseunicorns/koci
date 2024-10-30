@@ -8,7 +8,7 @@ OS := $(shell go env GOOS)
 
 .PHONY: build
 build:
-	@ ./gradlew build
+	@ ./gradlew build -x test
 
 test: registry-up registry-seed
 	@ ./gradlew test --fail-fast

@@ -101,21 +101,21 @@ class ReferenceTest {
                     "validname",
                     "invaliddigest:${"f".repeat(128)}"
                 ),
-                "invaliddigest is not one of the registered algorithms"
+                "invalid digest: invaliddigest is not one of the registered algorithms"
             ),
             Invalid(
                 "docker.io/validname@sha256:${"f".repeat(63)}",
                 Reference(
                     "docker.io", "validname", "sha256:${"f".repeat(63)}"
                 ),
-                "sha256 algorithm specified but hex length is not 64"
+                "invalid digest: sha256 algorithm specified but hex length is not 64"
             ),
             Invalid(
                 "docker.io/validname@sha512:${"f".repeat(127)}",
                 Reference(
                     "docker.io", "validname", "sha512:${"f".repeat(127)}"
                 ),
-                "sha512 algorithm specified but hex length is not 128"
+                "invalid digest: sha512 algorithm specified but hex length is not 128"
             ),
             Invalid(
                 "docker.io/Uppercase:tag",

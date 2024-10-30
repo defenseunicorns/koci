@@ -1,4 +1,3 @@
-
 import io.gitlab.arturbosch.detekt.Detekt
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
@@ -101,9 +100,10 @@ publishing {
     publications {
         val releasePleaseManifest = file(".release-please-manifest.json")
         create<MavenPublication>("maven") {
-            version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
+            version =
+                Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
 
-            from(components["java"] )
+            from(components["java"])
         }
     }
 }

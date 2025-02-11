@@ -378,7 +378,7 @@ class RegistryTest {
         val dummy = "{}".byteInputStream()
 
         val dummyDesc = Descriptor.fromInputStream(
-            mediaType = MANIFEST_CONFIG_MEDIA_TYPE.toString(), stream = dummy
+            mediaType = MANIFEST_CONFIG_MEDIA_TYPE, stream = dummy
         )
 
         dummy.reset()
@@ -387,7 +387,7 @@ class RegistryTest {
         repo.push(dummy, dummyDesc).collect()
 
         val manifest = Manifest(
-            schemaVersion = 2, mediaType = MANIFEST_MEDIA_TYPE.toString(), config = dummyDesc, layers = listOf(desc)
+            schemaVersion = 2, mediaType = MANIFEST_MEDIA_TYPE, config = dummyDesc, layers = listOf(desc)
         )
 
         repo.tag(manifest, "latest").also { res ->

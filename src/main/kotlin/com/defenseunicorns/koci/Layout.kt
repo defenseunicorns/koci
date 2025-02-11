@@ -291,8 +291,8 @@ class Layout private constructor(
     suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
         require(descriptor.mediaType.isNotEmpty())
         require(
-            descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()
-                    || descriptor.mediaType == INDEX_MEDIA_TYPE.toString()
+            descriptor.mediaType == MANIFEST_MEDIA_TYPE
+                    || descriptor.mediaType == INDEX_MEDIA_TYPE
         )
         require(descriptor.size > 0)
 

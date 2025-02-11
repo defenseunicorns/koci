@@ -194,7 +194,8 @@ class RegistryTest {
     fun `fetch a layer, cancelling multiple times`() = runTest {
         val repo = registry.repo("dos-games")
         val manifestDesc = repo.resolve("1.1.0").getOrThrow()
-        val layer = repo.manifest(repo.index(manifestDesc).getOrThrow().manifests.first()).getOrThrow().layers.maxBy { it.size }
+        val layer =
+            repo.manifest(repo.index(manifestDesc).getOrThrow().manifests.first()).getOrThrow().layers.maxBy { it.size }
 
         val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
 
@@ -278,7 +279,7 @@ class RegistryTest {
                     }
                 }.collect { progress ->
                     lastEmit = progress
-                    if (at == progress){
+                    if (at == progress) {
                         cancel()
                     }
                 }

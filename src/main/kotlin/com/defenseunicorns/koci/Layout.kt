@@ -97,6 +97,7 @@ class Layout private constructor(
 
     // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
+    @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     override suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
@@ -140,7 +141,7 @@ class Layout private constructor(
                             val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
                             i.manifests + i.manifests.flatMap { manifestDesc ->
                                 // manifest could have been removed in a previous loop
-                                if (blob(manifestDesc).exists()) {
+                                if (withContext(Dispatchers.IO) { blob(manifestDesc).exists() }) {
                                     fetch(manifestDesc).use {
                                         val m = Json.decodeFromStream<Manifest>(it)
                                         m.layers + m.config

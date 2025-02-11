@@ -206,12 +206,13 @@ class Registry(
 
 fun Registry.repo(name: String) = Repository(client, router, name)
 suspend fun Registry.tags(repository: String) = repo(repository).tags()
-suspend fun Registry.resolve(repository: String, tag: String) =
-    repo(repository).resolve(tag)
+suspend fun Registry.resolve(repository: String, tag: String, platformResolver: ((Platform) -> Boolean)? = null) =
+    repo(repository).resolve(tag, platformResolver)
 
 fun Registry.pull(
     repository: String,
     tag: String,
+    platformResolver: ((Platform) -> Boolean)? = null,
     storage: Layout,
 ) =
-    repo(repository).pull(tag, storage)
+    repo(repository).pull(tag, platformResolver, storage)

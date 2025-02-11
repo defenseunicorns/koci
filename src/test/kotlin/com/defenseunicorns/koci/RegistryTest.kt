@@ -239,8 +239,11 @@ class RegistryTest {
 
     @Test
     fun `pull and remove dos-games`() = runTest {
-        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", storage)
+        val arm64Resolver = { plat: Platform ->
+            plat.architecture == "arm64" && plat.os == "multi"
+        }
+        val desc = registry.resolve("dos-games", "1.1.0", arm64Resolver).getOrThrow()
+        val prog = registry.pull("dos-games", "1.1.0", arm64Resolver, storage)
 
         assertEquals(
             100, prog.last()
@@ -258,10 +261,14 @@ class RegistryTest {
     fun `resume-able pulls`() = runTest {
         val cancelAt = listOf(5, 15, 50, -100)
 
+        val amd64Resolver = { plat: Platform ->
+            plat.architecture == "amd64" && plat.os == "multi"
+        }
+
         for (at in cancelAt) {
             launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", storage).onCompletion { e ->
+                registry.pull("dos-games", "1.1.0", amd64Resolver, storage).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
                         assertEquals(
@@ -295,10 +302,10 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
+                    registry.pull("dos-games", "1.1.0", null, storage).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest", storage).collect()
+                    registry.pull("library/registry", "latest", null, storage).collect()
                 }
                 awaitAll(p1, p2)
             }

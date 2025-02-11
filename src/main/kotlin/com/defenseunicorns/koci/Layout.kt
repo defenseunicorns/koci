@@ -57,10 +57,6 @@ class Layout private constructor(
     }
 
     override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
-        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
-            if (!index.manifests.contains(descriptor)) return@runCatching false
-        }
-
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) {
@@ -271,16 +267,20 @@ class Layout private constructor(
         }
     }
 
-    suspend fun resolve(reference: String): Result<Descriptor> {
-        require(reference.isNotEmpty())
+    /**
+     * Resolve via [Reference] and an optional platformResolver
+     *
+     * Returns the _first_ match
+     */
+    suspend fun resolve(reference: Reference, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> {
         return resolve { desc ->
-            desc.annotations?.annotationRefName == reference
-        }
-    }
-
-    suspend fun resolve(reference: Reference): Result<Descriptor> {
-        return resolve { desc ->
-            desc.annotations?.annotationRefName == reference.toString()
+            val refMatches = desc.annotations?.annotationRefName == reference.toString()
+            val platformMatches = if (platformResolver != null && desc.platform != null) {
+                platformResolver(desc.platform)
+            } else {
+                true
+            }
+            refMatches && platformMatches
         }
     }
 
@@ -301,7 +301,9 @@ class Layout private constructor(
                 ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
         )
         // untag the first manifests w/ this exact ref, there should only be one
-        val prevIndex = index.manifests.indexOfFirst { it.annotations?.annotationRefName == reference.toString() }
+        val prevIndex = index.manifests.indexOfFirst {
+            it.annotations?.annotationRefName == reference.toString() && it.platform == descriptor.platform
+        }
         if (prevIndex != -1) {
             val prev = index.manifests[prevIndex]
             index.manifests[prevIndex] = prev.copy(

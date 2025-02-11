@@ -13,8 +13,9 @@ import io.ktor.http.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
@@ -61,40 +62,61 @@ class Repository(
     /**
      * [HEAD|GET /v2/<name>/manifests/<reference>](https://distribution.github.io/distribution/spec/api/#existing-manifests)
      */
-    suspend fun resolve(tag: String): Result<Descriptor> = runCatching {
-        val endpoint = router.manifest(name, tag)
-        val response = client.head(endpoint) {
-            accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-            accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-        }
-
-        when (response.contentType()?.toString()) {
-            INDEX_MEDIA_TYPE -> {
-                client.prepareGet(endpoint) {
-                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-                }.execute { res ->
-                    Descriptor.fromInputStream(mediaType = INDEX_MEDIA_TYPE, stream = res.body() as InputStream)
-                }
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun resolve(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> =
+        runCatching {
+            val endpoint = router.manifest(name, tag)
+            val response = client.head(endpoint) {
+                accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL))
             }
 
-            MANIFEST_MEDIA_TYPE -> {
-                client.prepareGet(endpoint) {
-                    accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-                }.execute { res ->
-                    Descriptor.fromInputStream(
-                        mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
-                    )
-                }
-            }
+            when (response.contentType()?.toString()) {
+                INDEX_MEDIA_TYPE -> {
+                    client.prepareGet(endpoint) {
+                        accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                    }.execute { res ->
+                        when (platformResolver) {
+                            null -> {
+                                Descriptor.fromInputStream(
+                                    mediaType = INDEX_MEDIA_TYPE,
+                                    stream = res.body() as InputStream
+                                )
+                            }
 
-            else -> throw OCIException.ManifestNotSupported(
-                endpoint, response.contentType()
-            )
+                            else -> {
+                                val index = Json.decodeFromStream<Index>(res.body())
+
+                                try {
+                                    index.manifests.first { desc ->
+                                        desc.platform != null && platformResolver(desc.platform)
+                                    }
+                                } catch (_: NoSuchElementException) {
+                                    throw OCIException.PlatformNotFound(index)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                MANIFEST_MEDIA_TYPE -> {
+                    client.prepareGet(endpoint) {
+                        accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                    }.execute { res ->
+                        Descriptor.fromInputStream(
+                            mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
+                        )
+                    }
+                }
+
+                else -> throw OCIException.ManifestNotSupported(
+                    endpoint, response.contentType()
+                )
+            }
         }
-    }
 
     /**
      * [Deleting blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-blobs)
@@ -147,8 +169,11 @@ class Repository(
         Json.decodeFromString(res.body())
     }
 
-    fun pull(tag: String, store: Layout): Flow<Int> = channelFlow {
-        resolve(tag).map {
+    /**
+     * Pull and tag.
+     */
+    fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null, store: Layout): Flow<Int> = channelFlow {
+        resolve(tag, platformResolver).map {
             pull(it, store).onCompletion { cause ->
                 if (cause == null) {
                     val ref = Reference(
@@ -165,6 +190,8 @@ class Repository(
 
     /**
      * [Pulling An Image](https://distribution.github.io/distribution/spec/api/#pulling-an-image)
+     *
+     * Does NOT tag.
      *
      * [GET /v2/<name>/blobs/<digest>](https://distribution.github.io/distribution/spec/api/#pulling-a-layer)
      */

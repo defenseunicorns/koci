@@ -22,11 +22,7 @@ data class Manifest(
     val config: Descriptor,
     val layers: List<Descriptor>,
     val annotations: Annotations? = null,
-) : TaggableContent {
-    fun sizeOfLayers(): Long {
-        return layers.sumOf { it.size }
-    }
-}
+) : TaggableContent
 
 object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
     override val descriptor: SerialDescriptor = ListSerializer(Descriptor.serializer()).descriptor

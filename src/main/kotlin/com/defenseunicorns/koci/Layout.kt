@@ -95,6 +95,7 @@ class Layout private constructor(
         true
     }
 
+    // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
     override suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
@@ -105,46 +106,86 @@ class Layout private constructor(
             return@runCatching true
         }
 
-        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
-            checkNotNull(index.manifests.firstOrNull {
-                it.digest == descriptor.digest
-            }) { "manifest $descriptor not found" }
+        return when (descriptor.mediaType) {
+            INDEX_MEDIA_TYPE -> {
+                val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
-            val manifests = index.manifests.filter {
-                it.digest != descriptor.digest
-            }
-
-            val allLayers = manifests.flatMap { desc ->
-                val manifest: Manifest = fetch(desc).use { Json.decodeFromStream(it) }
-                manifest.layers
-            }.toSet()
-
-            val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
-
-            remove(manifest.config).getOrThrow()
-
-            manifest.layers.forEach { layer ->
-                if (!allLayers.contains(layer)) {
-                    remove(layer).getOrThrow()
+                indexToRemove.manifests.forEach { manifestDesc ->
+                    remove(manifestDesc).getOrThrow()
                 }
+
+                val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                if (!deleted) return@runCatching false
+
+                index.manifests.removeAll {
+                    it.digest == descriptor.digest
+                }
+
+                withContext(Dispatchers.IO) {
+                    syncIndex()
+                }
+
+                Result.success(true)
             }
 
-            val deleted = withContext(Dispatchers.IO) { file.delete() }
+            MANIFEST_MEDIA_TYPE -> {
+                val manifests = index.manifests.filter {
+                    it.digest != descriptor.digest
+                }
 
-            if (!deleted) return@runCatching false
+                val allLayers = manifests + manifests.flatMap { desc ->
+                    when (desc.mediaType) {
+                        INDEX_MEDIA_TYPE -> {
+                            val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
+                            i.manifests + i.manifests.flatMap { manifestDesc ->
+                                // manifest could have been removed in a previous loop
+                                if (blob(manifestDesc).exists()) {
+                                    fetch(manifestDesc).use {
+                                        val m = Json.decodeFromStream<Manifest>(it)
+                                        m.layers + m.config
+                                    }
+                                }
+                                emptyList()
+                            }
+                        }
 
-            // there may be multiple instances of this manifest w/ different ref names
-            index.manifests.removeAll {
-                it.digest == descriptor.digest
+                        MANIFEST_MEDIA_TYPE -> fetch(desc).use {
+                            val m = Json.decodeFromStream<Manifest>(it)
+                            m.layers + m.config
+                        }
+
+                        else -> emptyList() // could throw here, but I don't really care about that edge case
+                    }
+                }.toSet()
+
+                val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+
+                (manifest.layers + manifest.config).forEach { layer ->
+                    if (!allLayers.contains(layer)) {
+                        remove(layer).getOrThrow()
+                    }
+                }
+
+                val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                if (!deleted) return@runCatching false
+
+                index.manifests.removeAll {
+                    it.digest == descriptor.digest
+                }
+                withContext(Dispatchers.IO) {
+                    syncIndex()
+                }
+
+                Result.success(true)
             }
-            withContext(Dispatchers.IO) {
-                syncIndex()
-            }
 
-            return@runCatching true
+            else -> {
+                val ret = withContext(Dispatchers.IO) { file.delete() }
+                Result.success(ret)
+            }
         }
-
-        withContext(Dispatchers.IO) { file.delete() }
     }
 
     private fun syncIndex() {

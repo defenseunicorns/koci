@@ -53,12 +53,6 @@ class RegistryTest {
         Layout.create(tmp.toString())
     }.getOrThrow()
 
-    private val currentArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
-
-    private fun zarfResolver(platform: Platform): Boolean {
-        return platform.architecture == currentArch && platform.os == MULTI_OS
-    }
-
     private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
 
     @Test
@@ -122,7 +116,7 @@ class RegistryTest {
 
         val all = mutableListOf(
             TagsResponse("dos-games", listOf("1.1.0")),
-            TagsResponse("library/registry", listOf("latest", "2.8.0")),
+            TagsResponse("library/registry", listOf("2.8.0", "latest")),
             TagsResponse("test-upload", null),
         )
 
@@ -135,20 +129,19 @@ class RegistryTest {
 
     @Test
     fun resolve() = runTest {
-        val result = registry.repo("dos-games").resolve("1.1.0", ::zarfResolver)
+        val result = registry.repo("dos-games").resolve("1.1.0")
         assertTrue(result.isSuccess)
         val desc = result.getOrThrow()
         // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, MANIFEST_MEDIA_TYPE)
-        assertEquals(currentArch, desc.platform!!.architecture)
+        assertEquals(desc.mediaType, INDEX_MEDIA_TYPE)
     }
 
     @Test
     fun `fetch a layer`() = runTest {
         val repo = registry.repo("dos-games")
-        val desc = repo.resolve("1.1.0", ::zarfResolver).getOrThrow()
+        val desc = repo.resolve("1.1.0").getOrThrow()
 
-        val manifest = repo.manifest(desc).getOrThrow()
+        val manifest = repo.manifest(repo.index(desc).getOrThrow().manifests.first()).getOrThrow()
 
         val p = repo.pull(
             manifest.config, storage
@@ -200,8 +193,8 @@ class RegistryTest {
     @Test
     fun `fetch a layer, cancelling multiple times`() = runTest {
         val repo = registry.repo("dos-games")
-        val manifestDesc = repo.resolve("1.1.0", ::zarfResolver).getOrThrow()
-        val layer = repo.manifest(manifestDesc).getOrThrow().layers.maxBy { it.size }
+        val manifestDesc = repo.resolve("1.1.0").getOrThrow()
+        val layer = repo.manifest(repo.index(manifestDesc).getOrThrow().manifests.first()).getOrThrow().layers.maxBy { it.size }
 
         val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
 
@@ -245,8 +238,8 @@ class RegistryTest {
 
     @Test
     fun `pull and remove dos-games`() = runTest {
-        val desc = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", storage, ::zarfResolver)
+        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
+        val prog = registry.pull("dos-games", "1.1.0", storage)
 
         assertEquals(
             100, prog.last()
@@ -267,7 +260,7 @@ class RegistryTest {
         for (at in cancelAt) {
             launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).onCompletion { e ->
+                registry.pull("dos-games", "1.1.0", storage).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
                         assertEquals(
@@ -277,7 +270,7 @@ class RegistryTest {
                         assertIs<CancellationException>(e)
                         assertFailsWith<NoSuchElementException> {
                             val desc =
-                                runBlocking { registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow() }
+                                runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
                             storage.resolve {
                                 it.digest == desc.digest
                             }.getOrThrow()
@@ -285,11 +278,13 @@ class RegistryTest {
                     }
                 }.collect { progress ->
                     lastEmit = progress
-                    if (at == progress) cancel()
+                    if (at == progress){
+                        cancel()
+                    }
                 }
             }.join()
         }
-        val desc = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
+        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers
         assertTrue(storage.remove(desc).getOrThrow())
     }
@@ -299,12 +294,10 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).collect()
+                    registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest", storage) { platform ->
-                        platform.os == "linux" && platform.architecture == currentArch
-                    }.collect()
+                    registry.pull("library/registry", "latest", storage).collect()
                 }
                 awaitAll(p1, p2)
             }
@@ -312,13 +305,11 @@ class RegistryTest {
 
         assertDoesNotThrow {
             runTest {
-                val d1 = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
                 val r1 = async {
                     storage.remove(d1).getOrThrow()
                 }
-                val d2 = registry.resolve("library/registry", "latest") { platform ->
-                    platform.os == "linux" && platform.architecture == currentArch
-                }.getOrThrow()
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
                 val r2 = async {
                     storage.remove(d2).getOrThrow()
                 }

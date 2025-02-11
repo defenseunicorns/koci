@@ -139,10 +139,9 @@ class RegistryTest {
     @Test
     fun `fetch a layer`() = runTest {
         val repo = registry.repo("dos-games")
-        val desc = repo.resolve("1.1.0").getOrThrow()
-
-        val manifest = repo.manifest(repo.index(desc).getOrThrow().manifests.first()).getOrThrow()
-
+        val manifest = repo.resolve("1.1.0")
+            .map { desc -> repo.index(desc).map { repo.manifest(it.manifests.first()).getOrThrow() }.getOrThrow() }
+            .getOrThrow()
         val p = repo.pull(
             manifest.config, storage
         )
@@ -193,9 +192,10 @@ class RegistryTest {
     @Test
     fun `fetch a layer, cancelling multiple times`() = runTest {
         val repo = registry.repo("dos-games")
-        val manifestDesc = repo.resolve("1.1.0").getOrThrow()
-        val layer =
-            repo.manifest(repo.index(manifestDesc).getOrThrow().manifests.first()).getOrThrow().layers.maxBy { it.size }
+        val desc = repo.resolve("1.1.0").getOrThrow()
+        val layer = repo.index(desc).map { index ->
+            repo.manifest(index.manifests.first()).getOrThrow().layers.maxBy { it.size }
+        }.getOrThrow()
 
         val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
 

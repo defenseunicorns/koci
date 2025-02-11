@@ -212,13 +212,11 @@ class Repository(
                     }
                 }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
-                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done
                         if (cause == null) {
                             copy(descriptor, store).collect { progress ->
                                 acc += progress
                                 emit((acc * 100 / total).roundToInt())
                             }
-                            store.exists(descriptor).getOrThrow()
                         }
                     }.collect { progress ->
                         send(progress)

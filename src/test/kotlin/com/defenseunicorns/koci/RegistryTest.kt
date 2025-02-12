@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import org.junit.jupiter.api.*
 import java.io.File
 import java.io.FileOutputStream
@@ -237,24 +240,35 @@ class RegistryTest {
         assertEquals(false, storage.exists(layer).getOrThrow())
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     @Test
     fun `pull and remove dos-games`() = runTest {
-        val arm64Resolver = { plat: Platform ->
-            plat.architecture == "arm64" && plat.os == "multi"
-        }
-        val desc = registry.resolve("dos-games", "1.1.0", arm64Resolver).getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", arm64Resolver, storage)
+        val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
+        val index = registry.repo("dos-games").index(indexDesc).getOrThrow()
+        val prog = registry.pull("dos-games", "1.1.0", null, storage)
 
         assertEquals(
             100, prog.last()
         )
 
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
-        assertEquals(desc.digest, storage.resolve(ref).getOrThrow().digest)
+        assertEquals(indexDesc.digest, storage.resolve(ref).getOrThrow().digest)
 
-        // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers
-        assertTrue(storage.remove(desc).getOrThrow())
+        val arm64desc = index.manifests.first {
+            it.platform?.architecture == "arm64"
+        }
+        val arm64Manifest: Manifest = storage.fetch(arm64desc).use { Json.decodeFromStream(it) }
+        assertTrue(storage.remove(ref).getOrThrow())
         assertFails { storage.resolve(ref).getOrThrow() }
+
+        for (layer in arm64Manifest.layers) {
+            assertFalse {
+                storage.exists(layer).getOrThrow()
+            }
+        }
+        assertFalse {
+            storage.exists(arm64Manifest.config).getOrThrow()
+        }
     }
 
     @Test

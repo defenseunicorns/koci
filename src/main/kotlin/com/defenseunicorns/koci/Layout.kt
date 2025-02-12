@@ -91,6 +91,41 @@ class Layout private constructor(
         true
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun expand(vararg descriptors: Descriptor): Set<Descriptor> {
+        return descriptors.flatMap { desc ->
+            when (desc.mediaType) {
+                INDEX_MEDIA_TYPE -> {
+                    if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+                        val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
+                        listOf(desc) + i.manifests + expand(*i.manifests.toTypedArray())
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                MANIFEST_MEDIA_TYPE -> {
+                    if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+                        fetch(desc).use {
+                            val m: Manifest = Json.decodeFromStream(it)
+                            listOf(desc, m.config) + expand(*m.layers.toTypedArray())
+                        }
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                else -> listOf(desc)
+            }
+        }.toSet()
+    }
+
+    suspend fun remove(reference: Reference): Result<Boolean> =
+        resolve(reference)
+            .map { descriptor ->
+                remove(descriptor).getOrThrow()
+            }
+
     // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
@@ -107,14 +142,6 @@ class Layout private constructor(
             INDEX_MEDIA_TYPE -> {
                 val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
-                indexToRemove.manifests.forEach { manifestDesc ->
-                    remove(manifestDesc).getOrThrow()
-                }
-
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
-
-                if (!deleted) return@runCatching false
-
                 index.manifests.removeAll {
                     it.digest == descriptor.digest
                 }
@@ -123,7 +150,13 @@ class Layout private constructor(
                     syncIndex()
                 }
 
-                Result.success(true)
+                for (manifestDesc in indexToRemove.manifests) {
+                    remove(manifestDesc).getOrThrow()
+                }
+
+                val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                Result.success(deleted)
             }
 
             MANIFEST_MEDIA_TYPE -> {
@@ -131,51 +164,31 @@ class Layout private constructor(
                     it.digest != descriptor.digest
                 }
 
-                val allLayers = manifests + manifests.flatMap { desc ->
-                    when (desc.mediaType) {
-                        INDEX_MEDIA_TYPE -> {
-                            val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
-                            i.manifests + i.manifests.flatMap { manifestDesc ->
-                                // manifest could have been removed in a previous loop
-                                if (withContext(Dispatchers.IO) { blob(manifestDesc).exists() }) {
-                                    fetch(manifestDesc).use {
-                                        val m = Json.decodeFromStream<Manifest>(it)
-                                        m.layers + m.config
-                                    }
-                                }
-                                emptyList()
-                            }
-                        }
+                index.manifests.removeAll {
+                    it.digest == descriptor.digest
+                }
 
-                        MANIFEST_MEDIA_TYPE -> fetch(desc).use {
-                            val m = Json.decodeFromStream<Manifest>(it)
-                            m.layers + m.config
-                        }
+                withContext(Dispatchers.IO) {
+                    syncIndex()
+                }
 
-                        else -> emptyList() // could throw here, but I don't really care about that edge case
-                    }
-                }.toSet()
+                val allOtherLayers = expand(*manifests.toTypedArray())
+
+                if (allOtherLayers.contains(descriptor)) {
+                    throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+                }
 
                 val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
 
                 (manifest.layers + manifest.config).forEach { layer ->
-                    if (!allLayers.contains(layer)) {
+                    if (!allOtherLayers.contains(layer)) {
                         remove(layer).getOrThrow()
                     }
                 }
 
                 val deleted = withContext(Dispatchers.IO) { file.delete() }
 
-                if (!deleted) return@runCatching false
-
-                index.manifests.removeAll {
-                    it.digest == descriptor.digest
-                }
-                withContext(Dispatchers.IO) {
-                    syncIndex()
-                }
-
-                Result.success(true)
+                Result.success(deleted)
             }
 
             else -> {

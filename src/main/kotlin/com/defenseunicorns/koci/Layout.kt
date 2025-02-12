@@ -92,13 +92,13 @@ class Layout private constructor(
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun expand(vararg descriptors: Descriptor): Set<Descriptor> {
+    private suspend fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
         return descriptors.flatMap { desc ->
             when (desc.mediaType) {
                 INDEX_MEDIA_TYPE -> {
                     if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
                         val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
-                        listOf(desc) + i.manifests + expand(*i.manifests.toTypedArray())
+                        listOf(desc) + i.manifests + expand(i.manifests)
                     } else {
                         emptyList()
                     }
@@ -108,7 +108,7 @@ class Layout private constructor(
                     if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
                         fetch(desc).use {
                             val m: Manifest = Json.decodeFromStream(it)
-                            listOf(desc, m.config) + expand(*m.layers.toTypedArray())
+                            listOf(desc, m.config) + expand(m.layers)
                         }
                     } else {
                         emptyList()
@@ -172,7 +172,7 @@ class Layout private constructor(
                     syncIndex()
                 }
 
-                val allOtherLayers = expand(*manifests.toTypedArray())
+                val allOtherLayers = expand(manifests)
 
                 if (allOtherLayers.contains(descriptor)) {
                     throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")

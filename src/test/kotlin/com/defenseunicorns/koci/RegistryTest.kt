@@ -253,7 +253,10 @@ class RegistryTest {
 
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
         assertEquals(indexDesc.digest, storage.resolve(ref).getOrThrow().digest)
-        assertEquals(listOf(indexDesc.copy(annotations = mapOf(ANNOTATION_REF_NAME to ref.toString()))), storage.catalog())
+        assertEquals(
+            listOf(indexDesc.copy(annotations = mapOf(ANNOTATION_REF_NAME to ref.toString()))),
+            storage.catalog()
+        )
 
         val arm64desc = index.manifests.first {
             it.platform?.architecture == "arm64"

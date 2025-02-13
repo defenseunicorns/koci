@@ -2,6 +2,31 @@
 
 Kotlin implementation of the [OCI Distribution client specification](https://github.com/opencontainers/distribution-spec/blob/master/spec.md).
 
+## Basic Usage
+
+```kotlin
+// 0. Create a file store
+val store = runBlocking { Layout.create("/tmp/koci-store") }.getOrThrow()
+
+// 1. Connect to a remote repository
+
+// Note: the below code can be omitted if authentication is not required
+val authClient = HttpClient(CIO) {
+    install(OCIAuthPlugin) {
+        cred = Credential("username", "password", "", "")   
+    }
+}
+
+val repo = Registry("https://myregistry.example.com", authClient).repo("myrepo")
+
+// 2. Copy from the remote repository to the file store
+val tag = "latest"
+
+repo.pull(tag, null, store).collect{ prog ->
+    println("$prog% done")
+}
+```
+
 ## Auth
 
 - [x] [Request scopes](https://distribution.github.io/distribution/spec/auth/scope/) https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L921-L930

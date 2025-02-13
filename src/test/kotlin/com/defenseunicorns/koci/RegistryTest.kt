@@ -250,12 +250,6 @@ class RegistryTest {
         val index = registry.repo("dos-games").index(indexDesc).getOrThrow()
         val prog = registry.pull("dos-games", "1.1.0", null, storage)
 
-        val repo = registry.repo("dos-games")
-        repo.pull("tag", null, storage)
-        .collect{ prog ->
-            println("$prog% done")
-        }
-
         assertEquals(
             100, prog.last()
         )

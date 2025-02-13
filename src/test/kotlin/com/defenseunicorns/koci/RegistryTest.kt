@@ -49,6 +49,9 @@ class RegistryTest {
             install(UserAgent) {
                 agent = "unit test client"
             }
+            install(OCIAuthPlugin){
+                cred = Credential("username", "password", "", "")
+            }
         }
     }
 
@@ -246,6 +249,12 @@ class RegistryTest {
         val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val index = registry.repo("dos-games").index(indexDesc).getOrThrow()
         val prog = registry.pull("dos-games", "1.1.0", null, storage)
+
+        val repo = registry.repo("dos-games")
+        repo.pull("tag", null, storage)
+        .collect{ prog ->
+            println("$prog% done")
+        }
 
         assertEquals(
             100, prog.last()

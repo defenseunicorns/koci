@@ -49,9 +49,6 @@ class RegistryTest {
             install(UserAgent) {
                 agent = "unit test client"
             }
-            install(OCIAuthPlugin){
-                cred = Credential("username", "password", "", "")
-            }
         }
     }
 

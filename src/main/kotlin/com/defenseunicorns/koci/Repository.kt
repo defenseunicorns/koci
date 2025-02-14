@@ -9,35 +9,16 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
-
-private val systemArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
-
-// TODO: this must match `go tool dist list`
-private val systemOS = System.getProperty("os.name").let { os ->
-    when {
-        os.startsWith("Mac OS X") -> "darwin"
-        os.startsWith("Win") -> "windows"
-        os.startsWith("Linux") -> "linux"
-        else -> "unknown"
-    }
-}
-
-// TODO: take into account / "discover" platform variants
-val SystemPlatform = Platform(
-    os = systemOS, architecture = systemArch
-)
-
-fun defaultResolver(platform: Platform): Boolean {
-    return platform.architecture == SystemPlatform.architecture && platform.os == SystemPlatform.os
-}
 
 fun Headers.toUploadStatus(): UploadStatus {
     val location = checkNotNull(this[HttpHeaders.Location]) {
@@ -81,49 +62,61 @@ class Repository(
     /**
      * [HEAD|GET /v2/<name>/manifests/<reference>](https://distribution.github.io/distribution/spec/api/#existing-manifests)
      */
-    suspend fun resolve(
-        tag: String, resolver: (Platform) -> Boolean = ::defaultResolver,
-    ): Result<Descriptor> = runCatching {
-        val endpoint = router.manifest(name, tag)
-        val response = client.head(endpoint) {
-            accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-            accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-        }
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun resolve(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> =
+        runCatching {
+            val endpoint = router.manifest(name, tag)
+            val response = client.head(endpoint) {
+                accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+            }
 
-        when (response.contentType()?.toString()) {
-            INDEX_MEDIA_TYPE -> {
-                val indexResponse = client.get(endpoint) {
-                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-                }
-                val index = Json.decodeFromString<Index>(indexResponse.bodyAsText())
+            when (response.contentType()?.toString()) {
+                INDEX_MEDIA_TYPE -> {
+                    client.prepareGet(endpoint) {
+                        accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                    }.execute { res ->
+                        when (platformResolver) {
+                            null -> {
+                                Descriptor.fromInputStream(
+                                    mediaType = INDEX_MEDIA_TYPE,
+                                    stream = res.body() as InputStream
+                                )
+                            }
 
-                try {
-                    index.manifests.first { desc ->
-                        desc.platform != null && resolver(desc.platform)
+                            else -> {
+                                val index = Json.decodeFromStream<Index>(res.body())
+
+                                try {
+                                    index.manifests.first { desc ->
+                                        desc.platform != null && platformResolver(desc.platform)
+                                    }
+                                } catch (_: NoSuchElementException) {
+                                    throw OCIException.PlatformNotFound(index)
+                                }
+                            }
+                        }
                     }
-                } catch (_: NoSuchElementException) {
-                    throw OCIException.PlatformNotFound(index)
                 }
-            }
 
-            MANIFEST_MEDIA_TYPE -> {
-                client.prepareGet(endpoint) {
-                    accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-                }.execute { res ->
-                    Descriptor.fromInputStream(
-                        mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
-                    )
+                MANIFEST_MEDIA_TYPE -> {
+                    client.prepareGet(endpoint) {
+                        accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                    }.execute { res ->
+                        Descriptor.fromInputStream(
+                            mediaType = MANIFEST_MEDIA_TYPE, stream = res.body() as InputStream
+                        )
+                    }
                 }
-            }
 
-            else -> throw OCIException.ManifestNotSupported(
-                endpoint, response.contentType()
-            )
+                else -> throw OCIException.ManifestNotSupported(
+                    endpoint, response.contentType()
+                )
+            }
         }
-    }
 
     /**
      * [Deleting blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-blobs)
@@ -149,7 +142,7 @@ class Repository(
     }
 
     suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
-        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString())
+        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
         val res = client.get(router.manifest(name, descriptor)) {
             accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
@@ -176,8 +169,11 @@ class Repository(
         Json.decodeFromString(res.body())
     }
 
-    fun pull(tag: String, store: Layout, resolver: (Platform) -> Boolean = ::defaultResolver): Flow<Int> = channelFlow {
-        resolve(tag, resolver).map {
+    /**
+     * Pull and tag.
+     */
+    fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null, store: Layout): Flow<Int> = channelFlow {
+        resolve(tag, platformResolver).map {
             pull(it, store).onCompletion { cause ->
                 if (cause == null) {
                     val ref = Reference(
@@ -195,20 +191,32 @@ class Repository(
     /**
      * [Pulling An Image](https://distribution.github.io/distribution/spec/api/#pulling-an-image)
      *
+     * Does NOT tag.
+     *
      * [GET /v2/<name>/blobs/<digest>](https://distribution.github.io/distribution/spec/api/#pulling-a-layer)
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         when (descriptor.mediaType) {
-            INDEX_MEDIA_TYPE.toString() -> {
-                val index = index(descriptor).getOrThrow()
-                var acc = 0
-                index.manifests.forEach { manifestDescriptor ->
-                    pull(manifestDescriptor, store).collect { progress ->
-                        acc += progress / index.manifests.size
-                        send(acc)
-                    }
+            INDEX_MEDIA_TYPE -> {
+                if (store.exists(descriptor).getOrDefault(false)) {
+                    send(100)
+                    return@channelFlow
                 }
+                val index = index(descriptor).getOrThrow()
+                val total = index.manifests.size
+                var completedPulls = 0
+                index.manifests.forEach { manifestDescriptor ->
+                    pull(manifestDescriptor, store).collect { manifestProgress ->
+                        val currentManifestContribution = manifestProgress.toDouble() / 100.0
+                        val overallProgress =
+                            ((completedPulls + currentManifestContribution) / total * 100).roundToInt()
+                        send(overallProgress)
+                    }
+                    completedPulls += 1
+                }
+                copy(descriptor, store).collect()
+                send(100)
             }
 
             MANIFEST_MEDIA_TYPE -> {
@@ -217,34 +225,24 @@ class Repository(
                     return@channelFlow
                 }
                 val manifest = manifest(descriptor).getOrThrow()
-                val layersToFetch = manifest.layers.toMutableList()
-                var totalBytes = layersToFetch.sumOf { it.size }
+                val layersToFetch = manifest.layers.toMutableList() + manifest.config
+                val total = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
 
-                if (!store.exists(manifest.config).getOrDefault(false)) {
-                    layersToFetch += manifest.config
-                    totalBytes += manifest.config.size
-                }
-
-                // Include the manifest itself in the progress
-                totalBytes += descriptor.size
-
-                var currentProgress = 0.0
+                var acc = 0.0
 
                 layersToFetch.asFlow().map { layer ->
                     flow {
                         copy(layer, store).collect { progress ->
-                            currentProgress += progress
-                            emit((currentProgress * 100 / totalBytes).roundToInt())
+                            acc += progress
+                            emit((acc * 100 / total).roundToInt())
                         }
                     }
                 }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
-                        // if there were no errors, then we can save the manifest itself and "mark" this pull as done
-                        // via saving the index
                         if (cause == null) {
                             copy(descriptor, store).collect { progress ->
-                                currentProgress += progress
-                                emit((currentProgress * 100 / totalBytes).roundToInt())
+                                acc += progress
+                                emit((acc * 100 / total).roundToInt())
                             }
                         }
                     }.collect { progress ->

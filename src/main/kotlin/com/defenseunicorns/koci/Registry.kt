@@ -28,11 +28,6 @@ const val MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
 const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
 const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
 
-/**
- * Zarf-specific "multi" OS
- */
-const val MULTI_OS = "multi"
-
 private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
     parameters.append("n", n.toString())
     last?.let { parameters.append("last", it) }
@@ -211,13 +206,13 @@ class Registry(
 
 fun Registry.repo(name: String) = Repository(client, router, name)
 suspend fun Registry.tags(repository: String) = repo(repository).tags()
-suspend fun Registry.resolve(repository: String, tag: String, resolver: (Platform) -> Boolean = ::defaultResolver) =
-    repo(repository).resolve(tag, resolver)
+suspend fun Registry.resolve(repository: String, tag: String, platformResolver: ((Platform) -> Boolean)? = null) =
+    repo(repository).resolve(tag, platformResolver)
 
 fun Registry.pull(
     repository: String,
     tag: String,
+    platformResolver: ((Platform) -> Boolean)? = null,
     storage: Layout,
-    resolver: (Platform) -> Boolean = ::defaultResolver,
 ) =
-    repo(repository).pull(tag, storage, resolver)
+    repo(repository).pull(tag, platformResolver, storage)

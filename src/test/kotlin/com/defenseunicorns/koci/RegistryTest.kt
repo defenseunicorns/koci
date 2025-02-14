@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import org.junit.jupiter.api.*
 import java.io.File
 import java.io.FileOutputStream
@@ -52,12 +55,6 @@ class RegistryTest {
     private val storage = runBlocking {
         Layout.create(tmp.toString())
     }.getOrThrow()
-
-    private val currentArch = if (System.getProperty("os.arch") == "aarch64") "arm64" else "amd64"
-
-    private fun zarfResolver(platform: Platform): Boolean {
-        return platform.architecture == currentArch && platform.os == MULTI_OS
-    }
 
     private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
 
@@ -135,21 +132,19 @@ class RegistryTest {
 
     @Test
     fun resolve() = runTest {
-        val result = registry.repo("dos-games").resolve("1.1.0", ::zarfResolver)
+        val result = registry.repo("dos-games").resolve("1.1.0")
         assertTrue(result.isSuccess)
         val desc = result.getOrThrow()
         // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, MANIFEST_MEDIA_TYPE)
-        assertEquals(currentArch, desc.platform!!.architecture)
+        assertEquals(desc.mediaType, INDEX_MEDIA_TYPE)
     }
 
     @Test
     fun `fetch a layer`() = runTest {
         val repo = registry.repo("dos-games")
-        val desc = repo.resolve("1.1.0", ::zarfResolver).getOrThrow()
-
-        val manifest = repo.manifest(desc).getOrThrow()
-
+        val manifest = repo.resolve("1.1.0")
+            .map { desc -> repo.index(desc).map { repo.manifest(it.manifests.first()).getOrThrow() }.getOrThrow() }
+            .getOrThrow()
         val p = repo.pull(
             manifest.config, storage
         )
@@ -200,8 +195,10 @@ class RegistryTest {
     @Test
     fun `fetch a layer, cancelling multiple times`() = runTest {
         val repo = registry.repo("dos-games")
-        val manifestDesc = repo.resolve("1.1.0", ::zarfResolver).getOrThrow()
-        val layer = repo.manifest(manifestDesc).getOrThrow().layers.maxBy { it.size }
+        val desc = repo.resolve("1.1.0").getOrThrow()
+        val layer = repo.index(desc).map { index ->
+            repo.manifest(index.manifests.first()).getOrThrow().layers.maxBy { it.size }
+        }.getOrThrow()
 
         val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
 
@@ -243,31 +240,54 @@ class RegistryTest {
         assertEquals(false, storage.exists(layer).getOrThrow())
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     @Test
     fun `pull and remove dos-games`() = runTest {
-        val desc = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", storage, ::zarfResolver)
+        val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
+        val index = registry.repo("dos-games").index(indexDesc).getOrThrow()
+        val prog = registry.pull("dos-games", "1.1.0", null, storage)
 
         assertEquals(
             100, prog.last()
         )
 
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
-        assertEquals(desc.digest, storage.resolve(ref).getOrThrow().digest)
+        assertEquals(indexDesc.digest, storage.resolve(ref).getOrThrow().digest)
+        assertEquals(
+            listOf(indexDesc.copy(annotations = mapOf(ANNOTATION_REF_NAME to ref.toString()))),
+            storage.catalog()
+        )
 
-        // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers
-        assertTrue(storage.remove(desc).getOrThrow())
+        val arm64desc = index.manifests.first {
+            it.platform?.architecture == "arm64"
+        }
+        val arm64Manifest: Manifest = storage.fetch(arm64desc).use { Json.decodeFromStream(it) }
+        assertTrue(storage.remove(ref).getOrThrow())
         assertFails { storage.resolve(ref).getOrThrow() }
+        assertEquals(emptyList(), storage.catalog())
+
+        for (layer in arm64Manifest.layers) {
+            assertFalse {
+                storage.exists(layer).getOrThrow()
+            }
+        }
+        assertFalse {
+            storage.exists(arm64Manifest.config).getOrThrow()
+        }
     }
 
     @Test
     fun `resume-able pulls`() = runTest {
         val cancelAt = listOf(5, 15, 50, -100)
 
+        val amd64Resolver = { plat: Platform ->
+            plat.architecture == "amd64" && plat.os == "multi"
+        }
+
         for (at in cancelAt) {
             launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).onCompletion { e ->
+                registry.pull("dos-games", "1.1.0", amd64Resolver, storage).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
                         assertEquals(
@@ -277,7 +297,7 @@ class RegistryTest {
                         assertIs<CancellationException>(e)
                         assertFailsWith<NoSuchElementException> {
                             val desc =
-                                runBlocking { registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow() }
+                                runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
                             storage.resolve {
                                 it.digest == desc.digest
                             }.getOrThrow()
@@ -285,11 +305,13 @@ class RegistryTest {
                     }
                 }.collect { progress ->
                     lastEmit = progress
-                    if (at == progress) cancel()
+                    if (at == progress) {
+                        cancel()
+                    }
                 }
             }.join()
         }
-        val desc = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
+        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers
         assertTrue(storage.remove(desc).getOrThrow())
     }
@@ -299,12 +321,10 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage, ::zarfResolver).collect()
+                    registry.pull("dos-games", "1.1.0", null, storage).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest", storage) { platform ->
-                        platform.os == "linux" && platform.architecture == currentArch
-                    }.collect()
+                    registry.pull("library/registry", "latest", null, storage).collect()
                 }
                 awaitAll(p1, p2)
             }
@@ -312,13 +332,11 @@ class RegistryTest {
 
         assertDoesNotThrow {
             runTest {
-                val d1 = registry.resolve("dos-games", "1.1.0", ::zarfResolver).getOrThrow()
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
                 val r1 = async {
                     storage.remove(d1).getOrThrow()
                 }
-                val d2 = registry.resolve("library/registry", "latest") { platform ->
-                    platform.os == "linux" && platform.architecture == currentArch
-                }.getOrThrow()
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
                 val r2 = async {
                     storage.remove(d2).getOrThrow()
                 }
@@ -386,7 +404,7 @@ class RegistryTest {
         val dummy = "{}".byteInputStream()
 
         val dummyDesc = Descriptor.fromInputStream(
-            mediaType = MANIFEST_CONFIG_MEDIA_TYPE.toString(), stream = dummy
+            mediaType = MANIFEST_CONFIG_MEDIA_TYPE, stream = dummy
         )
 
         dummy.reset()
@@ -395,7 +413,7 @@ class RegistryTest {
         repo.push(dummy, dummyDesc).collect()
 
         val manifest = Manifest(
-            schemaVersion = 2, mediaType = MANIFEST_MEDIA_TYPE.toString(), config = dummyDesc, layers = listOf(desc)
+            schemaVersion = 2, mediaType = MANIFEST_MEDIA_TYPE, config = dummyDesc, layers = listOf(desc)
         )
 
         repo.tag(manifest, "latest").also { res ->

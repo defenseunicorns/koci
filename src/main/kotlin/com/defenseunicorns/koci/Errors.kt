@@ -73,6 +73,9 @@ sealed class OCIException(message: String) : Exception(message) {
 
     class EmptyTokenReturned(val response: HttpResponse) :
         OCIException("${response.call.request.method} ${response.call.request.url}: empty token returned")
+
+    class UnableToRemove(val descriptor: Descriptor, val reason: String) :
+            OCIException("Unable to remove $descriptor: $reason")
 }
 
 /**

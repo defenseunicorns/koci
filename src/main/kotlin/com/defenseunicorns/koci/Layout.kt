@@ -57,10 +57,6 @@ class Layout private constructor(
     }
 
     override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
-        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
-            if (!index.manifests.contains(descriptor)) return@runCatching false
-        }
-
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) {
@@ -96,6 +92,43 @@ class Layout private constructor(
     }
 
     @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
+        return descriptors.flatMap { desc ->
+            when (desc.mediaType) {
+                INDEX_MEDIA_TYPE -> {
+                    if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+                        val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
+                        listOf(desc) + i.manifests + expand(i.manifests)
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                MANIFEST_MEDIA_TYPE -> {
+                    if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+                        fetch(desc).use {
+                            val m: Manifest = Json.decodeFromStream(it)
+                            listOf(desc, m.config) + expand(m.layers)
+                        }
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                else -> listOf(desc)
+            }
+        }.toSet()
+    }
+
+    suspend fun remove(reference: Reference): Result<Boolean> =
+        resolve(reference)
+            .map { descriptor ->
+                remove(descriptor).getOrThrow()
+            }
+
+    // TODO: ensure removals do not impact other images through unit tests
+    @OptIn(ExperimentalSerializationApi::class)
+    @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     override suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
@@ -105,46 +138,64 @@ class Layout private constructor(
             return@runCatching true
         }
 
-        if (descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()) {
-            checkNotNull(index.manifests.firstOrNull {
-                it.digest == descriptor.digest
-            }) { "manifest $descriptor not found" }
+        return when (descriptor.mediaType) {
+            INDEX_MEDIA_TYPE -> {
+                val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
-            val manifests = index.manifests.filter {
-                it.digest != descriptor.digest
-            }
-
-            val allLayers = manifests.flatMap { desc ->
-                val manifest: Manifest = fetch(desc).use { Json.decodeFromStream(it) }
-                manifest.layers
-            }.toSet()
-
-            val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
-
-            remove(manifest.config).getOrThrow()
-
-            manifest.layers.forEach { layer ->
-                if (!allLayers.contains(layer)) {
-                    remove(layer).getOrThrow()
+                index.manifests.removeAll {
+                    it.digest == descriptor.digest
                 }
+
+                withContext(Dispatchers.IO) {
+                    syncIndex()
+                }
+
+                for (manifestDesc in indexToRemove.manifests) {
+                    remove(manifestDesc).getOrThrow()
+                }
+
+                val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                Result.success(deleted)
             }
 
-            val deleted = withContext(Dispatchers.IO) { file.delete() }
+            MANIFEST_MEDIA_TYPE -> {
+                val manifests = index.manifests.filter {
+                    it.digest != descriptor.digest
+                }
 
-            if (!deleted) return@runCatching false
+                index.manifests.removeAll {
+                    it.digest == descriptor.digest
+                }
 
-            // there may be multiple instances of this manifest w/ different ref names
-            index.manifests.removeAll {
-                it.digest == descriptor.digest
+                withContext(Dispatchers.IO) {
+                    syncIndex()
+                }
+
+                val allOtherLayers = expand(manifests)
+
+                if (allOtherLayers.contains(descriptor)) {
+                    throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+                }
+
+                val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+
+                (manifest.layers + manifest.config).forEach { layer ->
+                    if (!allOtherLayers.contains(layer)) {
+                        remove(layer).getOrThrow()
+                    }
+                }
+
+                val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                Result.success(deleted)
             }
-            withContext(Dispatchers.IO) {
-                syncIndex()
-            }
 
-            return@runCatching true
+            else -> {
+                val ret = withContext(Dispatchers.IO) { file.delete() }
+                Result.success(ret)
+            }
         }
-
-        withContext(Dispatchers.IO) { file.delete() }
     }
 
     private fun syncIndex() {
@@ -229,16 +280,20 @@ class Layout private constructor(
         }
     }
 
-    suspend fun resolve(reference: String): Result<Descriptor> {
-        require(reference.isNotEmpty())
+    /**
+     * Resolve via [Reference] and an optional platformResolver
+     *
+     * Returns the _first_ match
+     */
+    suspend fun resolve(reference: Reference, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> {
         return resolve { desc ->
-            desc.annotations?.annotationRefName == reference
-        }
-    }
-
-    suspend fun resolve(reference: Reference): Result<Descriptor> {
-        return resolve { desc ->
-            desc.annotations?.annotationRefName == reference.toString()
+            val refMatches = desc.annotations?.annotationRefName == reference.toString()
+            val platformMatches = if (platformResolver != null && desc.platform != null) {
+                platformResolver(desc.platform)
+            } else {
+                true
+            }
+            refMatches && platformMatches
         }
     }
 
@@ -249,8 +304,8 @@ class Layout private constructor(
     suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
         require(descriptor.mediaType.isNotEmpty())
         require(
-            descriptor.mediaType == MANIFEST_MEDIA_TYPE.toString()
-                    || descriptor.mediaType == INDEX_MEDIA_TYPE.toString()
+            descriptor.mediaType == MANIFEST_MEDIA_TYPE
+                    || descriptor.mediaType == INDEX_MEDIA_TYPE
         )
         require(descriptor.size > 0)
 
@@ -259,7 +314,9 @@ class Layout private constructor(
                 ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
         )
         // untag the first manifests w/ this exact ref, there should only be one
-        val prevIndex = index.manifests.indexOfFirst { it.annotations?.annotationRefName == reference.toString() }
+        val prevIndex = index.manifests.indexOfFirst {
+            it.annotations?.annotationRefName == reference.toString() && it.platform == descriptor.platform
+        }
         if (prevIndex != -1) {
             val prev = index.manifests[prevIndex]
             index.manifests[prevIndex] = prev.copy(

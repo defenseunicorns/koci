@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1 (2025-02-14)
+
+## What's Changed
+* docs: update readme by @Noxsios in https://github.com/defenseunicorns/koci/pull/26
+* ci(deps): bump actions/upload-artifact from 4.4.1 to 4.4.2 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/28
+* chore: update CODEOWNERS by @Noxsios in https://github.com/defenseunicorns/koci/pull/49
+* refactor: improve tagging to include indices by @Noxsios in https://github.com/defenseunicorns/koci/pull/48
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.0...v0.1.1
+
 ## 0.1.0 (2024-10-07)
 
 ## What's Changed

@@ -103,7 +103,7 @@ publishing {
         create<MavenPublication>("maven") {
             version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
 
-            from(components["java"] )
+            from(components["java"])
         }
     }
 }

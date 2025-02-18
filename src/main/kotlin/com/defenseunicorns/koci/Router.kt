@@ -14,9 +14,10 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
 }
 
 class Router(registryURL: String) {
-    private val v2Prefix = "v2/"
-
-    private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(v2Prefix)
+    companion object {
+        private const val V2_PREFIX = "v2/"
+    }
+    private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
 
     fun base(): Url {
         return base.build()

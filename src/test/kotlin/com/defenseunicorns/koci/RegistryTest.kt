@@ -160,7 +160,10 @@ class RegistryTest {
         val config: String = repo.fetch(manifest.config) {
             it.bufferedReader().readText()
         }
-        assertEquals("{\"architecture\":\"amd64\",\"ociVersion\":\"1.1.0\",\"annotations\":{\"org.opencontainers.image.description\":\"Simple example to load classic DOS games into K8s in the airgap\",\"org.opencontainers.image.title\":\"dos-games\"}}", config)
+        assertEquals(
+            "{\"architecture\":\"amd64\",\"ociVersion\":\"1.1.0\",\"annotations\":{\"org.opencontainers.image.description\":\"Simple example to load classic DOS games into K8s in the airgap\",\"org.opencontainers.image.title\":\"dos-games\"}}",
+            config
+        )
 
         assertEquals(
             true, storage.exists(manifest.config).getOrThrow()
@@ -254,7 +257,7 @@ class RegistryTest {
     fun `pull and remove dos-games`() = runTest {
         val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val index = registry.repo("dos-games").index(indexDesc).getOrThrow()
-        val prog = registry.pull("dos-games", "1.1.0", null, storage)
+        val prog = registry.pull("dos-games", "1.1.0", storage)
 
         assertEquals(
             100, prog.last()
@@ -296,7 +299,7 @@ class RegistryTest {
         for (at in cancelAt) {
             launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", amd64Resolver, storage).onCompletion { e ->
+                registry.pull("dos-games", "1.1.0", storage, amd64Resolver).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
                         assertEquals(
@@ -330,10 +333,10 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", null, storage).collect()
+                    registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest", null, storage).collect()
+                    registry.pull("library/registry", "latest", storage).collect()
                 }
                 awaitAll(p1, p2)
             }

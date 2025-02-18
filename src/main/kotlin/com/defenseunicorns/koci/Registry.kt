@@ -212,7 +212,7 @@ suspend fun Registry.resolve(repository: String, tag: String, platformResolver: 
 fun Registry.pull(
     repository: String,
     tag: String,
-    platformResolver: ((Platform) -> Boolean)? = null,
     storage: Layout,
+    platformResolver: ((Platform) -> Boolean)? = null,
 ) =
-    repo(repository).pull(tag, platformResolver, storage)
+    repo(repository).pull(tag, storage, platformResolver)

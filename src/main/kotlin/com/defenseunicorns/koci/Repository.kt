@@ -141,22 +141,40 @@ class Repository(
         }.status.isSuccess()
     }
 
-    suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
-        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
-        val res = client.get(router.manifest(name, descriptor)) {
-            accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+    suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
+        return client.prepareGet(
+            when (descriptor.mediaType) {
+                MANIFEST_MEDIA_TYPE, INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
+                else -> router.blob(name, descriptor)
+            }
+        ) {
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+
+            when (descriptor.mediaType) {
+                MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
+            }
+        }.execute { res ->
+            res.body<InputStream>().use { stream ->
+                handler(stream)
+            }
         }
-        Json.decodeFromString(res.body())
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
+        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
+        fetch(descriptor) { stream ->
+            Json.decodeFromStream(stream)
+        }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
     suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
         require(descriptor.mediaType == INDEX_MEDIA_TYPE)
-        val res = client.get(router.manifest(name, descriptor)) {
-            accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        fetch(descriptor) { stream ->
+            Json.decodeFromStream(stream)
         }
-        Json.decodeFromString(res.body())
     }
 
     /**
@@ -172,7 +190,7 @@ class Repository(
     /**
      * Pull and tag.
      */
-    fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null, store: Layout): Flow<Int> = channelFlow {
+    fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> = channelFlow {
         resolve(tag, platformResolver).map {
             pull(it, store).onCompletion { cause ->
                 if (cause == null) {
@@ -288,7 +306,7 @@ class Repository(
         }
     }
 
-    fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
+    private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         val ok = store.exists(descriptor)
 
         // if the descriptor is 100% downloaded w/ size and sha matching, early return
@@ -309,13 +327,8 @@ class Repository(
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
 
             when (descriptor.mediaType) {
-                INDEX_MEDIA_TYPE -> {
-                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
-                }
-
-                MANIFEST_MEDIA_TYPE -> {
-                    accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                }
+                MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
             }
 
             when (val exception = ok.exceptionOrNull()) {
@@ -521,13 +534,8 @@ class Repository(
         val (ct, txt) = when (content) {
             is Manifest -> {
                 val ct = when (val mt = content.mediaType) {
-                    null -> {
-                        MANIFEST_MEDIA_TYPE
-                    }
-
-                    else -> {
-                        mt
-                    }
+                    null -> MANIFEST_MEDIA_TYPE
+                    else -> mt
                 }
                 val txt = Json.encodeToString(Manifest.serializer(), content)
                 ct to txt
@@ -535,13 +543,8 @@ class Repository(
 
             is Index -> {
                 val ct = when (val mt = content.mediaType) {
-                    null -> {
-                        INDEX_MEDIA_TYPE
-                    }
-
-                    else -> {
-                        mt
-                    }
+                    null -> INDEX_MEDIA_TYPE
+                    else -> mt
                 }
                 val txt = Json.encodeToString(Index.serializer(), content)
                 ct to txt

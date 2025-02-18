@@ -9,6 +9,7 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.utils.io.*
+import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
@@ -22,11 +23,13 @@ import kotlinx.serialization.json.decodeFromStream
 import org.junit.jupiter.api.*
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.concurrent.Executors
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.deleteRecursively
+import kotlin.io.use
 import kotlin.random.Random
 import kotlin.test.*
 import kotlin.test.Test
@@ -140,6 +143,7 @@ class RegistryTest {
     }
 
     @Test
+    @Suppress("detekt:MaxLineLength")
     fun `fetch a layer`() = runTest {
         val repo = registry.repo("dos-games")
         val manifest = repo.resolve("1.1.0")
@@ -152,6 +156,11 @@ class RegistryTest {
         assertEquals(
             manifest.config.size.toInt(), p.last()
         )
+
+        val config: String = repo.fetch(manifest.config) {
+            it.bufferedReader().readText()
+        }
+        assertEquals("{\"architecture\":\"amd64\",\"ociVersion\":\"1.1.0\",\"annotations\":{\"org.opencontainers.image.description\":\"Simple example to load classic DOS games into K8s in the airgap\",\"org.opencontainers.image.title\":\"dos-games\"}}", config)
 
         assertEquals(
             true, storage.exists(manifest.config).getOrThrow()

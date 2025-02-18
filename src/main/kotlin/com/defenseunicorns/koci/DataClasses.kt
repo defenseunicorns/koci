@@ -16,6 +16,16 @@ import java.io.InputStream
 import java.util.concurrent.CopyOnWriteArrayList
 
 @Serializable
+data class CatalogResponse(val repositories: List<String>)
+
+@Serializable
+data class TagsResponse(val name: String, val tags: List<String>?)
+
+const val MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
+
+@Serializable
 data class Manifest(
     val schemaVersion: Int? = null,
     override val mediaType: String? = null,

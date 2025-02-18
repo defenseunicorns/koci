@@ -27,8 +27,7 @@ class Router(registryURL: String) {
     }
 
     fun catalog(n: Int, lastRepo: String? = null): Url {
-        val catalogBase = URLBuilder().takeFrom(catalog())
-        return catalogBase.paginate(n, lastRepo).build()
+        return base.clone().appendPathSegments("_catalog").paginate(n, lastRepo).build()
     }
 
     fun tags(repository: String): Url {

@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.0.20"
 junit = "4.13.2"
-kotlinxCoroutinesCore = "1.9.0"
+kotlinxCoroutinesCore = "1.10.1"
 kotlinxCoroutinesTest = "1.9.0"
 kotlinxSerializationJson = "1.7.3"
 ktorClient = "2.3.12"

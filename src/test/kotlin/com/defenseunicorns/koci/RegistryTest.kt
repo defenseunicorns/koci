@@ -315,7 +315,7 @@ class RegistryTest {
                 }.collect { progress ->
                     lastEmit = progress
                     if (at == progress) {
-                        cancel()
+                        cancel(CancellationException("download cancelled at $at"))
                     }
                 }
             }.join()

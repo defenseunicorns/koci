@@ -294,7 +294,7 @@ class RegistryTest {
         }
 
         for (at in cancelAt) {
-            launch {
+            val job = launch {
                 var lastEmit = 0
                 registry.pull("dos-games", "1.1.0", storage, amd64Resolver).onCompletion { e ->
                     if (at == -100) {
@@ -318,7 +318,9 @@ class RegistryTest {
                         cancel(CancellationException("download cancelled at $at"))
                     }
                 }
-            }.join()
+            }
+            job.join()
+            testScheduler.advanceUntilIdle()
         }
         val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 (2025-02-18)
+
+## What's Changed
+* refactor: add some missing methods + shift some code locations by @Noxsios in https://github.com/defenseunicorns/koci/pull/52
+* ci(deps): bump the github-actions group across 1 directory with 5 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/54
+* build(deps): bump org.jetbrains.kotlinx.kover from 0.8.3 to 0.9.1 by @dependabot in https://github.com/defenseunicorns/koci/pull/55
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.1...v0.1.2
+
 ## 0.1.1 (2025-02-14)
 
 ## What's Changed

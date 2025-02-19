@@ -562,7 +562,7 @@ class Repository(
         }
 
         // get digest from Location header
-        val dg = Url(res.headers[HttpHeaders.Location]!!).pathSegments.last()
+        val dg = Url(res.headers[HttpHeaders.Location]!!).segments.last()
 
         Descriptor(ct, Digest(dg), txt.length.toLong())
     }

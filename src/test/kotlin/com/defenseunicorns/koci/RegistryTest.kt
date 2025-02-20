@@ -288,40 +288,49 @@ class RegistryTest {
     @Test
     fun `resume-able pulls`() = runTest {
         val cancelAt = listOf(5, 15, 50, -100)
-
         val amd64Resolver = { plat: Platform ->
             plat.architecture == "amd64" && plat.os == "multi"
         }
 
         for (at in cancelAt) {
-            launch {
+            val deferred = CompletableDeferred<Throwable?>()
+
+            val job = launch {
                 var lastEmit = 0
-                registry.pull("dos-games", "1.1.0", storage, amd64Resolver).onCompletion { e ->
-                    if (at == -100) {
-                        assertNull(e)
-                        assertEquals(
-                            100, lastEmit
-                        )
-                    } else {
-                        assertIs<CancellationException>(e)
-                        assertFailsWith<NoSuchElementException> {
-                            val desc =
-                                runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
-                            storage.resolve {
-                                it.digest == desc.digest
-                            }.getOrThrow()
+                try {
+                    registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
+                        .collect { progress ->
+                            lastEmit = progress
+                            if (at == progress) {
+                                throw CancellationException("download cancelled at $at")
+                            }
                         }
-                    }
-                }.collect { progress ->
-                    lastEmit = progress
-                    if (at == progress) {
-                        cancel()
+                    // If we get here, collection completed normally
+                    deferred.complete(null)
+                } catch (e: Throwable) {
+                    // Capture the exception that terminated collection
+                    deferred.complete(e)
+                }
+
+                // Now verify based on what happened
+                val exception = deferred.await()
+                if (at == -100) {
+                    assertNull(exception)
+                    assertEquals(100, lastEmit)
+                } else {
+                    assertIs<CancellationException>(exception)
+                    assertFailsWith<NoSuchElementException> {
+                        val desc = runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
+                        storage.resolve { it.digest == desc.digest }.getOrThrow()
                     }
                 }
-            }.join()
+            }
+
+            job.join()
+            testScheduler.advanceUntilIdle()
         }
+
         val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
-        // TODO: assert that removal of a artifact does not result in removal of any other artifact's dependent layers
         assertTrue(storage.remove(desc).getOrThrow())
     }
 

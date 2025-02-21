@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 (2025-02-21)
+
+## What's Changed
+* chore(deps): manually bump deps by @Noxsios in https://github.com/defenseunicorns/koci/pull/57
+* build(deps): bump kotlin from 2.0.20 to 2.1.10 by @dependabot in https://github.com/defenseunicorns/koci/pull/60
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.2...v0.1.3
+
 ## 0.1.2 (2025-02-18)
 
 ## What's Changed

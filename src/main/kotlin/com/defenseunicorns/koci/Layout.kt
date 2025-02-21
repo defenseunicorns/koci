@@ -308,6 +308,7 @@ class Layout private constructor(
                     || descriptor.mediaType == INDEX_MEDIA_TYPE
         )
         require(descriptor.size > 0)
+        require(reference.isNotEmpty())
 
         val copy = descriptor.copy(
             annotations = descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())

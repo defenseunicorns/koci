@@ -76,6 +76,9 @@ sealed class OCIException(message: String) : Exception(message) {
 
     class UnableToRemove(val descriptor: Descriptor, val reason: String) :
             OCIException("Unable to remove $descriptor: $reason")
+
+    class IncompletePull(ref: Reference):
+            OCIException("Pull operation completed, but was unsuccessful in validating $ref was pulled fully")
 }
 
 /**

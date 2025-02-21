@@ -62,6 +62,8 @@ class Router(registryURL: String) {
             return URLBuilder().takeFrom(locationHeader).build()
         }
 
-        return base.clone().appendPathSegments(locationHeader).build()
+        return URLBuilder().takeFrom(base.build()).apply {
+            encodedPath = locationHeader
+        }.build()
     }
 }

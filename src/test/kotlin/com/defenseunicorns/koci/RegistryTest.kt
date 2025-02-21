@@ -119,7 +119,7 @@ class RegistryTest {
 
         val all = mutableListOf(
             TagsResponse("dos-games", listOf("1.1.0")),
-            TagsResponse("library/registry", listOf("latest", "2.8.0")),
+            TagsResponse("library/registry", listOf("2.8.0", "latest")),
             TagsResponse("test-upload", null),
         )
 

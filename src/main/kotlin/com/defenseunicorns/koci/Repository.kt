@@ -191,14 +191,18 @@ class Repository(
      * Pull and tag.
      */
     fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> = channelFlow {
-        resolve(tag, platformResolver).map {
-            pull(it, store).onCompletion { cause ->
+        resolve(tag, platformResolver).map { desc ->
+            pull(desc, store).onCompletion { cause ->
                 if (cause == null) {
                     val ref = Reference(
                         registry = router.base(), repository = name, reference = tag
                     )
+                    val ok = store.exists(desc).getOrThrow()
+                    if (!ok) {
+                        throw OCIException.IncompletePull(ref)
+                    }
                     // if pull was successful, tag the resolved desc w/ the image's ref
-                    store.tag(it, ref).getOrThrow()
+                    store.tag(desc, ref).getOrThrow()
                 }
             }.collect { progress ->
                 send(progress)

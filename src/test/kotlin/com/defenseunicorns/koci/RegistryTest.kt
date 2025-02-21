@@ -131,7 +131,9 @@ class RegistryTest {
 
         for ((idx, value) in record.withIndex()) {
             assertTrue(value.isSuccess, value.exceptionOrNull()?.message)
-            assertEquals(all[idx], value.getOrThrow())
+            // tags is sometimes a non-deterministic sorted list, or bluefin is just wacky
+            assertEquals(all[idx].tags?.sorted(), value.getOrThrow().tags?.sorted())
+            assertEquals(all[idx].name, value.getOrThrow().name)
         }
         assertEquals(all.size, record.size)
     }

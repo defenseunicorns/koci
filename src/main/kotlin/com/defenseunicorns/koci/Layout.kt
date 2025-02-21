@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap
 class Layout private constructor(
     internal val index: Index,
     private val root: String,
-) : Target {
+) {
     companion object {
         suspend fun create(root: String): Result<Layout> = withContext(Dispatchers.IO) {
             runCatching {
@@ -60,7 +60,7 @@ class Layout private constructor(
         }
     }
 
-    override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+    suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) {
@@ -133,7 +133,7 @@ class Layout private constructor(
     // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-    override suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+    suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) { file.exists() }

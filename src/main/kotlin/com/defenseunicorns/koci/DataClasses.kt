@@ -112,11 +112,6 @@ data class UploadStatus(
     var minChunkSize: Long,
 )
 
-interface Target {
-    suspend fun exists(descriptor: Descriptor): Result<Boolean>
-    suspend fun remove(descriptor: Descriptor): Result<Boolean>
-}
-
 sealed interface TaggableContent {
     val mediaType: String?
 }

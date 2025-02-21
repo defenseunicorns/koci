@@ -33,14 +33,18 @@ class Layout private constructor(
             runCatching {
                 var index = Index()
                 val indexLocation = "$root/index.json"
+                val layoutFileLocation = "$root/oci-layout"
 
                 val rootDir = File(root)
                 if (!rootDir.exists()) {
                     rootDir.mkdirs()
-                    File("$root/oci-layout").writeText(Json.encodeToString(LayoutMarker("1.0.0")))
+                    File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
                 } else {
                     require(rootDir.isDirectory) { "$root must be an existing directory" }
-                    // TODO: handle oci-layout version + existence checking
+                    // TODO: handle oci-layout version checking
+                    if (!File(layoutFileLocation).exists()) {
+                        File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
+                    }
                 }
 
                 if (File(indexLocation).exists()) {

@@ -56,6 +56,12 @@ class RegistryTest {
         Layout.create(tmp.toString())
     }.getOrThrow()
 
+    @Test
+    fun `layout creation`() {
+        assertEquals(emptyList(), storage.catalog())
+        assertEquals(LayoutMarker("1.0.0"), Json.decodeFromString(File("$tmp/oci-layout").readText()))
+    }
+
     private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
 
     @Test

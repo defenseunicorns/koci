@@ -11,7 +11,7 @@ import kotlin.test.*
 
 class ReferenceTest {
     @Test
-    @Suppress("detekt:MaxLineLength")
+    @Suppress("detekt:MaxLineLength", "detekt:LongMethod")
     fun good() {
         val testCases = mapOf(
             // valid form A

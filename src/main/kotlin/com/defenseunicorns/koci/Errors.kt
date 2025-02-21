@@ -20,7 +20,7 @@ data class FailureResponse(
     var status: HttpStatusCode = HttpStatusCode(0, ErrorCode.UNKNOWN.toString()),
 )
 
-// https://distribution.github.io/distribution/spec/api/#errors-2
+// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
 enum class ErrorCode {
     UNKNOWN,
     BLOB_UNKNOWN,
@@ -76,6 +76,9 @@ sealed class OCIException(message: String) : Exception(message) {
 
     class UnableToRemove(val descriptor: Descriptor, val reason: String) :
             OCIException("Unable to remove $descriptor: $reason")
+
+    class IncompletePull(ref: Reference):
+            OCIException("Pull operation completed, but was unsuccessful in validating $ref was pulled fully")
 }
 
 /**

@@ -43,3 +43,6 @@ bin/
 
 ### koci specific ###
 .registry
+
+# windsurf rules
+.windsurfrules

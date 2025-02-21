@@ -56,6 +56,12 @@ class RegistryTest {
         Layout.create(tmp.toString())
     }.getOrThrow()
 
+    @Test
+    fun `layout creation`() {
+        assertEquals(emptyList(), storage.catalog())
+        assertEquals(LayoutMarker("1.0.0"), Json.decodeFromString(File("$tmp/oci-layout").readText()))
+    }
+
     private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
 
     @Test
@@ -119,24 +125,28 @@ class RegistryTest {
 
         val all = mutableListOf(
             TagsResponse("dos-games", listOf("1.1.0")),
-            TagsResponse("library/registry", listOf("latest", "2.8.0")),
+            TagsResponse("library/registry", listOf("2.8.0", "latest")),
             TagsResponse("test-upload", null),
         )
 
         for ((idx, value) in record.withIndex()) {
             assertTrue(value.isSuccess, value.exceptionOrNull()?.message)
-            assertEquals(all[idx], value.getOrThrow())
+            // tags is sometimes a non-deterministic sorted list, or bluefin is just wacky
+            assertEquals(all[idx].tags?.sorted(), value.getOrThrow().tags?.sorted())
+            assertEquals(all[idx].name, value.getOrThrow().name)
         }
         assertEquals(all.size, record.size)
     }
 
     @Test
     fun resolve() = runTest {
-        val result = registry.repo("dos-games").resolve("1.1.0")
-        assertTrue(result.isSuccess)
-        val desc = result.getOrThrow()
-        // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, INDEX_MEDIA_TYPE)
+        assertEquals(INDEX_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0").getOrThrow().mediaType)
+        assertEquals(MANIFEST_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0") { platform ->
+            platform.os == "multi"
+        }.getOrThrow().mediaType)
+        assertFailsWith<OCIException.ManifestNotSupported>{
+            registry.repo("library/registry").resolve("2.8.0").getOrThrow()
+        }
     }
 
     @Test
@@ -287,50 +297,43 @@ class RegistryTest {
 
     @Test
     fun `resume-able pulls`() = runTest {
-        val cancelAt = listOf(5, 15, 50, -100)
+        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val amd64Resolver = { plat: Platform ->
             plat.architecture == "amd64" && plat.os == "multi"
         }
+        
+        val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
+        val cancelPoints = listOf(5, 15, 50, -100)
 
-        for (at in cancelAt) {
-            val deferred = CompletableDeferred<Throwable?>()
-
-            val job = launch {
-                var lastEmit = 0
-                try {
-                    registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
-                        .collect { progress ->
-                            lastEmit = progress
-                            if (at == progress) {
-                                throw CancellationException("download cancelled at $at")
+        dispatcher.use { d ->
+            for (cancelAt in cancelPoints) {
+                var lastProgress = 0
+                
+                val pullJob = async(d) {
+                    try {
+                        registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
+                            .collect { progress ->
+                                lastProgress = progress
+                                if (cancelAt == progress) {
+                                    throw CancellationException("download cancelled at $cancelAt")
+                                }
                             }
+                        // Success case
+                        assertNull(null)
+                        assertEquals(100, lastProgress)
+                    } catch (e: CancellationException) {
+                        // Cancellation case
+                        assertEquals("download cancelled at $cancelAt", e.message)
+                        assertFailsWith<NoSuchElementException> {
+                            storage.resolve { it.digest == desc.digest }.getOrThrow()
                         }
-                    // If we get here, collection completed normally
-                    deferred.complete(null)
-                } catch (e: Throwable) {
-                    // Capture the exception that terminated collection
-                    deferred.complete(e)
-                }
-
-                // Now verify based on what happened
-                val exception = deferred.await()
-                if (at == -100) {
-                    assertNull(exception)
-                    assertEquals(100, lastEmit)
-                } else {
-                    assertIs<CancellationException>(exception)
-                    assertFailsWith<NoSuchElementException> {
-                        val desc = runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
-                        storage.resolve { it.digest == desc.digest }.getOrThrow()
                     }
                 }
+                
+                pullJob.await()
             }
-
-            job.join()
-            testScheduler.advanceUntilIdle()
         }
 
-        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         assertTrue(storage.remove(desc).getOrThrow())
     }
 

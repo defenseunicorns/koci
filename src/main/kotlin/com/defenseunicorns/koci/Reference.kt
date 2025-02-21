@@ -27,12 +27,14 @@ data class Reference(
     )
 
     companion object {
-        //	<--- path --------------------------------------------> |  - Decode `path`
-        //	<=== REPOSITORY ===> <--- reference ------------------> |    - Decode `reference`
-        //	<=== REPOSITORY ===> @ <=================== digest ===> |      - Valid Form A
-        //	<=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> |      - Valid Form B (tag is dropped)
-        //	<=== REPOSITORY ===> : <=== TAG ======================> |      - Valid Form C
-        //	<=== REPOSITORY ======================================> |    - Valid Form D
+        /**
+         *    <--- path --------------------------------------------> |  - Decode `path`
+         *    <=== REPOSITORY ===> <--- reference ------------------> |  - Decode `reference`
+         *    <=== REPOSITORY ===> @ <=================== digest ===> |  - Valid Form A
+         *    <=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> |  - Valid Form B (tag is dropped)
+         *    <=== REPOSITORY ===> : <=== TAG ======================> |  - Valid Form C
+         *    <=== REPOSITORY ======================================> |  - Valid Form D
+          */
         fun parse(artifact: String): Result<Reference> = runCatching {
             val reg = artifact.substringBefore("/", "")
             require(reg.isNotEmpty()) { "registry cannot be empty" }
@@ -98,5 +100,13 @@ data class Reference(
             return
         }
         Digest(reference)
+    }
+
+    fun isEmpty(): Boolean {
+        return this.registry.isEmpty() && this.reference.isEmpty() && this.repository.isEmpty()
+    }
+
+    fun isNotEmpty(): Boolean {
+        return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
     }
 }

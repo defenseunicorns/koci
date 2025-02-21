@@ -85,4 +85,17 @@ class RouteTest {
             ).toString()
         )
     }
+
+    @Test
+    fun uploads() {
+        assertEquals("http://127.0.0.1:5000/v2/foo/blobs/uploads/", router.uploads("foo").toString())
+    }
+
+    @Test
+    fun `parse upload location`() {
+        val abs = "http://127.0.0.1:5000/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
+        val rel = "/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
+        assertEquals(abs, router.parseUploadLocation(abs).toString())
+        assertEquals(abs, router.parseUploadLocation(rel).toString())
+    }
 }

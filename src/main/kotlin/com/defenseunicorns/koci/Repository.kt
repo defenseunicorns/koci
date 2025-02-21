@@ -10,7 +10,6 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -43,10 +42,10 @@ class Repository(
     private val client: HttpClient,
     private val router: Router,
     private val name: String,
-) : Target {
+) {
     private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
 
-    override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+    suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
             INDEX_MEDIA_TYPE,
@@ -127,7 +126,7 @@ class Repository(
      *
      * TODO: Similarly, a registry MAY implement tag deletion, while others MAY allow deletion only by manifest.
      */
-    override suspend fun remove(descriptor: Descriptor) = runCatching {
+    suspend fun remove(descriptor: Descriptor) = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
             INDEX_MEDIA_TYPE,
@@ -191,14 +190,18 @@ class Repository(
      * Pull and tag.
      */
     fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> = channelFlow {
-        resolve(tag, platformResolver).map {
-            pull(it, store).onCompletion { cause ->
+        resolve(tag, platformResolver).map { desc ->
+            pull(desc, store).onCompletion { cause ->
                 if (cause == null) {
                     val ref = Reference(
                         registry = router.base(), repository = name, reference = tag
                     )
+                    val ok = store.exists(desc).getOrThrow()
+                    if (!ok) {
+                        throw OCIException.IncompletePull(ref)
+                    }
                     // if pull was successful, tag the resolved desc w/ the image's ref
-                    store.tag(it, ref).getOrThrow()
+                    store.tag(desc, ref).getOrThrow()
                 }
             }.collect { progress ->
                 send(progress)

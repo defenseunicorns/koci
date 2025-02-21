@@ -132,11 +132,13 @@ class RegistryTest {
 
     @Test
     fun resolve() = runTest {
-        val result = registry.repo("dos-games").resolve("1.1.0")
-        assertTrue(result.isSuccess)
-        val desc = result.getOrThrow()
-        // TODO (razzle): bad litmus test, make better
-        assertEquals(desc.mediaType, INDEX_MEDIA_TYPE)
+        assertEquals(INDEX_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0").getOrThrow().mediaType)
+        assertEquals(MANIFEST_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0") { platform ->
+            platform.os == "multi"
+        }.getOrThrow().mediaType)
+        assertFailsWith<OCIException.ManifestNotSupported>{
+            registry.repo("library/registry").resolve("2.8.0").getOrThrow()
+        }
     }
 
     @Test

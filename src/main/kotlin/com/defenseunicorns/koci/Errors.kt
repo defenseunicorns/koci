@@ -20,7 +20,7 @@ data class FailureResponse(
     var status: HttpStatusCode = HttpStatusCode(0, ErrorCode.UNKNOWN.toString()),
 )
 
-// https://distribution.github.io/distribution/spec/api/#errors-2
+// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
 enum class ErrorCode {
     UNKNOWN,
     BLOB_UNKNOWN,

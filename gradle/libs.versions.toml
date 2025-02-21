@@ -7,8 +7,8 @@ kotlinxSerializationJson = "1.8.0"
 ktorClient = "3.1.0"
 ktorSerializationKotlinxJson = "3.1.0"
 kover = "0.9.1"
-detekt = "1.23.7"
-detektFormatting = "1.23.7"
+detekt = "1.23.8"
+detektFormatting = "1.23.8"
 
 [libraries]
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detektFormatting" }

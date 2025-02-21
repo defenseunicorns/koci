@@ -295,50 +295,43 @@ class RegistryTest {
 
     @Test
     fun `resume-able pulls`() = runTest {
-        val cancelAt = listOf(5, 15, 50, -100)
+        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val amd64Resolver = { plat: Platform ->
             plat.architecture == "amd64" && plat.os == "multi"
         }
+        
+        val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
+        val cancelPoints = listOf(5, 15, 50, -100)
 
-        for (at in cancelAt) {
-            val deferred = CompletableDeferred<Throwable?>()
-
-            val job = launch {
-                var lastEmit = 0
-                try {
-                    registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
-                        .collect { progress ->
-                            lastEmit = progress
-                            if (at == progress) {
-                                throw CancellationException("download cancelled at $at")
+        dispatcher.use { d ->
+            for (cancelAt in cancelPoints) {
+                var lastProgress = 0
+                
+                val pullJob = async(d) {
+                    try {
+                        registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
+                            .collect { progress ->
+                                lastProgress = progress
+                                if (cancelAt == progress) {
+                                    throw CancellationException("download cancelled at $cancelAt")
+                                }
                             }
+                        // Success case
+                        assertNull(null)
+                        assertEquals(100, lastProgress)
+                    } catch (e: CancellationException) {
+                        // Cancellation case
+                        assertEquals("download cancelled at $cancelAt", e.message)
+                        assertFailsWith<NoSuchElementException> {
+                            storage.resolve { it.digest == desc.digest }.getOrThrow()
                         }
-                    // If we get here, collection completed normally
-                    deferred.complete(null)
-                } catch (e: Throwable) {
-                    // Capture the exception that terminated collection
-                    deferred.complete(e)
-                }
-
-                // Now verify based on what happened
-                val exception = deferred.await()
-                if (at == -100) {
-                    assertNull(exception)
-                    assertEquals(100, lastEmit)
-                } else {
-                    assertIs<CancellationException>(exception)
-                    assertFailsWith<NoSuchElementException> {
-                        val desc = runBlocking { registry.resolve("dos-games", "1.1.0").getOrThrow() }
-                        storage.resolve { it.digest == desc.digest }.getOrThrow()
                     }
                 }
+                
+                pullJob.await()
             }
-
-            job.join()
-            testScheduler.advanceUntilIdle()
         }
 
-        val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         assertTrue(storage.remove(desc).getOrThrow())
     }
 

@@ -93,8 +93,7 @@ class RegistryTest {
         val fl = registry.extensions.catalog(1)
         val record = mutableListOf<CatalogResponse>()
         fl.collect { res ->
-            assertTrue(res.isSuccess, res.exceptionOrNull()?.message)
-            record += res.getOrThrow()
+            record += res
         }
         val expected = mutableListOf(
             CatalogResponse(repositories = listOf("dos-games")),
@@ -120,8 +119,7 @@ class RegistryTest {
 
     @Test
     fun `list all`() = runTest {
-        val record: MutableList<Result<TagsResponse>> = mutableListOf()
-        registry.extensions.list().toList(record)
+        val record = registry.extensions.list().toList()
 
         val all = mutableListOf(
             TagsResponse("dos-games", listOf("1.1.0")),
@@ -130,10 +128,9 @@ class RegistryTest {
         )
 
         for ((idx, value) in record.withIndex()) {
-            assertTrue(value.isSuccess, value.exceptionOrNull()?.message)
             // tags is sometimes a non-deterministic sorted list, or bluefin is just wacky
-            assertEquals(all[idx].tags?.sorted(), value.getOrThrow().tags?.sorted())
-            assertEquals(all[idx].name, value.getOrThrow().name)
+            assertEquals(all[idx].tags?.sorted(), value.tags?.sorted())
+            assertEquals(all[idx].name, value.name)
         }
         assertEquals(all.size, record.size)
     }
@@ -144,7 +141,7 @@ class RegistryTest {
         assertEquals(MANIFEST_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0") { platform ->
             platform.os == "multi"
         }.getOrThrow().mediaType)
-        assertFailsWith<OCIException.ManifestNotSupported>{
+        assertFailsWith<OCIException.ManifestNotSupported> {
             registry.repo("library/registry").resolve("2.8.0").getOrThrow()
         }
     }
@@ -301,14 +298,14 @@ class RegistryTest {
         val amd64Resolver = { plat: Platform ->
             plat.architecture == "amd64" && plat.os == "multi"
         }
-        
+
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
         val cancelPoints = listOf(5, 15, 50, -100)
 
         dispatcher.use { d ->
             for (cancelAt in cancelPoints) {
                 var lastProgress = 0
-                
+
                 val pullJob = async(d) {
                     try {
                         registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
@@ -329,7 +326,7 @@ class RegistryTest {
                         }
                     }
                 }
-                
+
                 pullJob.await()
             }
         }
@@ -391,7 +388,9 @@ class RegistryTest {
 
         assertTrue { repo.exists(tmp10Desc).getOrThrow() }
         assertTrue { repo.remove(desc).getOrThrow() }
+        assertFailsWith<ClientRequestException>{ repo.exists(desc).getOrThrow() }
         assertTrue { repo.remove(tmp10Desc).getOrThrow() }
+        assertFailsWith<ClientRequestException>{ !repo.exists(tmp10Desc).getOrThrow() }
 
         val tmp15 = tmp.resolve("15mb.txt").absolutePathString()
         val tmp15Desc = generateRandomFile(tmp15, 15 * 1024 * 1024 + 300)

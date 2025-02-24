@@ -27,20 +27,24 @@ import java.util.concurrent.ConcurrentHashMap
 class Layout private constructor(
     internal val index: Index,
     private val root: String,
-) : Target {
+) {
     companion object {
         suspend fun create(root: String): Result<Layout> = withContext(Dispatchers.IO) {
             runCatching {
                 var index = Index()
                 val indexLocation = "$root/index.json"
+                val layoutFileLocation = "$root/oci-layout"
 
                 val rootDir = File(root)
                 if (!rootDir.exists()) {
                     rootDir.mkdirs()
-                    File("$root/oci-layout").writeText(Json.encodeToString(LayoutMarker("1.0.0")))
+                    File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
                 } else {
                     require(rootDir.isDirectory) { "$root must be an existing directory" }
-                    // TODO: handle oci-layout version + existence checking
+                    // TODO: handle oci-layout version checking
+                    if (!File(layoutFileLocation).exists()) {
+                        File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
+                    }
                 }
 
                 if (File(indexLocation).exists()) {
@@ -56,7 +60,7 @@ class Layout private constructor(
         }
     }
 
-    override suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+    suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) {
@@ -129,7 +133,7 @@ class Layout private constructor(
     // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-    override suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+    suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) { file.exists() }
@@ -308,6 +312,7 @@ class Layout private constructor(
                     || descriptor.mediaType == INDEX_MEDIA_TYPE
         )
         require(descriptor.size > 0)
+        reference.validate()
 
         val copy = descriptor.copy(
             annotations = descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())

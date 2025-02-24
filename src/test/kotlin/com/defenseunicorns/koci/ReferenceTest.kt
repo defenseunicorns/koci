@@ -6,13 +6,12 @@
 package com.defenseunicorns.koci
 
 import io.ktor.http.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.assertDoesNotThrow
+import kotlin.test.*
 
 class ReferenceTest {
     @Test
-    @Suppress("detekt:MaxLineLength")
+    @Suppress("detekt:MaxLineLength", "detekt:LongMethod")
     fun good() {
         val testCases = mapOf(
             // valid form A
@@ -54,8 +53,20 @@ class ReferenceTest {
         for ((tc, want) in testCases) {
             val got = Reference.parse(tc).getOrThrow()
             assertEquals(want.first, got)
+            assertTrue(got.isNotEmpty())
+            assertFalse(got.isEmpty())
 
             assertEquals(want.second, got.toString())
+
+            if (got.reference.startsWith("sha256")) {
+                assertDoesNotThrow {
+                    got.digest()
+                }
+            } else {
+                assertFailsWith<IllegalArgumentException> {
+                    got.digest()
+                }
+            }
         }
 
         val urlTestCase = Reference(
@@ -65,6 +76,18 @@ class ReferenceTest {
         )
 
         assertEquals("localhost:5005/repo:tag", urlTestCase.toString())
+
+        assertTrue(Reference("", "", "").isEmpty())
+        assertFalse(Reference("", "", "").isNotEmpty())
+        val partialEmpties = listOf(
+            Reference("a", "", ""),
+            Reference("", "b", ""),
+            Reference("", "", "c")
+        )
+        for (ref in partialEmpties) {
+            assertTrue(ref.isNotEmpty())
+            assertFalse(ref.isEmpty())
+        }
     }
 
     @Test

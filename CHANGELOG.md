@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.3 (2025-02-24)
+
+## What's Changed
+* chore(deps): manually bump deps by @Noxsios in https://github.com/defenseunicorns/koci/pull/57
+* build(deps): bump kotlin from 2.0.20 to 2.1.10 by @dependabot in https://github.com/defenseunicorns/koci/pull/60
+* test: increase coverage by @Noxsios in https://github.com/defenseunicorns/koci/pull/66
+* build(deps): bump the gradle group across 1 directory with 5 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/68
+* ci(deps): bump actions/upload-artifact from 4.6.0 to 4.6.1 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/64
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.2...v0.1.3
+
 ## 0.1.2 (2025-02-18)
 
 ## What's Changed

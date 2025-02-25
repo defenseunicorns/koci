@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 (2025-02-25)
+
+## What's Changed
+* docs: small updates by @Noxsios in https://github.com/defenseunicorns/koci/pull/69
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.3...v0.1.4
+
 ## 0.1.3 (2025-02-24)
 
 ## What's Changed

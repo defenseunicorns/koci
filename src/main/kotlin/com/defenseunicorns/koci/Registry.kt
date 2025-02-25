@@ -15,6 +15,11 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 
+/**
+ * Registry is the main entrypoint for koci's operations.
+ *
+ *     Registry("https://ghcr.io", httpClient)
+ */
 class Registry(
     registryURL: String,
     var client: HttpClient = HttpClient(CIO),

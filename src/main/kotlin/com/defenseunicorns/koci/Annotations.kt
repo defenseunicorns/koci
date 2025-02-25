@@ -5,7 +5,11 @@
 
 package com.defenseunicorns.koci
 
-// https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys
+/**
+ * Annotations is a simple map of strings.
+ *
+ * [Pre-defined annotations keys](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys)
+  */
 typealias Annotations = Map<String, String>
 
 const val ANNOTATION_CREATED = "org.opencontainers.image.created"

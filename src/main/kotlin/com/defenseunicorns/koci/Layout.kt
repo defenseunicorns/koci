@@ -14,7 +14,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.File
@@ -202,7 +201,7 @@ class Layout private constructor(
         }
     }
 
-    private fun syncIndex() {
+    internal fun syncIndex() {
         File("$root/index.json").writeText(Json.encodeToString(index))
     }
 
@@ -337,5 +336,54 @@ class Layout private constructor(
 
     fun catalog(): List<Descriptor> {
         return index.manifests.toList()
+    }
+
+    /**
+     * Prunes all layers on disk that are not referenced by any manifest or index in the Layout's index.
+     *
+     * This is a "stop the world" style function and MUST NOT run during any other operations.
+     * It should be used to clean up zombie layers that might be left on disk if a remove operation
+     * is interrupted.
+     * 
+     * If this is run BETWEEN an interrupted download operation and a retry, it will reset that download's "progress".
+     *
+     * If this runs DURING a download, all layers pending will NOT be garbage collected.
+     *
+     * @return Result containing a list of removed layer digests or an error
+     */
+    suspend fun gc(): Result<List<Digest>> = runCatching {
+        val referencedDescriptors = (expand(index.manifests) + pushing.keys().toList()).toSet()
+
+        val blobsOnDisk = mutableListOf<Digest>()
+
+        withContext(Dispatchers.IO) {
+            val sha256Dir = File("$root/blobs/sha256")
+            if (sha256Dir.exists() && sha256Dir.isDirectory) {
+                sha256Dir.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        val digest = Digest(RegisteredAlgorithm.SHA256, file.name)
+                        blobsOnDisk.add(digest)
+                    }
+                }
+            }
+
+            val sha512Dir = File("$root/blobs/sha512")
+            if (sha512Dir.exists() && sha512Dir.isDirectory) {
+                sha512Dir.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        val digest = Digest(RegisteredAlgorithm.SHA512, file.name)
+                        blobsOnDisk.add(digest)
+                    }
+                }
+            }
+        }
+
+        withContext(Dispatchers.IO) {
+            blobsOnDisk.filter { it !in referencedDescriptors.map { desc -> desc.digest } }
+                .mapNotNull { zombieDigest ->
+                    val file = File("$root/blobs/${zombieDigest.algorithm}/${zombieDigest.hex}")
+                    if (file.delete()) zombieDigest else null
+                }
+        }
     }
 }

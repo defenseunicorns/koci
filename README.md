@@ -32,11 +32,10 @@ repo.pull(tag, store).collect{ prog ->
 - [x] [GET `/v2/`](https://distribution.github.io/distribution/spec/api/#api-version-check) Ping registry
 - [x] [GET `/v2/_catalog`](https://distribution.github.io/distribution/spec/api/#listing-repositories) Catalog
   - [x] Support pagination
-- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://distribution.github.io/distribution/spec/api/#existing-manifests) Check for existence / fetch manifest by tag or digest
-  - [ ] Support transforming Docker V2 manifest into OCI manifest if referenced by tag?
-  - [x] Resolve/fetch tag into manifest || index
-    - [x] Support custom manifest from index resolution logic
-  - [~] [Reference](https://pkg.go.dev/github.com/distribution/reference) support and validation
+- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://distribution.github.io/distribution/spec/api/#existing-manifests) Check for existence / fetch manifest by tag/digest
+  - [x] Resolve/fetch tag into manifest/index
+    - [x] Support custom index -> manifest resolution logic
+  - [x] [Reference](https://pkg.go.dev/github.com/distribution/reference) support and validation
 - [x] [DELETE `/v2/<name>/manifests/<digest>`](https://distribution.github.io/distribution/spec/api/#deleting-a-layer)
 - [x] [GET `/v2/<name>/tags/list`](https://distribution.github.io/distribution/spec/api/#listing-image-tags) List image tags
   - [ ] Support pagination
@@ -57,7 +56,7 @@ repo.pull(tag, store).collect{ prog ->
 - [x] Push blobs
   - [x] Resumable uploads
   - [x] Single PUT request if content < `OCI-Chunk-Min-Length` or 5MB if unset. Chunked upload otherwise
-- [x] Push + tag manifests || indexes
+- [x] Push + tag manifests/indexes
 - [ ] Referrers API
 
 ## Store
@@ -66,16 +65,15 @@ repo.pull(tag, store).collect{ prog ->
 
 Support for SHA-256 and SHA-512 hashing algorithms.
 
-- [~] `index.json`
-  - [~] Synchronized RW access (still some race conditions to sort through)
+- [x] `index.json`
   - [x] Resolve by image reference via [`org.opencontainers.image.ref.name`](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys)
   - [x] Resolve by digest
   - [x] Resolve through custom logic
-- [~] [`oci-layout`](https://github.com/opencontainers/image-spec/blob/main/image-layout.md#oci-layout-file)
+- [x] [`oci-layout`](https://github.com/opencontainers/image-spec/blob/main/image-layout.md#oci-layout-file)
 - [x] [`blobs` directory](https://github.com/opencontainers/image-spec/blob/main/image-layout.md#blobs)
   - [x] Remove blob by descriptor
-  - [x] Remove image by digest
-  - [ ] Garbage collection strategy
+  - [x] Remove image/artifact by digest/reference
+  - [x] Garbage collection
 
 ## Concurrency
 

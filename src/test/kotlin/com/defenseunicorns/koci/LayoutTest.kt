@@ -41,7 +41,6 @@ class LayoutTest {
 
     @Test
     fun `test gc removes zombie layers`() = runTest {
-        // Create a test manifest
         val configDescriptor = createTestBlob("config-content", "application/vnd.oci.image.config.v1+json")
         val layer1Descriptor = createTestBlob("layer1-content", "application/vnd.oci.image.layer.v1.tar+gzip")
         val layer2Descriptor = createTestBlob("layer2-content", "application/vnd.oci.image.layer.v1.tar+gzip")
@@ -55,7 +54,6 @@ class LayoutTest {
             annotations = null
         )
 
-        // Serialize and push the manifest
         val manifestJson = Json.encodeToString(manifest)
         val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
         val manifestDescriptor = Descriptor(
@@ -66,10 +64,8 @@ class LayoutTest {
             size = manifestJson.length.toLong()
         )
 
-        // Push the manifest to the layout
         layout.push(manifestDescriptor, manifestStream).collect { }
 
-        // Tag the manifest
         val reference = Reference(registry = "localhost", repository = "test", reference = "latest")
         layout.tag(manifestDescriptor, reference).getOrThrow()
 
@@ -83,7 +79,6 @@ class LayoutTest {
         val zombieFile = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
         assertTrue(zombieFile.exists())
 
-        // Run gc
         val prunedLayers = layout.gc().getOrThrow()
 
         // Verify layer2 was removed
@@ -101,7 +96,6 @@ class LayoutTest {
 
     @Test
     fun `test gc with interrupted remove operation`() = runTest {
-        // Create a test manifest
         val configDescriptor = createTestBlob("config-content", "application/vnd.oci.image.config.v1+json")
         val layer1Descriptor = createTestBlob("layer1-content", "application/vnd.oci.image.layer.v1.tar+gzip")
         val layer2Descriptor = createTestBlob("layer2-content", "application/vnd.oci.image.layer.v1.tar+gzip")
@@ -115,7 +109,6 @@ class LayoutTest {
             annotations = null
         )
 
-        // Serialize and push the manifest
         val manifestJson = Json.encodeToString(manifest)
         val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
         val manifestDescriptor = Descriptor(
@@ -126,10 +119,8 @@ class LayoutTest {
             size = manifestJson.length.toLong()
         )
 
-        // Push the manifest to the layout
         layout.push(manifestDescriptor, manifestStream).collect { }
 
-        // Tag the manifest
         val reference = Reference(registry = "localhost", repository = "test", reference = "latest")
         layout.tag(manifestDescriptor, reference).getOrThrow()
 
@@ -156,7 +147,6 @@ class LayoutTest {
         assertTrue(layer2File.exists())
         assertTrue(manifestFile.exists())
 
-        // Run gc
         val prunedLayers = layout.gc().getOrThrow()
 
         // Verify all blobs were removed since none are referenced in the index
@@ -194,7 +184,6 @@ class LayoutTest {
             // Add layer2 to the pushing collection to simulate an active push
             pushing[layer2Descriptor] = Mutex()
             
-            // Run gc
             val removedLayers = layout.gc().getOrThrow()
             
             // Verify layer1 was removed (it's not referenced by any manifest and not being pushed)
@@ -210,7 +199,6 @@ class LayoutTest {
             assertTrue(layer2File.exists())
             assertTrue(layout.exists(layer2Descriptor).getOrThrow())
         } finally {
-            // Clean up
             pushing.remove(layer2Descriptor)
         }
     }
@@ -224,12 +212,10 @@ class LayoutTest {
             update(layerBytes)
         }.digest())
         
-        // Create the directory structure and file
         val layerFile = File("$rootDir/blobs/${layerDigest.algorithm}/${layerDigest.hex}")
         layerFile.parentFile.mkdirs()
         layerFile.writeBytes(layerBytes)
         
-        // Verify layer exists on disk
         assertTrue(layerFile.exists())
         
         // Run gc - this should remove the layer since it's not referenced and not being pushed

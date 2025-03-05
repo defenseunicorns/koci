@@ -7,6 +7,7 @@ package com.defenseunicorns.koci
 
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
@@ -344,15 +345,15 @@ class Layout private constructor(
      * This is a "stop the world" style function and MUST NOT run during any other operations.
      * It should be used to clean up zombie layers that might be left on disk if a remove operation
      * is interrupted.
-     * 
-     * If this is run BETWEEN an interrupted download operation and a retry, it will reset that download's "progress".
-     *
-     * If this runs DURING a download, all layers pending will NOT be garbage collected.
      *
      * @return Result containing a list of removed layer digests or an error
      */
     suspend fun gc(): Result<List<Digest>> = runCatching {
-        val referencedDescriptors = (expand(index.manifests) + pushing.keys().toList()).toSet()
+        if (pushing.size > 0) {
+            throw IllegalStateException("there are downloads in progress")
+        }
+
+        val referencedDescriptors = expand(index.manifests).toSet()
 
         val blobsOnDisk = mutableListOf<Digest>()
 

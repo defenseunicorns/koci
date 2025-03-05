@@ -14,6 +14,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -79,14 +80,14 @@ class LayoutTest {
         val zombieFile = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
         assertTrue(zombieFile.exists())
 
-        val prunedLayers = layout.gc().getOrThrow()
+        val removedDigests = layout.gc().getOrThrow()
 
         // Verify layer2 was removed
         assertFalse(zombieFile.exists())
 
         // Verify only layer2 was removed
-        assertEquals(1, prunedLayers.size)
-        assertEquals(layer2Descriptor.digest, prunedLayers[0])
+        assertEquals(1, removedDigests.size)
+        assertEquals(layer2Descriptor.digest, removedDigests[0])
 
         // Verify other blobs still exist
         assertTrue(layout.exists(configDescriptor).getOrThrow())
@@ -147,7 +148,7 @@ class LayoutTest {
         assertTrue(layer2File.exists())
         assertTrue(manifestFile.exists())
 
-        val prunedLayers = layout.gc().getOrThrow()
+        val removedDigests = layout.gc().getOrThrow()
 
         // Verify all blobs were removed since none are referenced in the index
         assertFalse(configFile.exists())
@@ -156,15 +157,15 @@ class LayoutTest {
         assertFalse(manifestFile.exists())
 
         // Verify all layers were removed
-        assertEquals(4, prunedLayers.size)
-        assertTrue(prunedLayers.contains(configDescriptor.digest))
-        assertTrue(prunedLayers.contains(layer1Descriptor.digest))
-        assertTrue(prunedLayers.contains(layer2Descriptor.digest))
-        assertTrue(prunedLayers.contains(manifestDescriptor.digest))
+        assertEquals(4, removedDigests.size)
+        assertTrue(removedDigests.contains(configDescriptor.digest))
+        assertTrue(removedDigests.contains(layer1Descriptor.digest))
+        assertTrue(removedDigests.contains(layer2Descriptor.digest))
+        assertTrue(removedDigests.contains(manifestDescriptor.digest))
     }
 
     @Test
-    fun `test gc does not remove layers being pushed`() = runTest {
+    fun `test gc throws exception when layers are being pushed`() = runTest {
         // Create a test blob that will be considered a zombie layer
         val layer1Descriptor = createTestBlob("layer1-content", "application/vnd.oci.image.layer.v1.tar+gzip")
         
@@ -185,19 +186,20 @@ class LayoutTest {
             // Add layer2 to the pushing collection to simulate an active push
             pushing[layer2Descriptor] = Mutex()
             
-            val removedLayers = layout.gc().getOrThrow()
+            // Verify gc throws an IllegalStateException when there are active pushes
+            val exception = assertThrows<IllegalStateException> {
+                layout.gc().getOrThrow()
+            }
             
-            // Verify layer1 was removed (it's not referenced by any manifest and not being pushed)
-            assertEquals(1, removedLayers.size)
-            assertEquals(layer1Descriptor.digest, removedLayers[0])
+            // Verify the exception message
+            assertEquals("there are downloads in progress", exception.message)
             
-            // Verify layer1 no longer exists on disk
+            // Verify both layers still exist on disk
             val layer1File = File("$rootDir/blobs/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
-            assertFalse(layer1File.exists())
-            
-            // Verify layer2 was NOT removed (it's being pushed)
             val layer2File = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+            assertTrue(layer1File.exists())
             assertTrue(layer2File.exists())
+            assertTrue(layout.exists(layer1Descriptor).getOrThrow())
             assertTrue(layout.exists(layer2Descriptor).getOrThrow())
         } finally {
             pushing.remove(layer2Descriptor)
@@ -220,10 +222,10 @@ class LayoutTest {
         assertTrue(layerFile.exists())
         
         // Run gc - this should remove the layer since it's not referenced and not being pushed
-        val removedLayers = layout.gc().getOrThrow()
+        val removedDigests = layout.gc().getOrThrow()
         
         // Verify layer was removed
-        assertTrue(removedLayers.contains(layerDigest))
+        assertTrue(removedDigests.contains(layerDigest))
         assertFalse(layerFile.exists())
         
         // This demonstrates that if gc runs between an interrupted download and a retry,

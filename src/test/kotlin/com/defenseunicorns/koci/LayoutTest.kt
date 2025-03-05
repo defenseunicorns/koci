@@ -178,6 +178,7 @@ class LayoutTest {
         // Get access to the pushing collection via reflection
         val pushingField = Layout::class.java.getDeclaredField("pushing")
         pushingField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
         val pushing = pushingField.get(layout) as ConcurrentHashMap<Descriptor, Mutex>
         
         try {

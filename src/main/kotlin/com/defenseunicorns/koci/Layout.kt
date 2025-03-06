@@ -349,7 +349,7 @@ class Layout private constructor(
      * @return Result containing a list of removed layer digests or an error
      */
     suspend fun gc(): Result<List<Digest>> = runCatching {
-        check(pushing.size > 0) { "there are downloads in progress" }
+        check(pushing.isEmpty()) { "there are downloads in progress" }
 
         val referencedDescriptors = expand(index.manifests).toSet()
 

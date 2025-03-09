@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 (2025-03-09)
+
+## What's Changed
+* docs: small updates by @Noxsios in https://github.com/defenseunicorns/koci/pull/69
+* ci(deps): bump googleapis/release-please-action from 4.1.3 to 4.1.5 in github-actions by @dependabot in https://github.com/defenseunicorns/koci/pull/73
+* feat: manual garbage collection method by @Noxsios in https://github.com/defenseunicorns/koci/pull/72
+* ci(deps): bump the github-actions group with 2 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/74
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.1.3...v0.2.0
+
 ## 0.1.3 (2025-02-24)
 
 ## What's Changed

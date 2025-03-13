@@ -564,9 +564,48 @@ class Repository(
             throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
         }
 
+        // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests-with-subject
+        if (content.subject != null) {
+            checkNotNull(res.headers["OCI-Subject"]) { "OCI-Subject header is missing" }
+            check(res.headers["OCI-Subject"] == content.subject) { "registry does not support referrers API" }
+        }
+
         // get digest from Location header
+        checkNotNull(res.headers[HttpHeaders.Location]) { "Response missing required Location header" }
         val dg = Url(res.headers[HttpHeaders.Location]!!).segments.last()
 
         Descriptor(ct, Digest(dg), txt.length.toLong())
+    }
+
+    /**
+     * TODO: A Link header MUST be included in the response when the descriptor list
+     * cannot be returned in a single manifest. Each response is an image index with
+     * different descriptors in the manifests field. The Link header MUST be set according
+     * to RFC5988 with the Relation Type rel="next"
+     */
+    suspend fun referrers(descriptor: Descriptor, artifactType: String = ""): Result<Index> = runCatching {
+        val res = client.get(router.referrers(name, descriptor, artifactType)) {
+            expectSuccess = false // TODO: validate this via tests, how does this interact w/ the auth client?
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        }
+        // If filtering is requested and applied, the response MUST include a header OCI-Filters-Applied: artifactType denoting that an artifactType filter was applied. If multiple filters are applied, the header MUST contain a comma separated list of applied filters.
+
+        return when (res.status) {
+            HttpStatusCode.OK -> {
+                check(
+                    res.contentType().toString() == INDEX_MEDIA_TYPE
+                ) { "${res.contentType()} is not $INDEX_MEDIA_TYPE" }
+                Json.decodeFromString(res.body())
+            }
+
+            HttpStatusCode.NotFound -> {
+                // fallback to https://github.com/opencontainers/distribution-spec/blob/main/spec.md#referrers-tag-schema
+                TODO()
+            }
+
+            else -> {
+                Result.failure(OCIException.UnexpectedStatus(HttpStatusCode.OK, res))
+            }
+        }
     }
 }

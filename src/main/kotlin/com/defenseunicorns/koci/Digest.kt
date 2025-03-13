@@ -65,6 +65,10 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
         return "$algorithm:$hex"
     }
 
+    fun toReferrersTag(): String {
+        return "$algorithm-${hex.slice(0 .. 31)}"
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Digest) return false

@@ -8,6 +8,7 @@ package com.defenseunicorns.koci
 import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 @Suppress("detekt:MaxLineLength")
 class RouteTest {
@@ -87,14 +88,41 @@ class RouteTest {
     }
 
     @Test
+    fun referrers() {
+        val desc = Descriptor(
+            mediaType = MANIFEST_MEDIA_TYPE,
+            digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
+            size = 911,
+            annotations = mutableMapOf(ANNOTATION_TITLE to "zarf.yaml")
+        )
+        assertEquals(
+            "http://127.0.0.1:5000/v2/dos-games/referrers/${desc.digest}",
+            router.referrers("dos-games", desc, "").toString()
+        )
+        assertEquals(
+            "http://127.0.0.1:5000/v2/dos-games/referrers/${desc.digest}?artifactType=foo",
+            router.referrers("dos-games", desc, "foo").toString()
+        )
+        assertEquals(
+            "http://127.0.0.1:5000/v2/dos-games/referrers/${desc.digest}",
+            router.referrers("dos-games", desc.copy(mediaType = INDEX_MEDIA_TYPE), "").toString()
+        )
+        assertFailsWith<IllegalArgumentException> {
+            router.referrers("dos-games", desc.copy(mediaType = ""), "")
+        }
+    }
+
+    @Test
     fun uploads() {
         assertEquals("http://127.0.0.1:5000/v2/foo/blobs/uploads/", router.uploads("foo").toString())
     }
 
     @Test
     fun `parse upload location`() {
-        val abs = "http://127.0.0.1:5000/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
-        val rel = "/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
+        val abs =
+            "http://127.0.0.1:5000/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
+        val rel =
+            "/v2/test-upload/blobs/uploads/4e67c002-da9b-432e-a410-79b403bfcd87?_state=DGT2TjfmtQaET0K3qfXpO_4am5scH987hejkECPV2Ep7Ik5hbWUiOiJ0ZXN0LXVwbG9hZCIsIlVVSUQiOiI0ZTY3YzAwMi1kYTliLTQzMmUtYTQxMC03OWI0MDNiZmNkODciLCJPZmZzZXQiOjE1NzI4NjQwLCJTdGFydGVkQXQiOiIyMDI1LTAyLTIxVDE4OjQwOjMyWiJ9"
         assertEquals(abs, router.parseUploadLocation(abs).toString())
         assertEquals(abs, router.parseUploadLocation(rel).toString())
     }

@@ -32,6 +32,7 @@ data class Manifest(
     val config: Descriptor,
     val layers: List<Descriptor>,
     val annotations: Annotations? = null,
+    override val subject: String? = null
 ) : TaggableContent
 
 object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
@@ -54,6 +55,7 @@ data class Index(
     @Serializable(with = CopyOnWriteDescriptorArrayListSerializer::class)
     val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
     val annotations: Annotations? = null,
+    override val subject: String? = null
 ) : TaggableContent
 
 @Serializable
@@ -80,6 +82,7 @@ data class Descriptor(
     val annotations: Annotations? = null,
     val data: String? = null,
     val platform: Platform? = null,
+    val artifactType: String? = null,
 ) {
     companion object {
         fun fromInputStream(
@@ -114,4 +117,5 @@ data class UploadStatus(
 
 sealed interface TaggableContent {
     val mediaType: String?
+    val subject: String?
 }

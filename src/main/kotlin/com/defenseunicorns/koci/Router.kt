@@ -17,6 +17,7 @@ class Router(registryURL: String) {
     companion object {
         private const val V2_PREFIX = "v2/"
     }
+
     private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
 
     fun base(): Url {
@@ -44,8 +45,16 @@ class Router(registryURL: String) {
     }
 
     fun blob(repository: String, descriptor: Descriptor): Url {
-        return base.clone().appendPathSegments(repository, "blobs", descriptor.digest.toString())
-            .build()
+        return base.clone().appendPathSegments(repository, "blobs", descriptor.digest.toString()).build()
+    }
+
+    fun referrers(repository: String, descriptor: Descriptor, artifactType: String): Url {
+        require(descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE)
+        return base.clone().appendPathSegments(repository, "referrers", descriptor.digest.toString()).apply {
+            if (artifactType != "") {
+                parameters.append("artifactType", artifactType)
+            }
+        }.build()
     }
 
     fun uploads(repository: String): Url {
@@ -67,3 +76,4 @@ class Router(registryURL: String) {
         }.build()
     }
 }
+

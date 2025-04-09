@@ -112,3 +112,10 @@ publishing {
         }
     }
 }
+
+
+
+tasks.register<Test>("allTests") {
+    systemProperty("TESTS_WITH_EXTERNAL_SERVICES", "true")
+    useJUnitPlatform()
+}

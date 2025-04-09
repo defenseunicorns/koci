@@ -14,6 +14,8 @@ import io.ktor.http.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Registry is the main entrypoint for koci's operations.
@@ -22,6 +24,7 @@ import kotlinx.serialization.json.Json
  */
 class Registry(
     registryURL: String,
+    val requestTimeout: Duration = 10.minutes,
     var client: HttpClient = HttpClient(CIO),
 ) {
     val router = Router(registryURL)
@@ -41,6 +44,10 @@ class Registry(
                     attemptThrow4XX(clientException.response)
                     return@handleResponseExceptionWithRequest
                 }
+            }
+
+            install(HttpTimeout) {
+                this.requestTimeoutMillis = requestTimeout.inWholeMilliseconds
             }
 
             expectSuccess = true

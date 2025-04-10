@@ -14,7 +14,6 @@ import io.ktor.http.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -24,13 +23,14 @@ import kotlin.time.Duration.Companion.minutes
  */
 class Registry(
     registryURL: String,
-    val requestTimeout: Duration = 10.minutes,
     var client: HttpClient = HttpClient(CIO),
 ) {
     val router = Router(registryURL)
     val extensions = Extensions()
 
     init {
+        val timeoutPlugin = client.pluginOrNull(HttpTimeout)
+        val ociAuthPlugin = client.pluginOrNull(OCIAuthPlugin)
         client = client.config {
             headers {
                 // https://distribution.github.io/distribution/spec/api/#api-version-check
@@ -46,17 +46,16 @@ class Registry(
                 }
             }
 
-            install(HttpTimeout) {
-                this.requestTimeoutMillis = requestTimeout.inWholeMilliseconds
+            if (timeoutPlugin == null) {
+                install(HttpTimeout) {
+                    this.requestTimeoutMillis = 10.minutes.inWholeMilliseconds
+                }
+            }
+            if (ociAuthPlugin == null) {
+                install(OCIAuthPlugin)
             }
 
             expectSuccess = true
-        }
-
-        if (client.pluginOrNull(OCIAuthPlugin) == null) {
-            client = client.config {
-                install(OCIAuthPlugin)
-            }
         }
     }
 

@@ -296,13 +296,15 @@ class RegistryTest {
 
     @Test
     @EnabledIfSystemProperty(named = "TESTS_WITH_EXTERNAL_SERVICES", matches = "true")
-    fun `pull and remove gradle`() = runTest(timeout = 10.minutes) {
+    fun `pull and remove gradle from dockerhub`() = runTest(timeout = 10.minutes) {
         val registry = Registry("https://registry-1.docker.io")
         val prog = registry.pull("library/gradle", "latest", storage)
 
         assertEquals(
             100, prog.last()
         )
+
+        assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest").getOrThrow()).isSuccess)
     }
 
     @Test

@@ -33,8 +33,8 @@ registry-reset: registry-down
 
 .PHONY: registry-seed
 registry-seed: registry-up
-	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --plain-http --oci-concurrency 5 --no-progress --no-log-file -a amd64
-	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --plain-http --oci-concurrency 5 --no-progress --no-log-file -a arm64
+	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --plain-http -a amd64
+	@ ./bin/zarf package publish oci://ghcr.io/zarf-dev/packages/dos-games:1.1.0 oci://localhost:5005 --plain-http -a arm64
 	@ ./bin/oras cp docker.io/library/registry:2.8.0  localhost:5005/library/registry:2.8.0
 	@ ./bin/oras cp docker.io/library/registry:latest localhost:5005/library/registry:latest
 

@@ -588,7 +588,9 @@ class Repository(
             expectSuccess = false // TODO: validate this via tests, how does this interact w/ the auth client?
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
-        // If filtering is requested and applied, the response MUST include a header OCI-Filters-Applied: artifactType denoting that an artifactType filter was applied. If multiple filters are applied, the header MUST contain a comma separated list of applied filters.
+        // If filtering is requested and applied, the response MUST include a header OCI-Filters-Applied: artifactType
+        // denoting that an artifactType filter was applied. If multiple filters are applied, the header MUST contain
+        // a comma separated list of applied filters.
 
         return when (res.status) {
             HttpStatusCode.OK -> {

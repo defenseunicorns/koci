@@ -8,6 +8,10 @@ package com.defenseunicorns.koci
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@Suppress(
+    "detekt:LongMethod",
+    "detekt:MaxLineLength",
+)
 class DigestTest {
     @Test
     fun algorithms() {

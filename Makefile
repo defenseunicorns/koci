@@ -14,6 +14,10 @@ build:
 test: registry-up registry-seed
 	@ ./gradlew test --fail-fast
 
+.PHONY: test-all
+test-all: registry-up registry-seed
+	@ ./gradlew allTests --fail-fast
+
 .PHONY: lint
 lint:
 	@ ./gradlew detekt

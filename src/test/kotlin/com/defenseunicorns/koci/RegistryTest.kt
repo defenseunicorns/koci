@@ -20,6 +20,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import org.junit.jupiter.api.*
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -30,6 +31,7 @@ import kotlin.io.path.deleteRecursively
 import kotlin.random.Random
 import kotlin.test.*
 import kotlin.test.Test
+import kotlin.time.Duration.Companion.minutes
 
 const val TEST_BLOB_MEDIATYPE = "application/vnd.koci.test.blob.v1+text"
 
@@ -62,7 +64,7 @@ class RegistryTest {
         assertEquals(LayoutMarker("1.0.0"), Json.decodeFromString(File("$tmp/oci-layout").readText()))
     }
 
-    private val registry = Registry("http://127.0.0.1:5005", httpClient) // matches docker-compose.yaml
+    private val registry = Registry("http://127.0.0.1:5005", client = httpClient) // matches docker-compose.yaml
 
     @Test
     fun `can ping`() = runTest {
@@ -293,6 +295,19 @@ class RegistryTest {
     }
 
     @Test
+    @EnabledIfSystemProperty(named = "TESTS_WITH_EXTERNAL_SERVICES", matches = "true")
+    fun `pull and remove gradle from dockerhub`() = runTest(timeout = 10.minutes) {
+        val registry = Registry("https://registry-1.docker.io")
+        val prog = registry.pull("library/gradle", "latest", storage)
+
+        assertEquals(
+            100, prog.last()
+        )
+
+        assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest").getOrThrow()).isSuccess)
+    }
+
+    @Test
     fun `resume-able pulls`() = runTest {
         val desc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val amd64Resolver = { plat: Platform ->
@@ -388,9 +403,9 @@ class RegistryTest {
 
         assertTrue { repo.exists(tmp10Desc).getOrThrow() }
         assertTrue { repo.remove(desc).getOrThrow() }
-        assertFailsWith<ClientRequestException>{ repo.exists(desc).getOrThrow() }
+        assertFailsWith<ClientRequestException> { repo.exists(desc).getOrThrow() }
         assertTrue { repo.remove(tmp10Desc).getOrThrow() }
-        assertFailsWith<ClientRequestException>{ !repo.exists(tmp10Desc).getOrThrow() }
+        assertFailsWith<ClientRequestException> { !repo.exists(tmp10Desc).getOrThrow() }
 
         val tmp15 = tmp.resolve("15mb.txt").absolutePathString()
         val tmp15Desc = generateRandomFile(tmp15, 15 * 1024 * 1024 + 300)
@@ -446,12 +461,12 @@ class RegistryTest {
 
     @Test
     fun `public scopes`() = runTest {
-        val ecr = Registry("https://public.ecr.aws", httpClient)
+        val ecr = Registry("https://public.ecr.aws", client = httpClient)
 
         val result = ecr.repo("ubuntu/redis").tags()
         assertTrue(result.isSuccess, result.exceptionOrNull().toString())
 
-        val nvcr = Registry("https://nvcr.io", httpClient)
+        val nvcr = Registry("https://nvcr.io", client = httpClient)
 
         nvcr.tags("nvidia/l4t-pytorch").getOrThrow()
     }

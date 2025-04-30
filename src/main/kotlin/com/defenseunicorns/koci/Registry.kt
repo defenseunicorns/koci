@@ -14,6 +14,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Registry is the main entrypoint for koci's operations.
@@ -28,6 +29,8 @@ class Registry(
     val extensions = Extensions()
 
     init {
+        val timeoutPlugin = client.pluginOrNull(HttpTimeout)
+        val ociAuthPlugin = client.pluginOrNull(OCIAuthPlugin)
         client = client.config {
             headers {
                 // https://distribution.github.io/distribution/spec/api/#api-version-check
@@ -43,13 +46,16 @@ class Registry(
                 }
             }
 
-            expectSuccess = true
-        }
-
-        if (client.pluginOrNull(OCIAuthPlugin) == null) {
-            client = client.config {
+            if (timeoutPlugin == null) {
+                install(HttpTimeout) {
+                    this.requestTimeoutMillis = 10.minutes.inWholeMilliseconds
+                }
+            }
+            if (ociAuthPlugin == null) {
                 install(OCIAuthPlugin)
             }
+
+            expectSuccess = true
         }
     }
 

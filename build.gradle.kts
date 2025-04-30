@@ -87,6 +87,11 @@ kover {
     }
 }
 
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
 publishing {
     repositories {
         maven {
@@ -106,4 +111,11 @@ publishing {
             from(components["java"])
         }
     }
+}
+
+
+
+tasks.register<Test>("allTests") {
+    systemProperty("TESTS_WITH_EXTERNAL_SERVICES", "true")
+    useJUnitPlatform()
 }

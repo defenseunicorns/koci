@@ -1,4 +1,3 @@
-
 import io.gitlab.arturbosch.detekt.Detekt
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
@@ -17,6 +16,7 @@ plugins {
     alias(libs.plugins.detekt)
 
     id("maven-publish")
+    id("signing")
 }
 
 buildscript {
@@ -102,18 +102,60 @@ publishing {
                 password = System.getenv("GITHUB_TOKEN")
             }
         }
+        maven {
+            name = "MavenCentralStaging"
+            url = URI("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+            credentials {
+                username = System.getenv("MAVEN_CENTRAL_USER")
+                password = System.getenv("MAVEN_CENTRAL_TOKEN")
+            }
+        }
     }
     publications {
         val releasePleaseManifest = file(".release-please-manifest.json")
         create<MavenPublication>("maven") {
-            version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
+            version =
+                Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
 
             from(components["java"])
+
+            pom {
+                name = "koci"
+                description = "Kotlin implementation of the OCI Distribution client specification"
+                url = "https://github.com/defenseunicorns/koci"
+
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = "defenseunicorns"
+                        name = "Defense Unicorns"
+                        email = "hello@defenseunicorns.com"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/defenseunicorns/koci.git"
+                    developerConnection = "scm:git:ssh://github.com/defenseunicorns/koci.git"
+                    url = "https://github.com/defenseunicorns/koci"
+                }
+            }
         }
     }
 }
 
+signing {
+    sign(publishing.publications["maven"])
+}
 
+tasks.withType<Sign>().configureEach {
+    dependsOn(tasks.withType<Jar>())
+}
 
 tasks.register<Test>("allTests") {
     systemProperty("TESTS_WITH_EXTERNAL_SERVICES", "true")

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (2025-05-01)
+
+## What's Changed
+* fix: remove deprecated zarf flags by @Noxsios in https://github.com/defenseunicorns/koci/pull/89
+* feat: javadoc and default request timeout by @rbbl-dev in https://github.com/defenseunicorns/koci/pull/87
+* ci(deps): bump the github-actions group across 1 directory with 5 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/86
+* build(deps): bump the gradle group across 1 directory with 9 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/88
+* ci: add requirements for maven central publishing by @Noxsios in https://github.com/defenseunicorns/koci/pull/91
+
+## New Contributors
+* @rbbl-dev made their first contribution in https://github.com/defenseunicorns/koci/pull/87
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.2.0...v0.3.0
+
 ## 0.2.0 (2025-03-09)
 
 ## What's Changed

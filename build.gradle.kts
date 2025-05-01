@@ -1,4 +1,4 @@
-
+import com.vanniktech.maven.publish.SonatypeHost
 import io.gitlab.arturbosch.detekt.Detekt
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
@@ -16,7 +16,7 @@ plugins {
     alias(libs.plugins.kover)
     alias(libs.plugins.detekt)
 
-    id("maven-publish")
+    alias(libs.plugins.maven.publish)
 }
 
 buildscript {
@@ -87,9 +87,39 @@ kover {
     }
 }
 
-java {
-    withJavadocJar()
-    withSourcesJar()
+val releasePleaseManifest = file(".release-please-manifest.json")
+
+version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content!!
+
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+    signAllPublications()
+
+    pom {
+        name = project.name
+        description = "Kotlin implementation of the OCI Distribution client specification"
+        url = "https://github.com/defenseunicorns/koci"
+
+        licenses {
+            license {
+                name = "The Apache License, Version 2.0"
+                url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                distribution = "repo"
+            }
+        }
+
+        developers {
+            developer {
+                name = "Defense Unicorns"
+            }
+        }
+
+        scm {
+            connection = "scm:git:git://github.com/defenseunicorns/koci.git"
+            developerConnection = "scm:git:ssh://github.com/defenseunicorns/koci.git"
+            url = "https://github.com/defenseunicorns/koci"
+        }
+    }
 }
 
 publishing {
@@ -103,17 +133,7 @@ publishing {
             }
         }
     }
-    publications {
-        val releasePleaseManifest = file(".release-please-manifest.json")
-        create<MavenPublication>("maven") {
-            version = Json.decodeFromString<JsonElement>(releasePleaseManifest.readText()).jsonObject["."]?.jsonPrimitive?.content
-
-            from(components["java"])
-        }
-    }
 }
-
-
 
 tasks.register<Test>("allTests") {
     systemProperty("TESTS_WITH_EXTERNAL_SERVICES", "true")

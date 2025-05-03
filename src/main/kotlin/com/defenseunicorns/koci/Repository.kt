@@ -619,26 +619,58 @@ class Repository(
                 val referrersTag = descriptor.digest.toReferrersTag()
 
                 val tagRes = client.get(router.manifest(name, referrersTag)) {
+                    expectSuccess = false
                     accept(ContentType.parse(INDEX_MEDIA_TYPE))
                     attributes.appendScopes(scopeRepository(name, ACTION_PULL))
                 }
 
-                check(tagRes.contentType().toString() == INDEX_MEDIA_TYPE) {
-                    "${tagRes.contentType()} is not $INDEX_MEDIA_TYPE"
-                }
+                when (tagRes.status) {
+                    HttpStatusCode.OK -> {
+                        check(tagRes.contentType().toString() == INDEX_MEDIA_TYPE) {
+                            "${tagRes.contentType()} is not $INDEX_MEDIA_TYPE"
+                        }
 
-                val index = Json.decodeFromStream<Index>(tagRes.body())
-                if (artifactType.isNotEmpty()) {
-                    val filteredManifests = CopyOnWriteArrayList<Descriptor>().apply {
-                        addAll(index.manifests.filter { it.artifactType == artifactType })
+                        val index = Json.decodeFromStream<Index>(tagRes.body())
+                        if (artifactType.isNotEmpty()) {
+                            val filteredManifests = CopyOnWriteArrayList<Descriptor>().apply {
+                                addAll(index.manifests.filter { it.artifactType == artifactType })
+                            }
+                            index.copy(manifests = filteredManifests)
+                        } else {
+                            index
+                        }
                     }
-                    index.copy(manifests = filteredManifests)
-                } else {
-                    index
+
+                    HttpStatusCode.NotFound -> {
+                        Index()
+                    }
+
+                    else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, tagRes)
                 }
             }
 
             else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
         }
+    }
+
+    suspend fun attach(stream: InputStream, expected: Descriptor, attachTo: Descriptor) = channelFlow {
+        val current = referrers(attachTo).getOrThrow()
+
+        if (current.manifests.contains(expected)) {
+            send(expected.size)
+            return@channelFlow
+        }
+
+        push(stream, expected).collect {
+            send(it)
+        }
+
+
+        // args: stream: InputStream, attachTo: Descriptor
+
+        // first check if referrers API exists, if it does then use that
+        // if it does not check if the fallback tag exists
+
+        // throw the item in a new entry in the index and push
     }
 }

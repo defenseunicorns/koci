@@ -15,8 +15,7 @@ import kotlinx.serialization.encoding.Encoder
 import java.security.MessageDigest
 
 enum class RegisteredAlgorithm(private val n: String) {
-    SHA256("sha256"),
-    SHA512("sha512");
+    SHA256("sha256"), SHA512("sha512");
 
     override fun toString(): String {
         return this.n
@@ -38,14 +37,11 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
             "sha512" -> RegisteredAlgorithm.SHA512
             "" -> throw IllegalArgumentException("missing algorithm")
             else -> throw IllegalArgumentException("$algo is not one of the registered algorithms")
-        },
-        hex = content.substringAfter(":")
+        }, hex = content.substringAfter(":")
     )
 
     constructor(algorithm: RegisteredAlgorithm, hex: ByteArray) : this(
-        algorithm,
-        hex.joinToString("") { "%02x".format(it) }
-    )
+        algorithm, hex.joinToString("") { "%02x".format(it) })
 
     init {
         requireNotNull(DigestRegex.matchEntire(this.toString())) { "$this does not satisfy $DigestRegex" }
@@ -65,8 +61,9 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
         return "$algorithm:$hex"
     }
 
+    // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#referrers-tag-schema
     fun toReferrersTag(): String {
-        return "$algorithm-${hex.slice(0 .. 31)}"
+        return "$algorithm-${hex.slice(0..31)}"
     }
 
     override fun equals(other: Any?): Boolean {
@@ -87,8 +84,7 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
 }
 
 object DigestSerializer : KSerializer<Digest> {
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: Digest) {
         encoder.encodeString(value.toString())

@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := build
 
 ZARF_VERSION := "latest"
-ORAS_VERSION := "1.2.2"
+ORAS_VERSION := "1.2.3"
 ADDLICENSE_VERSION := "v1.1.1"
 ARCH := $(shell go env GOARCH)
 OS := $(shell go env GOOS)

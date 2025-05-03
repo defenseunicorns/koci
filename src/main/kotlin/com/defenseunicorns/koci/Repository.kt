@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.roundToInt
 
 fun Headers.toUploadStatus(): UploadStatus {
@@ -578,36 +579,66 @@ class Repository(
     }
 
     /**
-     * TODO: A Link header MUST be included in the response when the descriptor list
+     * [GET /v2/<n>/referrers/<digest>](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers)
+     *
+     * A Link header MUST be included in the response when the descriptor list
      * cannot be returned in a single manifest. Each response is an image index with
      * different descriptors in the manifests field. The Link header MUST be set according
      * to RFC5988 with the Relation Type rel="next"
      */
+    @OptIn(ExperimentalSerializationApi::class)
     suspend fun referrers(descriptor: Descriptor, artifactType: String = ""): Result<Index> = runCatching {
         val res = client.get(router.referrers(name, descriptor, artifactType)) {
-            expectSuccess = false // TODO: validate this via tests, how does this interact w/ the auth client?
+            expectSuccess = false
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
         // If filtering is requested and applied, the response MUST include a header OCI-Filters-Applied: artifactType
         // denoting that an artifactType filter was applied. If multiple filters are applied, the header MUST contain
         // a comma separated list of applied filters.
 
-        return when (res.status) {
+        when (res.status) {
             HttpStatusCode.OK -> {
-                check(
-                    res.contentType().toString() == INDEX_MEDIA_TYPE
-                ) { "${res.contentType()} is not $INDEX_MEDIA_TYPE" }
+                check(res.contentType().toString() == INDEX_MEDIA_TYPE) {
+                    "${res.contentType()} is not $INDEX_MEDIA_TYPE"
+                }
+
+                // Check for OCI-Filters-Applied header if artifactType was specified
+                if (artifactType.isNotEmpty()) {
+                    val filtersApplied = res.headers["OCI-Filters-Applied"]
+                    if (filtersApplied != null) {
+                        check(filtersApplied.contains("artifactType")) {
+                            "Filter artifactType was requested but not applied"
+                        }
+                    }
+                }
+
                 Json.decodeFromString(res.body())
             }
 
             HttpStatusCode.NotFound -> {
-                // fallback to https://github.com/opencontainers/distribution-spec/blob/main/spec.md#referrers-tag-schema
-                TODO()
+                val referrersTag = descriptor.digest.toReferrersTag()
+
+                val tagRes = client.get(router.manifest(name, referrersTag)) {
+                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                }
+
+                check(tagRes.contentType().toString() == INDEX_MEDIA_TYPE) {
+                    "${tagRes.contentType()} is not $INDEX_MEDIA_TYPE"
+                }
+
+                val index = Json.decodeFromStream<Index>(tagRes.body())
+                if (artifactType.isNotEmpty()) {
+                    val filteredManifests = CopyOnWriteArrayList<Descriptor>().apply {
+                        addAll(index.manifests.filter { it.artifactType == artifactType })
+                    }
+                    index.copy(manifests = filteredManifests)
+                } else {
+                    index
+                }
             }
 
-            else -> {
-                Result.failure(OCIException.UnexpectedStatus(HttpStatusCode.OK, res))
-            }
+            else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
         }
     }
 }

@@ -32,7 +32,7 @@ data class Manifest(
     val config: Descriptor,
     val layers: List<Descriptor>,
     val annotations: Annotations? = null,
-    override val subject: String? = null
+    override val subject: Descriptor? = null
 ) : TaggableContent
 
 object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
@@ -55,7 +55,7 @@ data class Index(
     @Serializable(with = CopyOnWriteDescriptorArrayListSerializer::class)
     val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
     val annotations: Annotations? = null,
-    override val subject: String? = null
+    override val subject: Descriptor? = null
 ) : TaggableContent
 
 @Serializable
@@ -117,5 +117,5 @@ data class UploadStatus(
 
 sealed interface TaggableContent {
     val mediaType: String?
-    val subject: String?
+    val subject: Descriptor?
 }

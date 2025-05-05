@@ -569,4 +569,62 @@ class Repository(
 
         Descriptor(ct, Digest(dg), txt.length.toLong())
     }
+
+    /**
+     * [Mounting a blob from another repository](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository)
+     *
+     * Mounts a blob from another repository to the current repository.
+     * This is a more efficient operation than downloading and re-uploading when the registry
+     * already has the blob.
+     *
+     * The response to a successful mount MUST be 201 Created, and MUST contain the Location header.
+     * If a registry does not support cross-repository mounting or is unable to mount the requested blob,
+     * it SHOULD return a 202 Accepted. This indicates that the upload session has begun
+     * and that the client MAY proceed with the upload.
+     *
+     * @param descriptor The descriptor of the blob to mount
+     * @param sourceRepository The source repository from which to mount the blob
+     * @return Result containing true if the mount was successful,
+     *         or false if the mount was not successful but an upload session was created
+     */
+    suspend fun mount(
+        descriptor: Descriptor,
+        sourceRepository: String
+    ): Result<Boolean> = runCatching {
+        require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
+        require(descriptor.mediaType != INDEX_MEDIA_TYPE)
+        
+        // If the blob is already being uploaded, don't try to mount it
+        if (uploading.containsKey(descriptor)) {
+            return@runCatching false
+        }
+        
+        if (exists(descriptor).getOrDefault(false)) {
+            return@runCatching true
+        }
+        
+        val mountUrl = router.blobMount(name, sourceRepository, descriptor)
+        val res = client.post(mountUrl) {
+            headers[HttpHeaders.ContentLength] = "0"
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+        }
+        
+        when (res.status) {
+            HttpStatusCode.Created -> {
+                val locationHeader = res.headers[HttpHeaders.Location]
+                requireNotNull(locationHeader) { 
+                    "Registry did not provide a Location header in the mount response" 
+                }
+                true
+            }
+            HttpStatusCode.Accepted -> {
+                val uploadStatus = res.headers.toUploadStatus()
+                uploading[descriptor] = uploadStatus
+                false
+            }
+            else -> throw OCIException.UnexpectedStatus(
+                HttpStatusCode.Created, res
+            )
+        }
+    }
 }

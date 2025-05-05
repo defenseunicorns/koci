@@ -54,6 +54,20 @@ class Router(registryURL: String) {
     }
 
     /**
+     * [Mounting a blob from another repository](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository)
+     *
+     * @param repository The target repository to mount the blob to
+     * @param sourceRepository The source repository where the blob exists
+     * @param descriptor The blob descriptor to mount
+     */
+    fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
+        return base.clone().appendPathSegments(repository, "blobs", "uploads", "").apply {
+            parameters.append("mount", descriptor.digest.toString())
+            parameters.append("from", sourceRepository)
+        }.build()
+    }
+
+    /**
      * [RFC 7231](https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.2)
      */
     fun parseUploadLocation(locationHeader: String): Url {

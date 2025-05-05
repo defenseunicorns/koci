@@ -606,7 +606,10 @@ class Repository(
         val mountUrl = router.blobMount(name, sourceRepository, descriptor)
         val res = client.post(mountUrl) {
             headers[HttpHeaders.ContentLength] = "0"
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+            attributes.appendScopes(
+                scopeRepository(name, ACTION_PULL, ACTION_PUSH),
+                scopeRepository(sourceRepository, ACTION_PULL)
+            )
         }
         
         when (res.status) {

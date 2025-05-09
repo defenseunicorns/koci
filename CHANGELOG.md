@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 (2025-05-09)
+
+## What's Changed
+* ci(deps): bump github/codeql-action from 3.28.16 to 3.28.17 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/92
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.3.0...v0.3.1
+
 ## 0.3.0 (2025-05-01)
 
 ## What's Changed

@@ -56,6 +56,7 @@ repo.pull(tag, store).collect{ prog ->
 - [x] Push blobs
   - [x] Resumable uploads
   - [x] Single PUT request if content < `OCI-Chunk-Min-Length` or 5MB if unset. Chunked upload otherwise
+  - [x] Cross-repository blob mounting
 - [x] Push + tag manifests/indexes
 - [ ] Referrers API
 

@@ -460,6 +460,60 @@ class RegistryTest {
     }
 
     @Test
+    @Order(2)
+    fun `mounting blobs from another repository`() = runTest {
+        val sourceRepo = registry.repo("dos-games")
+        val targetRepo = registry.repo("test-upload")
+
+        // Get an existing blob from the source repository
+        val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
+        val index = sourceRepo.index(indexDesc).getOrThrow()
+        
+        // First get a manifest, then use its layers
+        val manifestDesc = index.manifests.first()
+        val manifest = sourceRepo.manifest(manifestDesc).getOrThrow()
+        val existingBlob = manifest.layers.first()
+
+        // Case 1: Blob does not exist in source repo, but can be pushed afterwards
+        val nonExistentContent = "This blob doesn't exist yet".byteInputStream()
+        val nonExistentDesc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = nonExistentContent)
+        nonExistentContent.reset()
+        
+        val nonExistentResult = targetRepo.mount(nonExistentDesc, "dos-games").getOrThrow()
+        assertFalse(nonExistentResult, "Mount should fail for non-existent blob")
+        
+        val pushResult = targetRepo.push(nonExistentContent, nonExistentDesc).last()
+        assertEquals(nonExistentDesc.size, pushResult, "Push after failed mount should succeed")
+        
+        assertTrue(targetRepo.exists(nonExistentDesc).getOrThrow(), "Blob should exist after push")
+        
+        assertTrue(targetRepo.remove(nonExistentDesc).getOrThrow(), "Blob removal should succeed")
+
+        // Case 2: Mount a blob that already exists in target repo
+        val duplicateContent = "This is a duplicate blob".byteInputStream()
+        val duplicateDesc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = duplicateContent)
+        duplicateContent.reset()
+        
+        targetRepo.push(duplicateContent, duplicateDesc).collect()
+        
+        val duplicateResult = targetRepo.mount(duplicateDesc, "dos-games").getOrThrow()
+        assertTrue(duplicateResult, "Mount should report success for blob that already exists")
+        
+        assertTrue(targetRepo.remove(duplicateDesc).getOrThrow(), "Blob removal should succeed")
+
+        // Case 3: Successfully mount a blob from source repo
+        assertTrue(sourceRepo.exists(existingBlob).getOrThrow(), "Blob should exist in source repo")
+        assertFalse(targetRepo.exists(existingBlob).getOrDefault(false), "Blob should not exist in target repo yet")
+        
+        val mountResult = targetRepo.mount(existingBlob, "dos-games").getOrThrow()
+        assertTrue(mountResult, "Mount should succeed for existing blob")
+        
+        assertTrue(targetRepo.exists(existingBlob).getOrThrow(), "Blob should exist in target repo after mount")
+        
+        assertTrue(targetRepo.remove(existingBlob).getOrThrow(), "Blob removal should succeed")
+    }
+
+    @Test
     fun `public scopes`() = runTest {
         val ecr = Registry("https://public.ecr.aws", client = httpClient)
 

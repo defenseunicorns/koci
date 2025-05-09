@@ -8,6 +8,8 @@ package com.defenseunicorns.koci
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
+import io.ktor.http.ContentType
+import io.ktor.util.encodeBase64
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.*
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.absolutePathString
@@ -272,8 +275,7 @@ class RegistryTest {
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
         assertEquals(indexDesc.digest, storage.resolve(ref).getOrThrow().digest)
         assertEquals(
-            listOf(indexDesc.copy(annotations = mapOf(ANNOTATION_REF_NAME to ref.toString()))),
-            storage.catalog()
+            listOf(indexDesc.copy(annotations = mapOf(ANNOTATION_REF_NAME to ref.toString()))), storage.catalog()
         )
 
         val arm64desc = index.manifests.first {
@@ -323,13 +325,12 @@ class RegistryTest {
 
                 val pullJob = async(d) {
                     try {
-                        registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
-                            .collect { progress ->
-                                lastProgress = progress
-                                if (cancelAt == progress) {
-                                    throw CancellationException("download cancelled at $cancelAt")
-                                }
+                        registry.pull("dos-games", "1.1.0", storage, amd64Resolver).collect { progress ->
+                            lastProgress = progress
+                            if (cancelAt == progress) {
+                                throw CancellationException("download cancelled at $cancelAt")
                             }
+                        }
                         // Success case
                         assertNull(null)
                         assertEquals(100, lastProgress)
@@ -469,6 +470,61 @@ class RegistryTest {
         val nvcr = Registry("https://nvcr.io", client = httpClient)
 
         nvcr.tags("nvidia/l4t-pytorch").getOrThrow()
+    }
+
+    @Test
+    @Order(2)
+    fun `referrers api and fallback`() = runTest {
+        val repoName = "test-upload"
+        val repo = registry.repo(repoName)
+
+        val hello = "Hello World!".byteInputStream()
+        val desc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = hello)
+        hello.reset()
+
+        assertEquals(
+            desc.size, repo.push(hello, desc).last()
+        )
+
+        val manifest = Manifest(
+            schemaVersion = 2,
+            mediaType = MANIFEST_MEDIA_TYPE,
+            config = Descriptor(
+                mediaType = EMPTY_JSON_MEDIA_TYPE,
+                digest = Digest("sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"),
+                size = 2,
+                data = "{}".encodeBase64()
+            ),
+            layers = listOf(desc)
+        )
+
+        val latest = repo.tag(manifest, "latest").getOrThrow()
+
+        assertEquals(Index(schemaVersion = 2, mediaType = INDEX_MEDIA_TYPE), repo.referrers(latest).getOrThrow())
+
+        // Create and push a layer to attach
+        val layerStream = "Layer content for referrers test".byteInputStream()
+        val layerDesc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = layerStream)
+        layerStream.reset()
+        repo.push(layerStream, layerDesc).collect()
+        assertTrue(repo.exists(layerDesc).getOrThrow())
+
+        // TODO: figure out the return type
+        val attachedDesc = repo.attach(layerDesc, ContentType.parse(TEST_BLOB_MEDIATYPE), latest).getOrThrow()
+
+        assertEquals(
+            Index(
+                schemaVersion = 2,
+                mediaType = INDEX_MEDIA_TYPE,
+                manifests = CopyOnWriteArrayList<Descriptor>().apply {
+                    add(attachedDesc.copy(
+                        artifactType = TEST_BLOB_MEDIATYPE
+                    ))
+                }
+            ), repo.referrers(latest).getOrThrow())
+
+        repo.remove(latest).getOrThrow()
+        repo.resolve(latest.digest.toReferrersTag()).getOrThrow().also { repo.remove(it).getOrThrow() }
     }
 }
 

@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.roundToInt
 
 fun Headers.toUploadStatus(): UploadStatus {
@@ -80,8 +81,7 @@ class Repository(
                         when (platformResolver) {
                             null -> {
                                 Descriptor.fromInputStream(
-                                    mediaType = INDEX_MEDIA_TYPE,
-                                    stream = res.body() as InputStream
+                                    mediaType = INDEX_MEDIA_TYPE, stream = res.body() as InputStream
                                 )
                             }
 
@@ -529,11 +529,24 @@ class Repository(
         if (cause == null) uploading.remove(expected)
     }
 
+    @Volatile
+    var supportsReferrers: Boolean = false
+
     /**
      * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
      */
     suspend fun tag(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
         requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
+        pushReference(content, ref).getOrThrow()
+    }
+
+    /**
+     * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
+     */
+    suspend fun tag(content: TaggableContent, digest: Digest): Result<Descriptor> =
+        pushReference(content, digest.toString())
+
+    private suspend fun pushReference(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
         val (ct, txt) = when (content) {
             is Manifest -> {
                 val ct = when (val mt = content.mediaType) {
@@ -564,9 +577,149 @@ class Repository(
             throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
         }
 
+        // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests-with-subject
+        content.subject?.let { subject ->
+            val subjectHeader = res.headers["OCI-Subject"]
+            if (subjectHeader == null) {
+                supportsReferrers = false
+            } else {
+                check(subjectHeader == subject.digest.toString()) { "invalid OCI-Subject header" }
+            }
+        }
+
         // get digest from Location header
+        checkNotNull(res.headers[HttpHeaders.Location]) { "Response missing required Location header" }
         val dg = Url(res.headers[HttpHeaders.Location]!!).segments.last()
 
         Descriptor(ct, Digest(dg), txt.length.toLong())
     }
+
+    /**
+     * [GET /v2/<n>/referrers/<digest>](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers)
+     *
+     * A Link header MUST be included in the response when the descriptor list
+     * cannot be returned in a single manifest. Each response is an image index with
+     * different descriptors in the manifests field. The Link header MUST be set according
+     * to RFC5988 with the Relation Type rel="next"
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun referrers(descriptor: Descriptor, artifactType: String = ""): Result<Index> = runCatching {
+        val res = client.get(router.referrers(name, descriptor, artifactType)) {
+            expectSuccess = false
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        }
+        // If filtering is requested and applied, the response MUST include a header OCI-Filters-Applied: artifactType
+        // denoting that an artifactType filter was applied. If multiple filters are applied, the header MUST contain
+        // a comma separated list of applied filters.
+
+        when (res.status) {
+            HttpStatusCode.OK -> {
+                check(res.contentType().toString() == INDEX_MEDIA_TYPE) {
+                    "${res.contentType()} is not $INDEX_MEDIA_TYPE"
+                }
+
+                supportsReferrers = true
+
+                // Check for OCI-Filters-Applied header if artifactType was specified
+                if (artifactType.isNotEmpty()) {
+                    val filtersApplied = res.headers["OCI-Filters-Applied"]
+                    if (filtersApplied != null) {
+                        check(filtersApplied.contains("artifactType")) {
+                            "Filter artifactType was requested but not applied"
+                        }
+                    }
+                }
+
+                Json.decodeFromString(res.body())
+            }
+
+            HttpStatusCode.NotFound -> {
+                val referrersTag = descriptor.digest.toReferrersTag()
+
+                val tagRes = client.get(router.manifest(name, referrersTag)) {
+                    expectSuccess = false
+                    accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                }
+
+                when (tagRes.status) {
+                    HttpStatusCode.OK -> {
+                        check(tagRes.contentType().toString() == INDEX_MEDIA_TYPE) {
+                            "${tagRes.contentType()} is not $INDEX_MEDIA_TYPE"
+                        }
+
+                        val index = Json.decodeFromStream<Index>(tagRes.body())
+                        if (artifactType.isNotEmpty()) {
+                            val filteredManifests = CopyOnWriteArrayList<Descriptor>().apply {
+                                addAll(index.manifests.filter { it.artifactType == artifactType })
+                            }
+                            index.copy(manifests = filteredManifests)
+                        } else {
+                            index
+                        }
+                    }
+
+                    // Not sure how I feel about this
+                    HttpStatusCode.NotFound -> {
+                        Index(schemaVersion = 2, mediaType = INDEX_MEDIA_TYPE)
+                    }
+
+                    else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, tagRes)
+                }
+            }
+
+            else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
+        }
+    }
+
+    suspend fun attach(artifact: Descriptor, artifactType: ContentType, attachTo: Descriptor): Result<Descriptor> =
+        runCatching {
+            check(artifactType.toString().isNotEmpty())
+
+            val dummy = "{}".byteInputStream()
+            val emptyConfig = Descriptor.fromInputStream(
+                mediaType = "application/vnd.oci.empty.v1+json", stream = dummy
+            )
+            dummy.reset()
+            push(dummy, emptyConfig).collect()
+
+            val attachManifest = Manifest(
+                schemaVersion = 2,
+                config = emptyConfig,
+                mediaType = MANIFEST_MEDIA_TYPE,
+                layers = listOf(artifact),
+                subject = attachTo
+            )
+
+            val attachManifestStream = Json.encodeToString(attachManifest).byteInputStream()
+            val attachManifestDesc = Descriptor.fromInputStream(MANIFEST_MEDIA_TYPE, stream = attachManifestStream)
+            attachManifestStream.reset()
+
+            val attached = tag(attachManifest, attachManifestDesc.digest).getOrThrow()
+
+            if (!supportsReferrers) {
+                val current = referrers(attachTo).getOrThrow()
+
+                val updatedManifests = current.manifests.apply {
+                    // Append a descriptor for the pushed manifest to the manifests
+                    // in the referrers list. The value of the artifactType MUST be
+                    // set to the artifactType value in the pushed manifest, if present.
+                    // If the artifactType is empty or missing in a pushed image manifest,
+                    // the value of artifactType MUST be set to the config descriptor mediaType
+                    // value. All annotations from the pushed manifest MUST be copied to
+                    // this descriptor.
+                    add(
+                        attachManifestDesc.copy(
+                            artifactType = artifactType.toString(), annotations = attachManifest.annotations
+                        )
+                    )
+                }
+
+                val updated = current.copy(manifests = updatedManifests)
+
+                tag(updated, attachTo.digest.toReferrersTag()).getOrThrow()
+            }
+
+            attached
+        }
 }

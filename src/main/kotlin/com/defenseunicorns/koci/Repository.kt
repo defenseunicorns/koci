@@ -81,8 +81,7 @@ class Repository(
                         when (platformResolver) {
                             null -> {
                                 Descriptor.fromInputStream(
-                                    mediaType = INDEX_MEDIA_TYPE,
-                                    stream = res.body() as InputStream
+                                    mediaType = INDEX_MEDIA_TYPE, stream = res.body() as InputStream
                                 )
                             }
 
@@ -530,11 +529,24 @@ class Repository(
         if (cause == null) uploading.remove(expected)
     }
 
+    @Volatile
+    var supportsReferrers: Boolean = false
+
     /**
      * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
      */
     suspend fun tag(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
         requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
+        pushReference(content, ref).getOrThrow()
+    }
+
+    /**
+     * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
+     */
+    suspend fun tag(content: TaggableContent, digest: Digest): Result<Descriptor> =
+        pushReference(content, digest.toString())
+
+    private suspend fun pushReference(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
         val (ct, txt) = when (content) {
             is Manifest -> {
                 val ct = when (val mt = content.mediaType) {
@@ -567,8 +579,12 @@ class Repository(
 
         // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests-with-subject
         content.subject?.let { subject ->
-            checkNotNull(res.headers["OCI-Subject"]) { "OCI-Subject header is missing" }
-            check(res.headers["OCI-Subject"] == subject.digest.toString()) { "registry does not support referrers API" }
+            val subjectHeader = res.headers["OCI-Subject"]
+            if (subjectHeader == null) {
+                supportsReferrers = false
+            } else {
+                check(subjectHeader == subject.digest.toString()) { "invalid OCI-Subject header" }
+            }
         }
 
         // get digest from Location header
@@ -601,6 +617,8 @@ class Repository(
                 check(res.contentType().toString() == INDEX_MEDIA_TYPE) {
                     "${res.contentType()} is not $INDEX_MEDIA_TYPE"
                 }
+
+                supportsReferrers = true
 
                 // Check for OCI-Filters-Applied header if artifactType was specified
                 if (artifactType.isNotEmpty()) {
@@ -641,8 +659,9 @@ class Repository(
                         }
                     }
 
+                    // Not sure how I feel about this
                     HttpStatusCode.NotFound -> {
-                        Index()
+                        Index(schemaVersion = 2, mediaType = INDEX_MEDIA_TYPE)
                     }
 
                     else -> throw OCIException.UnexpectedStatus(HttpStatusCode.OK, tagRes)
@@ -653,54 +672,54 @@ class Repository(
         }
     }
 
-    suspend fun attach(artifact: Descriptor, artifactType: ContentType, attachTo: Descriptor) {
-        check(artifactType.toString().isNotEmpty())
+    suspend fun attach(artifact: Descriptor, artifactType: ContentType, attachTo: Descriptor): Result<Descriptor> =
+        runCatching {
+            check(artifactType.toString().isNotEmpty())
 
-        val current = referrers(attachTo).getOrThrow()
-
-        if (current.manifests.contains(artifact)) {
-            return
-        }
-
-        val dummy = "{}".byteInputStream()
-        val emptyConfig = Descriptor.fromInputStream(
-            mediaType = "application/vnd.oci.empty.v1+json",
-            stream = dummy
-        )
-        dummy.reset()
-        push(dummy, emptyConfig).collect()
-
-        val attachManifest = Manifest(
-            schemaVersion = 2,
-            config = emptyConfig,
-            mediaType = MANIFEST_MEDIA_TYPE,
-            layers = listOf(artifact),
-            subject = attachTo
-        )
-
-        val attachManifestStream = Json.encodeToString(attachManifest).byteInputStream()
-        val attachManifestDesc = Descriptor.fromInputStream(MANIFEST_MEDIA_TYPE, stream = attachManifestStream)
-        attachManifestStream.reset()
-        tag(attachManifest, attachManifestDesc.digest.toString())
-
-        val updatedManifests = current.manifests.apply {
-            // Append a descriptor for the pushed manifest to the manifests
-            // in the referrers list. The value of the artifactType MUST be
-            // set to the artifactType value in the pushed manifest, if present.
-            // If the artifactType is empty or missing in a pushed image manifest,
-            // the value of artifactType MUST be set to the config descriptor mediaType
-            // value. All annotations from the pushed manifest MUST be copied to
-            // this descriptor.
-            add(
-                attachManifestDesc.copy(
-                    artifactType = artifactType.toString(),
-                    annotations = attachManifest.annotations
-                )
+            val dummy = "{}".byteInputStream()
+            val emptyConfig = Descriptor.fromInputStream(
+                mediaType = "application/vnd.oci.empty.v1+json", stream = dummy
             )
+            dummy.reset()
+            push(dummy, emptyConfig).collect()
+
+            val attachManifest = Manifest(
+                schemaVersion = 2,
+                config = emptyConfig,
+                mediaType = MANIFEST_MEDIA_TYPE,
+                layers = listOf(artifact),
+                subject = attachTo
+            )
+
+            val attachManifestStream = Json.encodeToString(attachManifest).byteInputStream()
+            val attachManifestDesc = Descriptor.fromInputStream(MANIFEST_MEDIA_TYPE, stream = attachManifestStream)
+            attachManifestStream.reset()
+
+            val attached = tag(attachManifest, attachManifestDesc.digest).getOrThrow()
+
+            if (!supportsReferrers) {
+                val current = referrers(attachTo).getOrThrow()
+
+                val updatedManifests = current.manifests.apply {
+                    // Append a descriptor for the pushed manifest to the manifests
+                    // in the referrers list. The value of the artifactType MUST be
+                    // set to the artifactType value in the pushed manifest, if present.
+                    // If the artifactType is empty or missing in a pushed image manifest,
+                    // the value of artifactType MUST be set to the config descriptor mediaType
+                    // value. All annotations from the pushed manifest MUST be copied to
+                    // this descriptor.
+                    add(
+                        attachManifestDesc.copy(
+                            artifactType = artifactType.toString(), annotations = attachManifest.annotations
+                        )
+                    )
+                }
+
+                val updated = current.copy(manifests = updatedManifests)
+
+                tag(updated, attachTo.digest.toReferrersTag()).getOrThrow()
+            }
+
+            attached
         }
-
-        val updated = current.copy(manifests = updatedManifests)
-
-        tag(updated, attachTo.digest.toReferrersTag()).getOrThrow()
-    }
 }

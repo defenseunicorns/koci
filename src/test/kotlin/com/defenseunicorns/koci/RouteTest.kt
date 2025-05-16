@@ -98,4 +98,23 @@ class RouteTest {
         assertEquals(abs, router.parseUploadLocation(abs).toString())
         assertEquals(abs, router.parseUploadLocation(rel).toString())
     }
+
+    @Test
+    fun `blob mount`() {
+        val desc = Descriptor(
+            mediaType = "application/vnd.oci.image.layer.v1.tar+gzip",
+            digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
+            size = 1024,
+            annotations = mutableMapOf()
+        )
+        
+        val targetRepo = "target-repo"
+        val sourceRepo = "source-repo"
+        
+        val expectedUrl = "http://127.0.0.1:5000/v2/target-repo/blobs/uploads/?mount=sha256%3Aa658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149&from=source-repo"
+        
+        val actualUrl = router.blobMount(targetRepo, sourceRepo, desc).toString()
+        
+        assertEquals(expectedUrl, actualUrl, "The URL for blob mounting should be constructed correctly")
+    }
 }

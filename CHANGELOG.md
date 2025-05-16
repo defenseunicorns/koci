@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 (2025-05-16)
+
+## What's Changed
+* ci(deps): bump github/codeql-action from 3.28.16 to 3.28.17 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/92
+* build(deps): bump the gradle group with 3 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/94
+* feat: blob mounting by @Noxsios in https://github.com/defenseunicorns/koci/pull/93
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.3.0...v0.4.0
+
 ## 0.3.0 (2025-05-01)
 
 ## What's Changed

@@ -14,6 +14,12 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import java.security.MessageDigest
 
+/**
+ * Represents supported digest algorithms according to the OCI Distribution Specification.
+ *
+ * Each algorithm provides a string representation and a way to create a [MessageDigest]
+ * instance for computing digests using that algorithm.
+ */
 enum class RegisteredAlgorithm(private val n: String) {
     SHA256("sha256"),
     SHA512("sha512");
@@ -22,6 +28,9 @@ enum class RegisteredAlgorithm(private val n: String) {
         return this.n
     }
 
+    /**
+     * Creates a [MessageDigest] instance for this algorithm.
+     */
     fun hasher(): MessageDigest {
         return when (this) {
             SHA256 -> MessageDigest.getInstance("SHA-256")
@@ -30,8 +39,24 @@ enum class RegisteredAlgorithm(private val n: String) {
     }
 }
 
+/**
+ * Represents a content-addressable digest as defined in the OCI Distribution Specification.
+ *
+ * A digest consists of an algorithm identifier and a hex-encoded hash value.
+ * The string representation follows the format: algorithm:hex
+ * (e.g., "sha256:6c3c624b58dbbcd3c0dd82b4c53f04194d1247c6eebdaab7c610cf7d66709b3b")
+ *
+ * Digests are used throughout the OCI Distribution Specification to uniquely identify content
+ * and verify content integrity.
+ */
 @Serializable(with = DigestSerializer::class)
 class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
+    /**
+     * Creates a Digest from a string in the format "algorithm:hex".
+     *
+     * @param content String representation of the digest
+     * @throws IllegalArgumentException if the algorithm is missing or not supported
+     */
     constructor(content: String) : this(
         algorithm = when (val algo = content.substringBefore(":", "")) {
             "sha256" -> RegisteredAlgorithm.SHA256
@@ -42,6 +67,12 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
         hex = content.substringAfter(":")
     )
 
+    /**
+     * Creates a Digest from an algorithm and raw bytes.
+     *
+     * @param algorithm The hash algorithm used
+     * @param hex The raw bytes to be hex-encoded
+     */
     constructor(algorithm: RegisteredAlgorithm, hex: ByteArray) : this(
         algorithm,
         hex.joinToString("") { "%02x".format(it) }
@@ -65,6 +96,10 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
         return "$algorithm:$hex"
     }
 
+    /**
+     * Compares this digest with another object for equality.
+     * Two digests are equal if they have the same algorithm and hex value (case-insensitive).
+     */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Digest) return false
@@ -75,6 +110,9 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
         return true
     }
 
+    /**
+     * Returns a hash code for this digest.
+     */
     override fun hashCode(): Int {
         var result = algorithm.hashCode()
         result = 31 * result + hex.hashCode()
@@ -82,6 +120,9 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
     }
 }
 
+/**
+ * Serializer for Digest class that converts between Digest objects and their string representation.
+ */
 object DigestSerializer : KSerializer<Digest> {
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)

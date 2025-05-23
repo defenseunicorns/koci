@@ -37,7 +37,17 @@ const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json
 const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
 
 /**
- *  Manifest provides `application/vnd.oci.image.manifest.v1+json` mediatype structure when marshalled to JSON.
+ * IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image Layout
+ */
+const val IMAGE_LAYOUT_FILE = "oci-layout"
+
+/**
+ * IMAGE_INDEX_FILE is the file name of the entry point for references and descriptors in an OCI Image [Layout]
+ */
+const val IMAGE_INDEX_FILE = "index.json"
+
+/**
+ *  Manifest provides [MANIFEST_MEDIA_TYPE] mediatype structure when marshalled to JSON.
  */
 @Serializable
 data class Manifest(
@@ -46,7 +56,7 @@ data class Manifest(
      */
     override val schemaVersion: Int? = null,
     /**
-     * mediaType specifies the type of this document data structure e.g. `application/vnd.oci.image.manifest.v1+json`
+     * mediaType specifies the type of this document data structure e.g. [MANIFEST_MEDIA_TYPE]
      */
     val mediaType: String? = null,
     /**
@@ -78,15 +88,32 @@ object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayLi
     }
 }
 
+/**
+ * Index references manifests for various platforms.
+ *
+ *  This structure provides [INDEX_MEDIA_TYPE] mediatype when marshalled to JSON.
+ */
 @Serializable
 data class Index(
     override val schemaVersion: Int? = null,
+    /**
+     * mediaType specifies the type of this document data structure e.g. [INDEX_MEDIA_TYPE]
+     */
     val mediaType: String? = null,
+    /**
+     * manifests references platform specific manifests.
+     */
     @Serializable(with = CopyOnWriteDescriptorArrayListSerializer::class)
     val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
+    /**
+     * annotations contains arbitrary metadata for the image index.
+     */
     val annotations: Annotations? = null,
 ) : Versioned
 
+/**
+ * LayoutMarker is the structure in the "oci-layout" file, found in the root of an OCI [Layout] directory
+ */
 @Serializable
 data class LayoutMarker(
     val imageLayoutVersion: String,

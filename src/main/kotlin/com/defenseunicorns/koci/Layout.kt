@@ -32,8 +32,8 @@ class Layout private constructor(
         suspend fun create(root: String): Result<Layout> = withContext(Dispatchers.IO) {
             runCatching {
                 var index = Index()
-                val indexLocation = "$root/index.json"
-                val layoutFileLocation = "$root/oci-layout"
+                val indexLocation = "$root/$IMAGE_INDEX_FILE"
+                val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE"
 
                 val rootDir = File(root)
                 if (!rootDir.exists()) {
@@ -203,7 +203,7 @@ class Layout private constructor(
     }
 
     internal fun syncIndex() {
-        File("$root/index.json").writeText(Json.encodeToString(index))
+        File("$root/$IMAGE_INDEX_FILE").writeText(Json.encodeToString(index))
     }
 
     private fun blob(descriptor: Descriptor): File {

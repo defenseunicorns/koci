@@ -301,7 +301,7 @@ class Layout private constructor(
         }
     }
 
-    // TODO: figure out how to use TaggableContent here as well?
+    // TODO: figure out how to use sealed Versioned here as well?
     //
     // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
     // TODO: unit test tagging

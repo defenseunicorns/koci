@@ -21,18 +21,49 @@ data class CatalogResponse(val repositories: List<String>)
 @Serializable
 data class TagsResponse(val name: String, val tags: List<String>?)
 
+/**
+ * MANIFEST_MEDIA_TYPE specifies the media type for an image manifest.
+ */
 const val MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+
+/**
+ * MANIFEST_CONFIG_MEDIA_TYPE specifies the media type for the image configuration.
+ */
 const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+
+/**
+ * INDEX_MEDIA_TYPE specifies the media type for an image index.
+ */
 const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
 
+/**
+ *  Manifest provides `application/vnd.oci.image.manifest.v1+json` mediatype structure when marshalled to JSON.
+ */
 @Serializable
 data class Manifest(
-    val schemaVersion: Int? = null,
-    override val mediaType: String? = null,
+    /**
+     * schemaVersion is the image manifest schema that this image follows
+     */
+    override val schemaVersion: Int? = null,
+    /**
+     * mediaType specifies the type of this document data structure e.g. `application/vnd.oci.image.manifest.v1+json`
+     */
+    val mediaType: String? = null,
+    /**
+     * config references a configuration object for a container, by digest.
+     *
+     * The referenced configuration object is a JSON blob that the runtime uses to set up the container.
+     */
     val config: Descriptor,
+    /**
+     * layers is an indexed list of layers referenced by the manifest.
+     */
     val layers: List<Descriptor>,
+    /**
+     * annotations contains arbitrary metadata for the image manifest.
+     */
     val annotations: Annotations? = null,
-) : TaggableContent
+) : Versioned
 
 object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
     override val descriptor: SerialDescriptor = ListSerializer(Descriptor.serializer()).descriptor
@@ -49,12 +80,12 @@ object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayLi
 
 @Serializable
 data class Index(
-    val schemaVersion: Int? = null,
-    override val mediaType: String? = null,
+    override val schemaVersion: Int? = null,
+    val mediaType: String? = null,
     @Serializable(with = CopyOnWriteDescriptorArrayListSerializer::class)
     val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
     val annotations: Annotations? = null,
-) : TaggableContent
+) : Versioned
 
 @Serializable
 data class LayoutMarker(
@@ -112,6 +143,6 @@ data class UploadStatus(
     var minChunkSize: Long,
 )
 
-sealed interface TaggableContent {
-    val mediaType: String?
+sealed interface Versioned {
+    val schemaVersion: Int?
 }

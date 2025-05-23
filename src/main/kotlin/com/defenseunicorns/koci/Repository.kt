@@ -532,7 +532,7 @@ class Repository(
     /**
      * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
      */
-    suspend fun tag(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
+    suspend fun tag(content: Versioned, ref: String): Result<Descriptor> = runCatching {
         requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
         val (ct, txt) = when (content) {
             is Manifest -> {

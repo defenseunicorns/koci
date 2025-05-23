@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci
 
+import io.ktor.http.ContentType.Application
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -80,6 +81,9 @@ data class Manifest(
     val annotations: Annotations? = null,
 ) : Versioned
 
+/**
+ * Generated serializer/deserializer for a CopyOnWriteDescriptorArrayList
+ */
 object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
     override val descriptor: SerialDescriptor = ListSerializer(Descriptor.serializer()).descriptor
 
@@ -197,8 +201,13 @@ data class Descriptor(
     val platform: Platform? = null,
 ) {
     companion object {
+        /**
+         * fromInputStream returns a [Descriptor], given the content and media type.
+         *
+         * if no media type is specified, "application/octet-stream" will be used
+         */
         fun fromInputStream(
-            mediaType: String,
+            mediaType: String = Application.OctetStream.toString(),
             algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
             stream: InputStream,
         ): Descriptor {
@@ -221,6 +230,9 @@ data class Descriptor(
     }
 }
 
+/**
+ * UploadStatus tracks the server-side state of an upload
+ */
 data class UploadStatus(
     val location: String,
     var offset: Long,

@@ -19,6 +19,11 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
+/**
+ * toUploadStatus retrieves the upload status of a blob from HTTP response headers.
+ *
+ * This allows for resumable uploads to be possible.
+ */
 fun Headers.toUploadStatus(): UploadStatus {
     val location = checkNotNull(this[HttpHeaders.Location]) {
         "missing Location header"

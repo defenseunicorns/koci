@@ -84,7 +84,7 @@ sealed class OCIException(message: String) : Exception(message) {
 /**
  * @throws OCIException.FromResponse
  */
-suspend fun attemptThrow4XX(response: HttpResponse) {
+internal suspend fun attemptThrow4XX(response: HttpResponse) {
     require(response.status.value in 400..499) { "Attempted to throw when status was not >=400 && <=499" }
 
     if (response.contentType() == ContentType.Application.Json) {

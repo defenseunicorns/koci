@@ -37,7 +37,7 @@ const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json
 const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
 
 /**
- * IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image Layout
+ * IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image [Layout]
  */
 const val IMAGE_LAYOUT_FILE = "oci-layout"
 
@@ -45,6 +45,11 @@ const val IMAGE_LAYOUT_FILE = "oci-layout"
  * IMAGE_INDEX_FILE is the file name of the entry point for references and descriptors in an OCI Image [Layout]
  */
 const val IMAGE_INDEX_FILE = "index.json"
+
+/**
+ * IMAGE_BLOBS_DIR is the directory name containing content addressable blobs in an OCI Image [Layout]
+ */
+const val IMAGE_BLOBS_DIR = "blobs"
 
 /**
  *  Manifest provides [MANIFEST_MEDIA_TYPE] mediatype structure when marshalled to JSON.

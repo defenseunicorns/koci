@@ -77,7 +77,7 @@ class LayoutTest {
         assertTrue(layout.exists(manifestDescriptor).getOrThrow())
 
         // Verify layer2 is a zombie (not referenced by any manifest)
-        val zombieFile = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+        val zombieFile = File("$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
         assertTrue(zombieFile.exists())
 
         val removedDigests = layout.gc().getOrThrow()
@@ -137,11 +137,11 @@ class LayoutTest {
         layout.syncIndex()
 
         // Verify blobs still exist on disk
-        val configFile = File("$rootDir/blobs/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}")
-        val layer1File = File("$rootDir/blobs/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
-        val layer2File = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+        val configFile = File("$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}")
+        val layer1File = File("$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
+        val layer2File = File("$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
         val manifestFile =
-            File("$rootDir/blobs/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}")
+            File("$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}")
 
         assertTrue(configFile.exists())
         assertTrue(layer1File.exists())
@@ -195,8 +195,8 @@ class LayoutTest {
             assertEquals("there are downloads in progress", exception.message)
             
             // Verify both layers still exist on disk
-            val layer1File = File("$rootDir/blobs/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
-            val layer2File = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+            val layer1File = File("$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
+            val layer2File = File("$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
             assertTrue(layer1File.exists())
             assertTrue(layer2File.exists())
             assertTrue(layout.exists(layer1Descriptor).getOrThrow())
@@ -215,7 +215,7 @@ class LayoutTest {
             update(layerBytes)
         }.digest())
         
-        val layerFile = File("$rootDir/blobs/${layerDigest.algorithm}/${layerDigest.hex}")
+        val layerFile = File("$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}")
         layerFile.parentFile.mkdirs()
         layerFile.writeBytes(layerBytes)
         

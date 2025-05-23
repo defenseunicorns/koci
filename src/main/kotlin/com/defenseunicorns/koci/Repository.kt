@@ -50,6 +50,9 @@ class Repository(
 ) {
     private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
 
+    /**
+     * [HEAD /v2/<name>/blobs/<digest>](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#endpoints)
+     */
     suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
@@ -131,7 +134,7 @@ class Repository(
      *
      * TODO: Similarly, a registry MAY implement tag deletion, while others MAY allow deletion only by manifest.
      */
-    suspend fun remove(descriptor: Descriptor) = runCatching {
+    suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
             INDEX_MEDIA_TYPE,
@@ -145,6 +148,9 @@ class Repository(
         }.status.isSuccess()
     }
 
+    /**
+     * Generic blob fetcher.
+     */
     suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
         return client.prepareGet(
             when (descriptor.mediaType) {
@@ -165,6 +171,9 @@ class Repository(
         }
     }
 
+    /**
+     * Fetch a manifest at a given descriptor.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
         require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
@@ -173,6 +182,9 @@ class Repository(
         }
     }
 
+    /**
+     * Fetch an index at a given descriptor.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
         require(descriptor.mediaType == INDEX_MEDIA_TYPE)
@@ -183,6 +195,8 @@ class Repository(
 
     /**
      * [GET /v2/<name>/tags/list](https://distribution.github.io/distribution/spec/api/#listing-image-tags)
+     *
+     * TODO: this may paginate
      */
     suspend fun tags(): Result<TagsResponse> = runCatching {
         val res = client.get(router.tags(name)) {
@@ -217,7 +231,7 @@ class Repository(
     /**
      * [Pulling An Image](https://distribution.github.io/distribution/spec/api/#pulling-an-image)
      *
-     * Does NOT tag.
+     * Does NOT tag. See [pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)?)].
      *
      * [GET /v2/<name>/blobs/<digest>](https://distribution.github.io/distribution/spec/api/#pulling-a-layer)
      */
@@ -314,6 +328,12 @@ class Repository(
         }
     }
 
+    /**
+     * copy pulls a [Descriptor] from the repository and stores in into a [Layout],
+     * progress is reported at the byte level.
+     *
+     * If pulling an image or a manifest, use one of the [pull] methods instead.
+     */
     private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         val ok = store.exists(descriptor)
 

@@ -15,7 +15,7 @@ import kotlinx.serialization.encoding.Encoder
 import java.security.MessageDigest
 
 /**
- * Represents supported digest algorithms according to the OCI Distribution Specification.
+ * Represents supported digest algorithms according to the OCI spec.
  *
  * Each algorithm provides a string representation and a way to create a [MessageDigest]
  * instance for computing digests using that algorithm.
@@ -40,13 +40,13 @@ enum class RegisteredAlgorithm(private val n: String) {
 }
 
 /**
- * Represents a content-addressable digest as defined in the OCI Distribution Specification.
+ * Represents a content-addressable digest as defined in the OCI spec.
  *
  * A digest consists of an algorithm identifier and a hex-encoded hash value.
  * The string representation follows the format: algorithm:hex
  * (e.g., "sha256:6c3c624b58dbbcd3c0dd82b4c53f04194d1247c6eebdaab7c610cf7d66709b3b")
  *
- * Digests are used throughout the OCI Distribution Specification to uniquely identify content
+ * Digests are used throughout the OCI spec to uniquely identify content
  * and verify content integrity.
  */
 @Serializable(with = DigestSerializer::class)

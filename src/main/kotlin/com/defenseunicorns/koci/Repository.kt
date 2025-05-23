@@ -48,7 +48,7 @@ fun Headers.toUploadStatus(): UploadStatus {
 }
 
 /**
- * OCI Distribution Specification compliant repository client.
+ * OCI spec compliant repository client.
  *
  * Supports all required operations including pulling/pushing blobs and manifests,
  * content verification, resumable uploads, cross-repository mounting, and tag management.
@@ -56,7 +56,7 @@ fun Headers.toUploadStatus(): UploadStatus {
  * @property client HTTP client for registry communication
  * @property router URL routing for registry endpoints
  * @property name Repository name in format "[host]/[namespace]/[repository]"
- * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI Distribution Specification</a>
+ * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
 @Suppress("detekt:TooManyFunctions")
 class Repository(

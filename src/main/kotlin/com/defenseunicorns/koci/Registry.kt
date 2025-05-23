@@ -17,7 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Main entry point for interacting with OCI Distribution Specification compliant registries.
+ * Main entry point for interacting with OCI spec compliant registries.
  *
  * Provides access to registry-level operations such as:
  * - API version check (ping)
@@ -85,7 +85,7 @@ class Registry(
     }
 
     /**
-     * Provides access to OCI Distribution Specification extensions.
+     * Provides access to OCI spec extensions.
      *
      * Contains methods that extend the core functionality of the OCI Distribution
      * Specification, such as repository catalog listing and pagination.
@@ -97,7 +97,7 @@ class Registry(
          * Lists all repositories in the registry.
          *
          * Performs a GET request to the /v2/_catalog endpoint as specified in the
-         * OCI Distribution Specification. Returns a single page of repository names.
+         * OCI spec. Returns a single page of repository names.
          *
          * @see <a href="https://distribution.github.io/distribution/spec/api/#listing-repositories">OCI Distribution Spec: Listing Repositories</a>
          */
@@ -113,7 +113,7 @@ class Registry(
          *
          * Automatically handles pagination by following Link headers and emitting
          * each page of results as a Flow. This implements the pagination mechanism
-         * defined in the OCI Distribution Specification.
+         * defined in the OCI spec.
          *
          * @param n Number of repositories to return per page
          * @param lastRepo Optional repository name to resume listing from
@@ -156,7 +156,7 @@ class Registry(
          *
          * This is a convenience method that combines the catalog and tags endpoints
          * to provide a flattened list of all repositories and their tags. This is not
-         * part of the OCI Distribution Specification but simplifies common workflows.
+         * part of the OCI spec but simplifies common workflows.
          *
          * @param n Number of repositories to return per page in the catalog request
          */
@@ -185,7 +185,7 @@ fun Registry.repo(name: String) = Repository(client, router, name)
  * Lists all tags in a repository.
  *
  * Performs a GET request to the /v2/{name}/tags/list endpoint as specified in
- * the OCI Distribution Specification.
+ * the OCI spec.
  *
  * @param repository Repository name to list tags for
  * @see <a href="https://distribution.github.io/distribution/spec/api/#listing-image-tags">OCI Distribution Spec: Listing Image Tags</a>
@@ -196,7 +196,7 @@ suspend fun Registry.tags(repository: String) = repo(repository).tags()
  * Resolves a tag to a content descriptor.
  *
  * Performs a HEAD or GET request to the /v2/{name}/manifests/{reference} endpoint
- * as specified in the OCI Distribution Specification. For multi-platform images,
+ * as specified in the OCI spec. For multi-platform images,
  * the platformResolver can be used to select a specific platform.
  *
  * @param repository Repository name

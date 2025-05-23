@@ -9,7 +9,7 @@ import io.ktor.http.*
 import java.net.URI
 
 /**
- * Adds pagination parameters to a URL as specified in the OCI Distribution Specification.
+ * Adds pagination parameters to a URL as specified in the OCI spec.
  *
  * @param n Number of results to return
  * @param last Optional token indicating where to resume listing
@@ -20,7 +20,7 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
 }
 
 /**
- * Constructs API endpoints for an OCI Distribution Specification compliant registry.
+ * Constructs API endpoints for an OCI spec compliant registry.
  *
  * This class handles URL construction for all registry operations including:
  * - Repository listing and tag management

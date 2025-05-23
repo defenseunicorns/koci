@@ -9,20 +9,20 @@ import io.ktor.http.*
 import java.net.URI
 
 /**
- * Regex pattern for validating tags according to OCI Distribution Specification.
+ * Regex pattern for validating tags according to OCI spec.
  * Tags must start with a word character followed by up to 127 word, dot, or hyphen characters.
  */
 val TagRegex = Regex("^\\w[\\w.-]{0,127}")
 
 /**
- * Regex pattern for validating repository names according to OCI Distribution Specification.
+ * Regex pattern for validating repository names according to OCI spec.
  * Repository names must follow a specific pattern with lowercase alphanumeric characters,
  * separators, and optional path components.
  */
 val RepositoryRegex = Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
 
 /**
- * Regex pattern for validating digest strings according to OCI Distribution Specification.
+ * Regex pattern for validating digest strings according to OCI spec.
  * Digests must be in the format algorithm:hex where algorithm is a lowercase identifier
  * and hex is a base64-encoded string.
  */
@@ -68,7 +68,7 @@ data class Reference(
          *
          * Parses a string artifact reference into a Reference object.
          *
-         * Supports multiple reference formats as defined in the OCI Distribution Specification:
+         * Supports multiple reference formats as defined in the OCI spec:
          * - Form A: registry/repository@digest
          * - Form B: registry/repository:tag@digest (tag is dropped)
          * - Form C: registry/repository:tag
@@ -131,7 +131,7 @@ data class Reference(
     }
 
     /**
-     * Validates that all components of the reference conform to the OCI Distribution Specification.
+     * Validates that all components of the reference conform to the OCI spec.
      *
      * Checks that:
      * - Registry is a valid hostname with optional port

@@ -32,8 +32,8 @@ class Layout private constructor(
         suspend fun create(root: String): Result<Layout> = withContext(Dispatchers.IO) {
             runCatching {
                 var index = Index()
-                val indexLocation = "$root/index.json"
-                val layoutFileLocation = "$root/oci-layout"
+                val indexLocation = "$root/$IMAGE_INDEX_FILE"
+                val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE"
 
                 val rootDir = File(root)
                 if (!rootDir.exists()) {
@@ -52,8 +52,8 @@ class Layout private constructor(
                 }
 
                 // TODO: do this for all supported algorithms
-                File("$root/blobs/sha256").mkdirs()
-                File("$root/blobs/sha512").mkdirs()
+                File("$root/$IMAGE_BLOBS_DIR/sha256").mkdirs()
+                File("$root/$IMAGE_BLOBS_DIR/sha512").mkdirs()
 
                 Layout(index, root)
             }
@@ -203,11 +203,11 @@ class Layout private constructor(
     }
 
     internal fun syncIndex() {
-        File("$root/index.json").writeText(Json.encodeToString(index))
+        File("$root/$IMAGE_INDEX_FILE").writeText(Json.encodeToString(index))
     }
 
     private fun blob(descriptor: Descriptor): File {
-        return File("$root/blobs/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
+        return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
 
     private val pushing = ConcurrentHashMap<Descriptor, Mutex>()
@@ -301,7 +301,7 @@ class Layout private constructor(
         }
     }
 
-    // TODO: figure out how to use TaggableContent here as well?
+    // TODO: figure out how to use sealed Versioned here as well?
     //
     // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
     // TODO: unit test tagging
@@ -356,7 +356,7 @@ class Layout private constructor(
         val blobsOnDisk = mutableListOf<Digest>()
 
         withContext(Dispatchers.IO) {
-            val sha256Dir = File("$root/blobs/sha256")
+            val sha256Dir = File("$root/$IMAGE_BLOBS_DIR/sha256")
             if (sha256Dir.exists() && sha256Dir.isDirectory) {
                 sha256Dir.listFiles()?.forEach { file ->
                     if (file.isFile) {
@@ -366,7 +366,7 @@ class Layout private constructor(
                 }
             }
 
-            val sha512Dir = File("$root/blobs/sha512")
+            val sha512Dir = File("$root/$IMAGE_BLOBS_DIR/sha512")
             if (sha512Dir.exists() && sha512Dir.isDirectory) {
                 sha512Dir.listFiles()?.forEach { file ->
                     if (file.isFile) {
@@ -380,7 +380,7 @@ class Layout private constructor(
         withContext(Dispatchers.IO) {
             blobsOnDisk.filter { it !in referencedDescriptors.map { desc -> desc.digest } }
                 .mapNotNull { zombieDigest ->
-                    val file = File("$root/blobs/${zombieDigest.algorithm}/${zombieDigest.hex}")
+                    val file = File("$root/$IMAGE_BLOBS_DIR/${zombieDigest.algorithm}/${zombieDigest.hex}")
                     if (file.delete()) zombieDigest else null
                 }
         }

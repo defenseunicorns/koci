@@ -8,9 +8,14 @@ package com.defenseunicorns.koci
 import io.ktor.util.*
 import java.util.*
 
-// Actions used in scopes.
-// Reference: https://docs.docker.com/registry/spec/auth/scope/
-// https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L908
+/**
+ * This file contains scope-related functionality for OCI registry authentication.
+ *
+ * Scopes define the access permissions required for different registry operations.
+ * They follow the format: `resourceType:resourceName:actions`
+ *
+ * Reference: https://docs.docker.com/registry/spec/auth/scope/
+ */
 
 /** ACTION_PULL represents generic read access for resources of the repository type. */
 const val ACTION_PULL = "pull"
@@ -24,12 +29,31 @@ const val ACTION_DELETE = "delete"
 /** SCOPE_REGISTRY_CATALOG is the scope for registry catalog access. */
 const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
 
+/**
+ * Creates a repository scope string for authentication.
+ *
+ * Formats a scope string in the form `repository:name:actions` where actions
+ * are comma-separated. Actions are cleaned and deduplicated.
+ *
+ * @param repo Repository name
+ * @param actions One or more actions (pull, push, delete, etc.)
+ * @return Formatted scope string
+ */
 fun scopeRepository(repo: String, vararg actions: String): String {
     val cleaned = cleanActions(actions.toList())
 
     return listOf("repository", repo, cleaned.joinToString(",")).joinToString(":")
 }
 
+/**
+ * Cleans and normalizes a list of actions.
+ *
+ * Removes duplicates, trims whitespace, sorts alphabetically, and handles
+ * wildcard actions. If "*" is present, it returns only "*".
+ *
+ * @param actions List of action strings to clean
+ * @return Cleaned list of actions
+ */
 fun cleanActions(actions: List<String>): List<String> {
     val cleaned = actions.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
@@ -39,7 +63,15 @@ fun cleanActions(actions: List<String>): List<String> {
     return cleaned
 }
 
-// mirrored from CleanScopes
+/**
+ * Cleans and normalizes a list of scope strings.
+ *
+ * Processes multiple scope strings, combining and deduplicating actions for the same
+ * resource type and name. Handles special cases and malformed scopes.
+ *
+ * @param scopes List of scope strings to clean
+ * @return Normalized list of scope strings
+ */
 @Suppress(
     "detekt:LongMethod",
     "detekt:CyclomaticComplexMethod",
@@ -101,10 +133,29 @@ fun cleanScopes(scopes: List<String>): List<String> {
     return set.toList()
 }
 
+/**
+ * Attribute key for storing authentication scopes in Ktor request attributes.
+ */
 internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
+
+/**
+ * Attribute key for storing client ID in Ktor request attributes.
+ */
 val clientIDKey = AttributeKey<String>("ociClientIDKey")
+
+/**
+ * Default client ID used for authentication if none is provided.
+ */
 internal const val DEFAULT_CLIENT_ID = "koci"
 
+/**
+ * Extension function to append scopes to Ktor request attributes.
+ *
+ * Adds the provided scopes to any existing scopes in the attributes,
+ * cleaning and normalizing the combined list.
+ *
+ * @param scopes One or more scope strings to append
+ */
 internal fun Attributes.appendScopes(vararg scopes: String) {
     val current = getOrNull(scopesKey)
     if (current == null) {

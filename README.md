@@ -1,6 +1,16 @@
 # koci
 
+> "kay oh see eye"
+
 Kotlin implementation of the [OCI Distribution client specification](https://github.com/opencontainers/distribution-spec/blob/master/spec.md).
+
+## Import
+
+```bash
+com.defenseunicorns.koci
+```
+
+Grab from [GitHub packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry) or [Maven Central](https://central.sonatype.com/artifact/com.defenseunicorns/koci)
 
 ## Basic Usage
 

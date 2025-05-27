@@ -16,9 +16,24 @@ import kotlinx.serialization.encoding.Encoder
 import java.io.InputStream
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * Response structure for repository catalog requests.
+ *
+ * Contains a list of repository names available in the registry.
+ *
+ * @property repositories List of repository names in the registry
+ */
 @Serializable
 data class CatalogResponse(val repositories: List<String>)
 
+/**
+ * Response structure for repository tags list requests.
+ *
+ * Contains the repository name and its associated tags.
+ *
+ * @property name Repository name
+ * @property tags List of tags associated with the repository, may be null if no tags exist
+ */
 @Serializable
 data class TagsResponse(val name: String, val tags: List<String>?)
 
@@ -239,6 +254,14 @@ data class UploadStatus(
     var minChunkSize: Long,
 )
 
+/**
+ * Common interface for versioned OCI content types.
+ *
+ * Both Manifest and Index implement this interface to provide a common
+ * way to access the schema version.
+ *
+ * @property schemaVersion The schema version of the content
+ */
 sealed interface Versioned {
     val schemaVersion: Int?
 }

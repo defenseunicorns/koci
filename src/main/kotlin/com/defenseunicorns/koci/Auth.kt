@@ -182,6 +182,15 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.EmptyTokenReturned(res)
 }
 
+/**
+ * Configuration for the OCI Authentication Plugin.
+ *
+ * Provides configuration options for the Ktor client plugin that handles
+ * OCI spec compliant authentication.
+ *
+ * @property cred Credential used for authentication with registries
+ * @property forceAttemptOAuth2 Forces OAuth2 authentication flow even when refresh token is empty
+ */
 class OCIAuthPluginConfig {
     var cred: Credential = Credential("", "", "", "")
 
@@ -189,6 +198,19 @@ class OCIAuthPluginConfig {
     var forceAttemptOAuth2 = false
 }
 
+/**
+ * Ktor client plugin that implements OCI spec compliant authentication.
+ *
+ * This plugin handles various authentication schemes including:
+ * - Basic authentication with username/password
+ * - Bearer token authentication
+ * - OAuth2 token authentication
+ *
+ * It automatically handles authentication challenges, token caching, and token refresh.
+ * Implements the authentication flows described in the OCI spec.
+ *
+ * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec: Authentication</a>
+ */
 val OCIAuthPlugin = createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 

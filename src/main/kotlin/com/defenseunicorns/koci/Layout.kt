@@ -23,12 +23,34 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Implements an OCI Image Layout for storing and managing container images locally.
+ *
+ * The Layout class provides functionality for storing, retrieving, and managing
+ * OCI artifacts on disk according to the OCI Image Layout specification. It handles:
+ * - Content-addressable blob storage
+ * - Content verification using size and digest
+ * - Manifest and index management
+ * - Reference tagging
+ * - Garbage collection
+ *
+ * @property index The index of all manifests in this layout
+ * @property root The root directory path where the layout is stored
+ */
 @Suppress("detekt:TooManyFunctions")
 class Layout private constructor(
     internal val index: Index,
     private val root: String,
 ) {
     companion object {
+        /**
+         * Creates a new Layout or opens an existing one at the specified path.
+         *
+         * If the directory doesn't exist, it will be created along with the necessary
+         * structure for an OCI Image Layout. If it exists, the existing layout will be loaded.
+         *
+         * @param root The root directory path for the layout
+         */
         suspend fun create(root: String): Result<Layout> = withContext(Dispatchers.IO) {
             runCatching {
                 var index = Index()
@@ -60,6 +82,16 @@ class Layout private constructor(
         }
     }
 
+    /**
+     * Checks if a blob exists in the layout and verifies its integrity.
+     *
+     * Performs size and digest verification to ensure the content matches
+     * the descriptor's metadata.
+     *
+     * @param descriptor The descriptor of the blob to check
+     * @throws OCIException.SizeMismatch if the blob's size doesn't match the descriptor
+     * @throws OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
+     */
     suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val file = blob(descriptor)
 
@@ -95,6 +127,14 @@ class Layout private constructor(
         true
     }
 
+    /**
+     * Recursively expands a list of descriptors to include all referenced content.
+     *
+     * For manifests, includes the config and all layers.
+     * For indexes, includes all referenced manifests and their contents.
+     *
+     * @param descriptors List of descriptors to expand
+     */
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
         return descriptors.flatMap { desc ->
@@ -124,12 +164,30 @@ class Layout private constructor(
         }.toSet()
     }
 
+    /**
+     * Removes a reference and its associated content from the layout.
+     *
+     * Resolves the reference to a descriptor and then removes that descriptor
+     * and all its referenced content that isn't used by other artifacts.
+     *
+     * @param reference The reference to remove
+     */
     suspend fun remove(reference: Reference): Result<Boolean> =
         resolve(reference)
             .map { descriptor ->
                 remove(descriptor).getOrThrow()
             }
 
+    /**
+     * Removes a descriptor and its associated content from the layout.
+     *
+     * For manifests and indexes, recursively removes all referenced content
+     * that isn't used by other artifacts. Updates the index to remove references
+     * to the removed content.
+     *
+     * @param descriptor The descriptor to remove
+     * @throws OCIException.UnableToRemove if the content is referenced by another artifact
+     */
     // TODO: ensure removals do not impact other images through unit tests
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
@@ -202,16 +260,39 @@ class Layout private constructor(
         }
     }
 
+    /**
+     * Synchronizes the in-memory index to disk.
+     *
+     * Writes the current state of the index to the index.json file in the layout.
+     */
     internal fun syncIndex() {
         File("$root/$IMAGE_INDEX_FILE").writeText(Json.encodeToString(index))
     }
 
+    /**
+     * Gets the File object for a blob's location in the layout.
+     *
+     * @param descriptor The descriptor of the blob
+     */
     private fun blob(descriptor: Descriptor): File {
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
 
     private val pushing = ConcurrentHashMap<Descriptor, Mutex>()
 
+    /**
+     * Pushes content to the layout from a byte channel.
+     *
+     * Writes the content to disk, verifying its size and digest match the descriptor.
+     * Supports resumable uploads by calculating the digest of existing content plus
+     * new content.
+     *
+     * @param descriptor The descriptor of the content being pushed
+     * @param stream The byte channel containing the content
+     * @return Flow emitting the number of bytes written in each chunk
+     * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
+     * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
+     */
     fun push(descriptor: Descriptor, stream: ByteReadChannel): Flow<Int> = channelFlow {
         val mu = pushing.computeIfAbsent(descriptor) { Mutex() }
 
@@ -274,10 +355,20 @@ class Layout private constructor(
         }
     }
 
+    /**
+     * Retrieves content from the layout as an input stream.
+     *
+     * @param descriptor The descriptor of the content to fetch
+     */
     suspend fun fetch(descriptor: Descriptor): InputStream = withContext(Dispatchers.IO) {
         FileInputStream(blob(descriptor))
     }
 
+    /**
+     * Resolves a descriptor from the layout's index using a predicate function.
+     *
+     * @param predicate Function that returns true for the desired descriptor
+     */
     suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Result<Descriptor> = runCatching {
         index.manifests.first {
             predicate(it)
@@ -285,9 +376,13 @@ class Layout private constructor(
     }
 
     /**
-     * Resolve via [Reference] and an optional platformResolver
+     * Resolves a reference to a descriptor, optionally filtering by platform.
      *
-     * Returns the _first_ match
+     * Finds the first descriptor in the index that matches the reference and
+     * optionally the platform selector.
+     *
+     * @param reference The reference to resolve
+     * @param platformResolver Optional function to select a specific platform
      */
     suspend fun resolve(reference: Reference, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> {
         return resolve { desc ->
@@ -301,6 +396,15 @@ class Layout private constructor(
         }
     }
 
+    /**
+     * Tags a descriptor with a reference.
+     *
+     * Associates a reference with a descriptor in the layout's index. If the reference
+     * already exists, it will be reassigned to the new descriptor.
+     *
+     * @param descriptor The descriptor to tag
+     * @param reference The reference to associate with the descriptor
+     */
     // TODO: figure out how to use sealed Versioned here as well?
     //
     // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
@@ -335,6 +439,11 @@ class Layout private constructor(
         }
     }
 
+    /**
+     * Lists all manifests in the layout.
+     *
+     * @return List of all manifest descriptors in the layout's index
+     */
     fun catalog(): List<Descriptor> {
         return index.manifests.toList()
     }
@@ -345,8 +454,6 @@ class Layout private constructor(
      * This is a "stop the world" style function and MUST NOT run during any other operations.
      * It should be used to clean up zombie layers that might be left on disk if a remove operation
      * is interrupted.
-     *
-     * @return Result containing a list of removed layer digests or an error
      */
     suspend fun gc(): Result<List<Digest>> = runCatching {
         check(pushing.isEmpty()) { "there are downloads in progress" }

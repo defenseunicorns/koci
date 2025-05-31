@@ -45,7 +45,7 @@ class Registry(
         val ociAuthPlugin = client.pluginOrNull(OCIAuthPlugin)
         client = client.config {
             headers {
-                // https://distribution.github.io/distribution/spec/api/#api-version-check
+                // https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#determining-support
                 append("Docker-Distribution-API-Version", "registry/2.0")
             }
 
@@ -78,7 +78,7 @@ class Registry(
      * Specification. A successful response indicates the registry implements the API
      * and the client is authorized to access it.
      *
-     * @see <a href="https://distribution.github.io/distribution/spec/api/#api-version-check">OCI Distribution Spec: API Version Check</a>
+     * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#determining-support">OCI Distribution Spec: API Version Check</a>
      */
     suspend fun ping(): Result<Boolean> = runCatching {
         client.get(router.base()).status.isSuccess()
@@ -99,7 +99,7 @@ class Registry(
          * Performs a GET request to the /v2/_catalog endpoint as specified in the
          * OCI spec. Returns a single page of repository names.
          *
-         * @see <a href="https://distribution.github.io/distribution/spec/api/#listing-repositories">OCI Distribution Spec: Listing Repositories</a>
+         * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#listing-tags">OCI Distribution Spec: Listing Repositories</a>
          */
         suspend fun catalog(): Result<CatalogResponse> = runCatching {
             val res = client.get(router.catalog()) {
@@ -117,7 +117,7 @@ class Registry(
          *
          * @param n Number of repositories to return per page
          * @param lastRepo Optional repository name to resume listing from
-         * @see <a href="https://distribution.github.io/distribution/spec/api/#pagination">OCI Distribution Spec: Pagination</a>
+         * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#listing-tags">OCI Distribution Spec: Pagination</a>
          *
          * TODO: distribution is moving to a default max n of 1000
          */
@@ -188,7 +188,7 @@ fun Registry.repo(name: String) = Repository(client, router, name)
  * the OCI spec.
  *
  * @param repository Repository name to list tags for
- * @see <a href="https://distribution.github.io/distribution/spec/api/#listing-image-tags">OCI Distribution Spec: Listing Image Tags</a>
+ * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#listing-tags">OCI Distribution Spec: Listing Image Tags</a>
  */
 suspend fun Registry.tags(repository: String) = repo(repository).tags()
 
@@ -202,7 +202,7 @@ suspend fun Registry.tags(repository: String) = repo(repository).tags()
  * @param repository Repository name
  * @param tag Tag to resolve
  * @param platformResolver Optional function to select platform from index manifest
- * @see <a href="https://distribution.github.io/distribution/spec/api/#existing-manifests">OCI Distribution Spec: Existing Manifests</a>
+ * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#pull">OCI Distribution Spec: Existing Manifests</a>
  */
 suspend fun Registry.resolve(repository: String, tag: String, platformResolver: ((Platform) -> Boolean)? = null) =
     repo(repository).resolve(tag, platformResolver)

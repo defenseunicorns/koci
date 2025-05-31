@@ -21,7 +21,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * @property errors List of actionable errors returned by the registry
  * @property status HTTP status code of the response
- * @see <a href="https://distribution.github.io/distribution/spec/api/#errors">OCI Spec: Errors</a>
+ * @see <a href="https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#error-codes">OCI Spec: Errors</a>
  */
 @Serializable
 data class FailureResponse(

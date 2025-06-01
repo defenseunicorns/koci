@@ -39,17 +39,17 @@ repo.pull(tag, store).collect{ prog ->
 
 > [Distribution specification](https://github.com/opencontainers/distribution-spec)
 
-- [x] [GET `/v2/`](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#determining-support) Ping registry
-- [x] [GET `/v2/_catalog`](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#listing-tags) Catalog
+- [x] [GET `/v2/`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support) Ping registry
+- [x] [GET `/v2/_catalog`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags) Catalog
   - [x] Support pagination
-- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#pull) Check for existence / fetch manifest by tag/digest
+- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull) Check for existence / fetch manifest by tag/digest
   - [x] Resolve/fetch tag into manifest/index
     - [x] Support custom index -> manifest resolution logic
   - [x] [Reference](https://pkg.go.dev/github.com/distribution/reference) support and validation
-- [x] [DELETE `/v2/<name>/manifests/<digest>`](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#deleting-manifests)
-- [x] [GET `/v2/<name>/tags/list`](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#listing-tags) List image tags
+- [x] [DELETE `/v2/<name>/manifests/<digest>`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-manifests)
+- [x] [GET `/v2/<name>/tags/list`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags) List image tags
   - [ ] Support pagination
-- [x] [Pull image](https://raw.githubusercontent.com/opencontainers/distribution-spec/refs/heads/main/spec.md#pull) (3 layer concurrency) with %/100 progress
+- [x] [Pull image](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull) (3 layer concurrency) with %/100 progress
   - [x] By tag
   - [x] By descriptor
   - [x] Into OCI layout

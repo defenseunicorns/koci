@@ -77,7 +77,9 @@ class LayoutTest {
         assertTrue(layout.exists(manifestDescriptor).getOrThrow())
 
         // Verify layer2 is a zombie (not referenced by any manifest)
-        val zombieFile = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+        val zombieFile = File(
+            "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        )
         assertTrue(zombieFile.exists())
 
         val removedDigests = layout.gc().getOrThrow()
@@ -137,11 +139,17 @@ class LayoutTest {
         layout.syncIndex()
 
         // Verify blobs still exist on disk
-        val configFile = File("$rootDir/blobs/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}")
-        val layer1File = File("$rootDir/blobs/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
-        val layer2File = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+        val configFile = File(
+            "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
+        )
+        val layer1File = File(
+            "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+        )
+        val layer2File = File(
+            "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        )
         val manifestFile =
-            File("$rootDir/blobs/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}")
+            File("$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}")
 
         assertTrue(configFile.exists())
         assertTrue(layer1File.exists())
@@ -168,35 +176,37 @@ class LayoutTest {
     fun `test gc throws exception when layers are being pushed`() = runTest {
         // Create a test blob that will be considered a zombie layer
         val layer1Descriptor = createTestBlob("layer1-content", "application/vnd.oci.image.layer.v1.tar+gzip")
-        
+
         // Create a second blob that we'll simulate as being actively pushed
         val layer2Descriptor = createTestBlob("layer2-content", "application/vnd.oci.image.layer.v1.tar+gzip")
-        
+
         // Verify both layers exist
         assertTrue(layout.exists(layer1Descriptor).getOrThrow())
         assertTrue(layout.exists(layer2Descriptor).getOrThrow())
-        
+
         // Get access to the pushing collection via reflection
         val pushingField = Layout::class.java.getDeclaredField("pushing")
         pushingField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val pushing = pushingField.get(layout) as ConcurrentHashMap<Descriptor, Mutex>
-        
+
         try {
             // Add layer2 to the pushing collection to simulate an active push
             pushing[layer2Descriptor] = Mutex()
-            
+
             // Verify gc throws an IllegalStateException when there are active pushes
             val exception = assertThrows<IllegalStateException> {
                 layout.gc().getOrThrow()
             }
-            
+
             // Verify the exception message
             assertEquals("there are downloads in progress", exception.message)
-            
+
             // Verify both layers still exist on disk
-            val layer1File = File("$rootDir/blobs/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
-            val layer2File = File("$rootDir/blobs/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
+            val layer1File =
+                File("$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}")
+            val layer2File =
+                File("$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}")
             assertTrue(layer1File.exists())
             assertTrue(layer2File.exists())
             assertTrue(layout.exists(layer1Descriptor).getOrThrow())
@@ -205,7 +215,7 @@ class LayoutTest {
             pushing.remove(layer2Descriptor)
         }
     }
-    
+
     @Test
     fun `test gc resets download progress`() = runTest {
         // Create a blob file manually to simulate a partial download
@@ -214,20 +224,20 @@ class LayoutTest {
         val layerDigest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
             update(layerBytes)
         }.digest())
-        
-        val layerFile = File("$rootDir/blobs/${layerDigest.algorithm}/${layerDigest.hex}")
+
+        val layerFile = File("$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}")
         layerFile.parentFile.mkdirs()
         layerFile.writeBytes(layerBytes)
-        
+
         assertTrue(layerFile.exists())
-        
+
         // Run gc - this should remove the layer since it's not referenced and not being pushed
         val removedDigests = layout.gc().getOrThrow()
-        
+
         // Verify layer was removed
         assertTrue(removedDigests.contains(layerDigest))
         assertFalse(layerFile.exists())
-        
+
         // This demonstrates that if gc runs between an interrupted download and a retry,
         // it will reset the download progress
     }

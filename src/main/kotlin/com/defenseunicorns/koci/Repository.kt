@@ -19,6 +19,16 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
+/**
+ * Extracts upload status from HTTP response headers for resumable uploads.
+ *
+ * Parses Location and Range headers to determine upload state and handles the optional
+ * OCI-Chunk-Min-Length header.
+ *
+ * @return [UploadStatus] with location URL, byte offset, and minimum chunk size
+ * @throws IllegalStateException if required headers are missing or malformed
+ * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI Distribution Spec: Resuming an Upload</a>
+ */
 fun Headers.toUploadStatus(): UploadStatus {
     val location = checkNotNull(this[HttpHeaders.Location]) {
         "missing Location header"
@@ -37,14 +47,36 @@ fun Headers.toUploadStatus(): UploadStatus {
     return UploadStatus(location, offset.toLong(), minChunk)
 }
 
+/**
+ * OCI spec compliant repository client.
+ *
+ * Supports all required operations including pulling/pushing blobs and manifests,
+ * content verification, resumable uploads, cross-repository mounting, and tag management.
+ *
+ * @property client HTTP client for registry communication
+ * @property router URL routing for registry endpoints
+ * @property name Repository name in format "[host]/[namespace]/[repository]"
+ * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
+ */
 @Suppress("detekt:TooManyFunctions")
 class Repository(
     private val client: HttpClient,
     private val router: Router,
     private val name: String,
 ) {
+    /**
+     * Tracks in-progress blob uploads for resumable operations.
+     */
     private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
 
+    /**
+     * Checks if a blob or manifest exists in the repository.
+     *
+     * Uses HEAD request to verify content existence without transferring data.
+     * Routes to appropriate endpoint based on media type (manifest or blob).
+     *
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#checking-if-content-exists-in-the-registry">OCI Distribution Spec: Checking if Content Exists</a>
+     */
     suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
@@ -59,7 +91,16 @@ class Repository(
     }
 
     /**
-     * [HEAD|GET /v2/<name>/manifests/<reference>](https://distribution.github.io/distribution/spec/api/#existing-manifests)
+     * Resolves a tag to a descriptor, with optional platform filtering for index manifests.
+     *
+     * First performs a HEAD request to determine content type, then handles accordingly:
+     * - For regular manifests: Returns descriptor directly
+     * - For index manifests: Returns full index or uses platformResolver to select specific platform
+     *
+     * @param tag Tag to resolve
+     * @param platformResolver Optional function to select specific platform from index manifest
+     * @throws OCIException.PlatformNotFound if platformResolver provided but no matching platform found
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI Distribution Spec: Pulling Manifests</a>
      */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun resolve(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Result<Descriptor> =
@@ -118,15 +159,18 @@ class Repository(
         }
 
     /**
-     * [Deleting blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-blobs)
+     * Removes a blob or manifest from the repository.
      *
-     * [Deleting manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-manifests)
+     * Routes to appropriate endpoint based on media type. Note that per OCI spec,
+     * registries MAY implement deletion or MAY disable it entirely.
      *
-     * Registries MAY implement deletion or they MAY disable it.
+     * @param descriptor Content descriptor to remove
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-blobs">OCI Distribution Spec: Deleting Blobs</a>
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-manifests">OCI Distribution Spec: Deleting Manifests</a>
      *
      * TODO: Similarly, a registry MAY implement tag deletion, while others MAY allow deletion only by manifest.
      */
-    suspend fun remove(descriptor: Descriptor) = runCatching {
+    suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
         val endpoint = when (descriptor.mediaType) {
             MANIFEST_MEDIA_TYPE,
             INDEX_MEDIA_TYPE,
@@ -140,6 +184,16 @@ class Repository(
         }.status.isSuccess()
     }
 
+    /**
+     * Generic content fetcher with custom processing.
+     *
+     * Retrieves content and processes it with the provided handler function.
+     * Used internally by [manifest], [index], and [pull] methods.
+     *
+     * @param descriptor Content descriptor with mediaType and digest
+     * @param handler Function to process the input stream
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI Distribution Spec: Pulling Blobs</a>
+     */
     suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
         return client.prepareGet(
             when (descriptor.mediaType) {
@@ -160,24 +214,45 @@ class Repository(
         }
     }
 
+    /**
+     * Fetches and deserializes a manifest from the registry.
+     *
+     * Retrieves a manifest and deserializes it into a Manifest object for
+     * programmatic access to layers, config, and annotations.
+     *
+     * @param descriptor Manifest descriptor with digest and mediaType
+     * @throws IllegalArgumentException if descriptor mediaType is not a manifest
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI Distribution Spec: Pulling Manifests</a>
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
         require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
-        fetch(descriptor) { stream ->
-            Json.decodeFromStream(stream)
-        }
-    }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
-        require(descriptor.mediaType == INDEX_MEDIA_TYPE)
-        fetch(descriptor) { stream ->
-            Json.decodeFromStream(stream)
-        }
+        fetch(descriptor, Json::decodeFromStream)
     }
 
     /**
-     * [GET /v2/<name>/tags/list](https://distribution.github.io/distribution/spec/api/#listing-image-tags)
+     * Fetches and deserializes an index manifest (multi-platform manifest).
+     *
+     * Retrieves an index manifest and deserializes it into an Index object for
+     * accessing platform-specific manifests in multi-platform images.
+     *
+     * @param descriptor Index descriptor with digest and mediaType
+     * @throws IllegalArgumentException if descriptor mediaType is not an index
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI Distribution Spec: Pulling Manifests</a>
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
+        require(descriptor.mediaType == INDEX_MEDIA_TYPE)
+        fetch(descriptor, Json::decodeFromStream)
+    }
+
+    /**
+     * Lists all tags in the repository.
+     * Retrieves available tags for content discovery.
+     *
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI Distribution Spec: Listing Tags</a>
+     *
+     * TODO: Implement pagination support as described in the specification
      */
     suspend fun tags(): Result<TagsResponse> = runCatching {
         val res = client.get(router.tags(name)) {
@@ -187,7 +262,15 @@ class Repository(
     }
 
     /**
-     * Pull and tag.
+     * Pulls an image by tag and stores it in the provided layout.
+     *
+     * Resolves tag to descriptor, then pulls manifest and all referenced blobs.
+     * For multi-platform images, uses platformResolver to select specific platform.
+     *
+     * @param tag Tag to pull
+     * @param store Layout to store content in
+     * @param platformResolver Optional function to select platform from index
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI Distribution Spec: Pulling Manifests</a>
      */
     fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> = channelFlow {
         resolve(tag, platformResolver).map { desc ->
@@ -210,11 +293,13 @@ class Repository(
     }
 
     /**
-     * [Pulling An Image](https://distribution.github.io/distribution/spec/api/#pulling-an-image)
+     * Pulls content by descriptor and stores it in the provided layout.
      *
-     * Does NOT tag.
+     * Handles different content types appropriately (manifests, indices, blobs).
+     * For manifests and indices, pulls all referenced content recursively.
      *
-     * [GET /v2/<name>/blobs/<digest>](https://distribution.github.io/distribution/spec/api/#pulling-a-layer)
+     * @param descriptor Content descriptor to pull
+     * @param store Layout to store content in
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
@@ -309,6 +394,18 @@ class Repository(
         }
     }
 
+    /**
+     * Copies a blob to a local layout with progress reporting.
+     *
+     * Downloads blob and stores it in layout, with support for resumable downloads
+     * when registry supports range requests.
+     *
+     * @param descriptor Blob descriptor to copy
+     * @param store Layout to store blob in
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI Distribution Spec: Pulling Blobs</a>
+     *
+     * Note: For complete images or manifests, use [pull] methods instead.
+     */
     private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         val ok = store.exists(descriptor)
 
@@ -368,7 +465,13 @@ class Repository(
     }
 
     /**
-     * TODO: this function could use some love
+     * Starts or resumes a blob upload session.
+     *
+     * Initiates new upload or resumes existing one if previously interrupted.
+     * Implements the initial phase of the blob upload process.
+     *
+     * @param descriptor Blob descriptor to upload
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#starting-an-upload">OCI Distribution Spec: Starting an Upload</a>
      */
     @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:ThrowsCount")
     private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus {
@@ -422,15 +525,16 @@ class Repository(
     }
 
     /**
-     * [Pushing blobs](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs)
+     * Pushes a blob to the repository with chunked and resumable uploads.
      *
-     * If the content being pushed is > 5MB the push will be
-     * [chunked](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-a-blob-in-chunks),
-     * otherwise performed in a
-     * [single POST](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#single-post)
+     * Uses monolithic upload for small blobs and chunked uploads for large ones (>5MB).
+     * Supports resuming interrupted uploads from the last successful byte offset.
+     * Verifies content integrity through digest validation.
      *
-     * If errors occur, calling this function again will attempt to resume upload at whatever byte offset
-     * the previous attempt stopped at
+     * @param stream Input stream containing blob data
+     * @param expected Descriptor with expected size and digest
+     * @throws OCIException.DigestMismatch if computed digest doesn't match expected
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs">OCI Distribution Spec: Pushing Blobs</a>
      */
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     fun push(stream: InputStream, expected: Descriptor): Flow<Long> = channelFlow {
@@ -530,9 +634,18 @@ class Repository(
     }
 
     /**
-     * [Pushing manifests](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests)
+     * Tags a manifest or index in the repository.
+     *
+     * Pushes content to registry and associates it with a tag. Handles content type
+     * negotiation based on whether content is a manifest or index. Tags must match
+     * regex: [TagRegex].
+     *
+     * @param content Manifest or index content to tag
+     * @param tag Tag to associate with the content
+     * @throws IllegalArgumentException if tag format is invalid
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests">OCI Distribution Spec: Pushing Manifests</a>
      */
-    suspend fun tag(content: TaggableContent, ref: String): Result<Descriptor> = runCatching {
+    suspend fun tag(content: Versioned, ref: String): Result<Descriptor> = runCatching {
         requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
         val (ct, txt) = when (content) {
             is Manifest -> {
@@ -571,21 +684,16 @@ class Repository(
     }
 
     /**
-     * [Mounting a blob from another repository](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository)
+     * Mounts a blob from another repository.
      *
-     * Mounts a blob from another repository to the current repository.
-     * This is a more efficient operation than downloading and re-uploading when the registry
-     * already has the blob.
+     * Reuses blobs that already exist in registry without downloading and re-uploading.
+     * Handles both successful mounts and fallback to creating an upload session when
+     * mounting is not supported or fails.
      *
-     * The response to a successful mount MUST be 201 Created, and MUST contain the Location header.
-     * If a registry does not support cross-repository mounting or is unable to mount the requested blob,
-     * it SHOULD return a 202 Accepted. This indicates that the upload session has begun
-     * and that the client MAY proceed with the upload.
-     *
-     * @param descriptor The descriptor of the blob to mount
-     * @param sourceRepository The source repository from which to mount the blob
-     * @return Result containing true if the mount was successful,
-     *         or false if the mount was not successful but an upload session was created
+     * @param descriptor Blob descriptor to mount (must not be a manifest or index)
+     * @param sourceRepository Source repository from which to mount the blob
+     * @throws IllegalArgumentException if descriptor is a manifest or index
+     * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI Distribution Spec: Mounting a Blob</a>
      */
     suspend fun mount(
         descriptor: Descriptor,
@@ -593,16 +701,16 @@ class Repository(
     ): Result<Boolean> = runCatching {
         require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
         require(descriptor.mediaType != INDEX_MEDIA_TYPE)
-        
+
         // If the blob is already being uploaded, don't try to mount it
         if (uploading.containsKey(descriptor)) {
             return@runCatching false
         }
-        
+
         if (exists(descriptor).getOrDefault(false)) {
             return@runCatching true
         }
-        
+
         val mountUrl = router.blobMount(name, sourceRepository, descriptor)
         val res = client.post(mountUrl) {
             headers[HttpHeaders.ContentLength] = "0"
@@ -611,20 +719,22 @@ class Repository(
                 scopeRepository(sourceRepository, ACTION_PULL)
             )
         }
-        
+
         when (res.status) {
             HttpStatusCode.Created -> {
                 val locationHeader = res.headers[HttpHeaders.Location]
-                requireNotNull(locationHeader) { 
-                    "Registry did not provide a Location header in the mount response" 
+                requireNotNull(locationHeader) {
+                    "Registry did not provide a Location header in the mount response"
                 }
                 true
             }
+
             HttpStatusCode.Accepted -> {
                 val uploadStatus = res.headers.toUploadStatus()
                 uploading[descriptor] = uploadStatus
                 false
             }
+
             else -> throw OCIException.UnexpectedStatus(
                 HttpStatusCode.Created, res
             )

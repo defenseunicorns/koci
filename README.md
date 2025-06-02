@@ -1,6 +1,16 @@
 # koci
 
+> "kay oh see eye"
+
 Kotlin implementation of the [OCI Distribution client specification](https://github.com/opencontainers/distribution-spec/blob/master/spec.md).
+
+## Import
+
+```bash
+com.defenseunicorns.koci
+```
+
+Grab from [GitHub packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry) or [Maven Central](https://central.sonatype.com/artifact/com.defenseunicorns/koci)
 
 ## Basic Usage
 
@@ -29,17 +39,17 @@ repo.pull(tag, store).collect{ prog ->
 
 > [Distribution specification](https://github.com/opencontainers/distribution-spec)
 
-- [x] [GET `/v2/`](https://distribution.github.io/distribution/spec/api/#api-version-check) Ping registry
-- [x] [GET `/v2/_catalog`](https://distribution.github.io/distribution/spec/api/#listing-repositories) Catalog
+- [x] [GET `/v2/`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support) Ping registry
+- [x] [GET `/v2/_catalog`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags) Catalog
   - [x] Support pagination
-- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://distribution.github.io/distribution/spec/api/#existing-manifests) Check for existence / fetch manifest by tag/digest
+- [x] [HEAD|GET `/v2/<name>/manifests/<reference>`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull) Check for existence / fetch manifest by tag/digest
   - [x] Resolve/fetch tag into manifest/index
     - [x] Support custom index -> manifest resolution logic
   - [x] [Reference](https://pkg.go.dev/github.com/distribution/reference) support and validation
-- [x] [DELETE `/v2/<name>/manifests/<digest>`](https://distribution.github.io/distribution/spec/api/#deleting-a-layer)
-- [x] [GET `/v2/<name>/tags/list`](https://distribution.github.io/distribution/spec/api/#listing-image-tags) List image tags
+- [x] [DELETE `/v2/<name>/manifests/<digest>`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-manifests)
+- [x] [GET `/v2/<name>/tags/list`](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags) List image tags
   - [ ] Support pagination
-- [x] [Pull image](https://distribution.github.io/distribution/spec/api/#pulling-an-image) (3 layer concurrency) with %/100 progress
+- [x] [Pull image](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull) (3 layer concurrency) with %/100 progress
   - [x] By tag
   - [x] By descriptor
   - [x] Into OCI layout

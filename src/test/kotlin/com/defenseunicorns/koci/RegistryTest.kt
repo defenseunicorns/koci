@@ -387,7 +387,6 @@ class RegistryTest {
 
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
-                // Pull the same image twice in parallel
                 val p1 = async {
                     registry.pull("dos-games", "1.1.0", storage).collect()
                 }

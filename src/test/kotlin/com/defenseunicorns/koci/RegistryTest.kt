@@ -360,6 +360,12 @@ class RegistryTest {
                     registry.pull("library/registry", "latest", storage).collect()
                 }
                 awaitAll(p1, p2)
+
+                // Verify both images exist
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(d1).getOrThrow())
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
+                assertTrue(storage.exists(d2).getOrThrow())
             }
         }
 
@@ -374,6 +380,27 @@ class RegistryTest {
                     storage.remove(d2).getOrThrow()
                 }
                 awaitAll(r1, r2)
+
+                // Verify both images are removed
+                assertFalse(storage.exists(d1).getOrThrow())
+                assertFalse(storage.exists(d2).getOrThrow())
+            }
+        }
+
+        assertDoesNotThrow {
+            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+                // Pull the same image twice in parallel
+                val p1 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                val p2 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                awaitAll(p1, p2)
+
+                // Verify the image exists
+                val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(descriptor).getOrThrow())
             }
         }
     }

@@ -12,12 +12,20 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
+
+/**
+ * Tracks in-progress downloads to prevent concurrent downloads of the same descriptor.
+ * The Int value represents the number of active operations using this mutex.
+ */
+private val activeDownloads = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
 /**
  * Extracts upload status from HTTP response headers for resumable uploads.
@@ -407,59 +415,82 @@ class Repository(
      * Note: For complete images or manifests, use [pull] methods instead.
      */
     private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
-        val ok = store.exists(descriptor)
-
-        // if the descriptor is 100% downloaded w/ size and sha matching, early return
-        if (ok.getOrDefault(false)) {
-            send(descriptor.size.toInt())
-            return@channelFlow
+        // Get or create a mutex for this descriptor to prevent concurrent downloads
+        val (mutex, refCount) = activeDownloads.computeIfAbsent(descriptor) { 
+            Pair(Mutex(), AtomicInteger(0))
         }
+        
+        // Increment reference count to track active users of this mutex
+        refCount.incrementAndGet()
+        
+        try {
+            // Acquire the lock before checking if the descriptor exists or downloading
+            mutex.withLock {
+                val ok = store.exists(descriptor)
 
-        val endpoint = when (descriptor.mediaType) {
-            MANIFEST_MEDIA_TYPE,
-            INDEX_MEDIA_TYPE,
-                -> router.manifest(name, descriptor)
+                // if the descriptor is 100% downloaded w/ size and sha matching, early return
+                if (ok.getOrDefault(false)) {
+                    send(descriptor.size.toInt())
+                    return@withLock
+                }
 
-            else -> router.blob(name, descriptor)
-        }
+                val endpoint = when (descriptor.mediaType) {
+                    MANIFEST_MEDIA_TYPE,
+                    INDEX_MEDIA_TYPE,
+                        -> router.manifest(name, descriptor)
 
-        client.prepareGet(endpoint) {
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                    else -> router.blob(name, descriptor)
+                }
 
-            when (descriptor.mediaType) {
-                MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
-            }
+                client.prepareGet(endpoint) {
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
 
-            when (val exception = ok.exceptionOrNull()) {
-                is OCIException.SizeMismatch -> {
-                    if (supportsRange(descriptor)) {
-                        val start = exception.actual
+                    when (descriptor.mediaType) {
+                        MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                        INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
+                    }
 
-                        // fire partial progress has happened
-                        send(start.toInt())
+                    when (val exception = ok.exceptionOrNull()) {
+                        is OCIException.SizeMismatch -> {
+                            if (supportsRange(descriptor)) {
+                                val start = exception.actual
 
-                        headers.append("Range", "bytes=$start-${descriptor.size - 1}")
-                    } else {
-                        store.remove(descriptor).getOrThrow()
+                                // fire partial progress has happened
+                                send(start.toInt())
+
+                                headers.append("Range", "bytes=$start-${descriptor.size - 1}")
+                            } else {
+                                store.remove(descriptor).getOrThrow()
+                            }
+                        }
+
+                        is OCIException.DigestMismatch -> {
+                            store.remove(descriptor).getOrThrow()
+                        }
+
+                        null -> {
+                            // this branch should never happen
+                        }
+
+                        else -> {
+                            throw exception
+                        }
+                    }
+                }.execute { response ->
+                    store.push(descriptor, response.body()).collect { prog ->
+                        send(prog)
                     }
                 }
-
-                is OCIException.DigestMismatch -> {
-                    store.remove(descriptor).getOrThrow()
-                }
-
-                null -> {
-                    // this branch should never happen
-                }
-
-                else -> {
-                    throw exception
-                }
             }
-        }.execute { response ->
-            store.push(descriptor, response.body()).collect { prog ->
-                send(prog)
+        } finally {
+            // Get the current pair
+            val pair = activeDownloads[descriptor]
+            if (pair != null) {
+                val count = pair.second.decrementAndGet()
+                // Only remove from map if this was the last reference
+                if (count <= 0) {
+                    activeDownloads.remove(descriptor, pair)
+                }
             }
         }
     }

@@ -360,6 +360,11 @@ class RegistryTest {
                     registry.pull("library/registry", "latest", storage).collect()
                 }
                 awaitAll(p1, p2)
+
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(d1).getOrThrow())
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
+                assertTrue(storage.exists(d2).getOrThrow())
             }
         }
 
@@ -374,6 +379,41 @@ class RegistryTest {
                     storage.remove(d2).getOrThrow()
                 }
                 awaitAll(r1, r2)
+
+                assertFalse(storage.exists(d1).getOrThrow())
+                assertFalse(storage.exists(d2).getOrThrow())
+            }
+        }
+
+        assertDoesNotThrow {
+            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+                val p1 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                val p2 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                awaitAll(p1, p2)
+
+                val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(descriptor).getOrThrow())
+            }
+        }
+
+        assertDoesNotThrow {
+            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+                val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(descriptor).getOrThrow())
+                
+                val r1 = async {
+                    storage.remove(descriptor).getOrThrow()
+                }
+                val r2 = async {
+                    storage.remove(descriptor).getOrThrow()
+                }
+                awaitAll(r1, r2)
+                
+                assertFalse(storage.exists(descriptor).getOrThrow())
             }
         }
     }

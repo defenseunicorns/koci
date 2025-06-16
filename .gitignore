@@ -44,5 +44,8 @@ bin/
 ### koci specific ###
 .registry
 
-# windsurf rules
+### Windsurf rules ###
 .windsurfrules
+
+### Kotlin ###
+.kotlin

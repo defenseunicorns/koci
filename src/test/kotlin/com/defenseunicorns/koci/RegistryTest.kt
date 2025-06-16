@@ -401,7 +401,6 @@ class RegistryTest {
             }
         }
 
-        // Test concurrent removes of the same descriptor
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
                 val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()

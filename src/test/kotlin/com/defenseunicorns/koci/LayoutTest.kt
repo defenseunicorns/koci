@@ -6,6 +6,9 @@
 package com.defenseunicorns.koci
 
 import io.ktor.utils.io.jvm.javaio.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
@@ -38,6 +41,38 @@ class LayoutTest {
     @AfterEach
     fun cleanup() {
         tempDir.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `test concurrent pushes of the same descriptor`() = runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
+        val content1 = "Hello World!\n".repeat(2000)
+        val content2 = "Hello World!\n".repeat(2000)
+        val blob1 = Descriptor(
+            mediaType = TEST_BLOB_MEDIATYPE,
+            digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
+                update(content1.toByteArray())
+            }.digest()),
+            size = content1.toByteArray().size.toLong()
+        )
+        val blob2 = Descriptor(
+            mediaType = TEST_BLOB_MEDIATYPE,
+            digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
+                update(content2.toByteArray())
+            }.digest()),
+            size = content2.toByteArray().size.toLong()
+        )
+        assertEquals(blob1, blob2)
+
+        val r1 = async {
+            layout.push(blob1, content1.byteInputStream().toByteReadChannel()).collect()
+        }
+        val r2 = async {
+            layout.push(blob2, content2.byteInputStream().toByteReadChannel()).collect()
+        }
+        awaitAll(r1, r2)
+
+        assertTrue(layout.exists(blob1).getOrThrow())
+        assertTrue(layout.exists(blob2).getOrThrow())
     }
 
     @Test

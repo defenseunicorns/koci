@@ -294,6 +294,9 @@ class Layout private constructor(
      * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
      */
     fun push(descriptor: Descriptor, stream: ByteReadChannel): Flow<Int> = channelFlow {
+        pushing.get(descriptor)?.let {
+            println("mutex exists for $descriptor, awaiting completion") // TODO: remove me
+        }
         val mu = pushing.computeIfAbsent(descriptor) { Mutex() }
 
         mu.withLock {

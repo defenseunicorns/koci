@@ -352,14 +352,17 @@ class RegistryTest {
     @Test
     fun `concurrent pulls + removals`() {
         assertDoesNotThrow {
-            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+            runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
                 val p1 = async {
                     registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p2 = async {
                     registry.pull("library/registry", "latest", storage).collect()
                 }
-                awaitAll(p1, p2)
+                val p3 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                awaitAll(p1, p2, p3)
             }
         }
 

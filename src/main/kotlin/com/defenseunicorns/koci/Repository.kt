@@ -12,8 +12,6 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -22,8 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
-
-private val downloading = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
 /**
  * Extracts upload status from HTTP response headers for resumable uploads.
@@ -413,82 +409,59 @@ class Repository(
      * Note: For complete images or manifests, use [pull] methods instead.
      */
     private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
-        // Get or create a mutex for this descriptor to prevent concurrent downloads
-        val (mutex, refCount) = downloading.computeIfAbsent(descriptor) {
-            Pair(Mutex(), AtomicInteger(0))
+        val ok = store.exists(descriptor)
+
+        // if the descriptor is 100% downloaded w/ size and sha matching, early return
+        if (ok.getOrDefault(false)) {
+            send(descriptor.size.toInt())
+            return@channelFlow
         }
 
-        // Increment reference count to track active users of this mutex
-        refCount.incrementAndGet()
+        val endpoint = when (descriptor.mediaType) {
+            MANIFEST_MEDIA_TYPE,
+            INDEX_MEDIA_TYPE,
+                -> router.manifest(name, descriptor)
 
-        try {
-            // Acquire the lock before checking if the descriptor exists or downloading
-            mutex.withLock {
-                val ok = store.exists(descriptor)
+            else -> router.blob(name, descriptor)
+        }
 
-                // if the descriptor is 100% downloaded w/ size and sha matching, early return
-                if (ok.getOrDefault(false)) {
-                    send(descriptor.size.toInt())
-                    return@withLock
+        client.prepareGet(endpoint) {
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+
+            when (descriptor.mediaType) {
+                MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+                INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
+            }
+
+            when (val exception = ok.exceptionOrNull()) {
+                is OCIException.SizeMismatch -> {
+                    if (supportsRange(descriptor)) {
+                        val start = exception.actual
+
+                        // fire partial progress has happened
+                        send(start.toInt())
+
+                        headers.append("Range", "bytes=$start-${descriptor.size - 1}")
+                    } else {
+                        store.remove(descriptor).getOrThrow()
+                    }
                 }
 
-                val endpoint = when (descriptor.mediaType) {
-                    MANIFEST_MEDIA_TYPE,
-                    INDEX_MEDIA_TYPE,
-                        -> router.manifest(name, descriptor)
-
-                    else -> router.blob(name, descriptor)
+                is OCIException.DigestMismatch -> {
+                    store.remove(descriptor).getOrThrow()
                 }
 
-                client.prepareGet(endpoint) {
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+                null -> {
+                    // this branch should never happen
+                }
 
-                    when (descriptor.mediaType) {
-                        MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-                        INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
-                    }
-
-                    when (val exception = ok.exceptionOrNull()) {
-                        is OCIException.SizeMismatch -> {
-                            if (supportsRange(descriptor)) {
-                                val start = exception.actual
-
-                                // fire partial progress has happened
-                                send(start.toInt())
-
-                                headers.append("Range", "bytes=$start-${descriptor.size - 1}")
-                            } else {
-                                store.remove(descriptor).getOrThrow()
-                            }
-                        }
-
-                        is OCIException.DigestMismatch -> {
-                            store.remove(descriptor).getOrThrow()
-                        }
-
-                        null -> {
-                            // this branch should never happen
-                        }
-
-                        else -> {
-                            throw exception
-                        }
-                    }
-                }.execute { response ->
-                    store.push(descriptor, response.body()).collect { prog ->
-                        send(prog)
-                    }
+                else -> {
+                    throw exception
                 }
             }
-        } finally {
-            // Get the current pair
-            val pair = downloading[descriptor]
-            if (pair != null) {
-                val count = pair.second.decrementAndGet()
-                // Only remove from map if this was the last reference
-                if (count <= 0) {
-                    downloading.remove(descriptor, pair)
-                }
+        }.execute { response ->
+            store.push(descriptor, response.body()).collect { prog ->
+                send(prog)
             }
         }
     }

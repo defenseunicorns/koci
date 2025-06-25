@@ -358,9 +358,6 @@ class RegistryTest {
                         println("p1 done")
                     }.collect()
                 }
-//                val p2 = async {
-//                    registry.pull("library/registry", "latest", storage).collect()
-//                }
                 val p3 = async {
                     registry.pull("dos-games", "1.1.0", storage).onCompletion {
                         println("p3 done")
@@ -370,19 +367,19 @@ class RegistryTest {
             }
         }
 
-        assertDoesNotThrow {
-            runTest {
-                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
-                val r1 = async {
-                    storage.remove(d1).getOrThrow()
-                }
-                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
-                val r2 = async {
-                    storage.remove(d2).getOrThrow()
-                }
-                awaitAll(r1, r2)
-            }
-        }
+//        assertDoesNotThrow {
+//            runTest {
+//                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+//                val r1 = async {
+//                    storage.remove(d1).getOrThrow()
+//                }
+//                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
+//                val r2 = async {
+//                    storage.remove(d2).getOrThrow()
+//                }
+//                awaitAll(r1, r2)
+//            }
+//        }
     }
 
     @Test

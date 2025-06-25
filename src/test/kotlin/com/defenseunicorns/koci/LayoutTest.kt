@@ -45,8 +45,8 @@ class LayoutTest {
 
     @Test
     fun `test concurrent pushes of the same descriptor`() = runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
-        val content1 = "Hello World!\n".repeat(2000)
-        val content2 = "Hello World!\n".repeat(2000)
+        val content1 = "Hello World!\n".repeat(6000)
+        val content2 = "Hello World!\n".repeat(6000)
         val blob1 = Descriptor(
             mediaType = TEST_BLOB_MEDIATYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -54,6 +54,7 @@ class LayoutTest {
             }.digest()),
             size = content1.toByteArray().size.toLong()
         )
+        println(blob1)
         val blob2 = Descriptor(
             mediaType = TEST_BLOB_MEDIATYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -61,6 +62,7 @@ class LayoutTest {
             }.digest()),
             size = content2.toByteArray().size.toLong()
         )
+        println(blob2)
         assertEquals(blob1, blob2)
 
         val r1 = async {
@@ -69,7 +71,10 @@ class LayoutTest {
         val r2 = async {
             layout.push(blob2, content2.byteInputStream().toByteReadChannel()).collect()
         }
-        awaitAll(r1, r2)
+        val r3 = async {
+            layout.push(blob2, content2.byteInputStream().toByteReadChannel()).collect()
+        }
+        awaitAll(r1, r2, r3)
 
         assertTrue(layout.exists(blob1).getOrThrow())
         assertTrue(layout.exists(blob2).getOrThrow())

@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -21,8 +22,6 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-
-internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
@@ -193,6 +192,10 @@ class Layout private constructor(
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+        if (pushing.keys.contains(descriptor)) {
+            throw OCIException.UnableToRemove(descriptor, "download in progress")
+        }
+
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) { file.exists() }
@@ -279,6 +282,8 @@ class Layout private constructor(
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
 
+    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+
     /**
      * Pushes content to the layout from a byte channel.
      *
@@ -299,71 +304,85 @@ class Layout private constructor(
 
         refCount.incrementAndGet()
 
-        try {
-            mu.lock()
-            val ok = exists(descriptor).getOrDefault(false)
+        var wasLocked: Boolean? = null
+        if (mu.isLocked) {
+            wasLocked = true
+        }
 
-            if (!ok) {
-                val file = blob(descriptor)
-                val md = descriptor.digest.algorithm.hasher()
-                // If resuming a download, start calculating the SHA from the data on disk
-                //
-                // it is up to the caller to properly resume the stream at the proper location,
-                // otherwise a DigestMismatch will occur
-                val fileExists = withContext(Dispatchers.IO) { file.exists() }
-                if (fileExists) {
-                    withContext(Dispatchers.IO) {
-                        file.inputStream().use { fis ->
-                            val buffer = ByteArray(32 * 1024)
-                            var bytesRead: Int
-                            while (fis.read(buffer).also { bytesRead = it } != -1) {
-                                md.update(buffer, 0, bytesRead)
-                                // Not emitting bytes read from existing file
+        try {
+            mu.withLock {
+                val ok = exists(descriptor).getOrDefault(false)
+
+                if (!ok) {
+                    val file = blob(descriptor)
+                    val md = descriptor.digest.algorithm.hasher()
+                    // If resuming a download, start calculating the SHA from the data on disk
+                    //
+                    // it is up to the caller to properly resume the stream at the proper location,
+                    // otherwise a DigestMismatch will occur
+                    val fileExists = withContext(Dispatchers.IO) { file.exists() }
+                    if (fileExists) {
+                        withContext(Dispatchers.IO) {
+                            file.inputStream().use { fis ->
+                                val buffer = ByteArray(32 * 1024)
+                                var bytesRead: Int
+                                while (fis.read(buffer).also { bytesRead = it } != -1) {
+                                    md.update(buffer, 0, bytesRead)
+                                    // Not emitting bytes read from existing file
+                                }
                             }
                         }
                     }
-                }
 
-                val buffer = ByteArray(4 * 1024)
-                var bytesRead: Int
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(file, true).use { out ->
-                        while (stream.readAvailable(buffer).also { bytesRead = it } != -1) {
-                            md.update(buffer, 0, bytesRead)
-                            out.write(buffer, 0, bytesRead)
+                    val buffer = ByteArray(4 * 1024)
+                    var bytesRead: Int
+                    withContext(Dispatchers.IO) {
+                        FileOutputStream(file, true).use { out ->
+                            while (stream.readAvailable(buffer).also { bytesRead = it } != -1) {
+                                md.update(buffer, 0, bytesRead)
+                                out.write(buffer, 0, bytesRead)
 
-                            send(bytesRead)
-                            yield()
+                                send(bytesRead)
+                                yield()
+                            }
                         }
                     }
-                }
 
-                val length = withContext(Dispatchers.IO) { file.length() }
-                if (length != descriptor.size) {
-                    throw OCIException.SizeMismatch(descriptor, file.length())
-                }
-
-                val digest = Digest(descriptor.digest.algorithm, md.digest())
-
-                if (digest != descriptor.digest) {
-                    withContext(Dispatchers.IO) {
-                        file.delete()
+                    val length = withContext(Dispatchers.IO) { file.length() }
+                    if (length != descriptor.size) {
+                        throw OCIException.SizeMismatch(descriptor, file.length())
                     }
-                    throw OCIException.DigestMismatch(descriptor, digest)
+
+                    val digest = Digest(descriptor.digest.algorithm, md.digest())
+
+                    if (digest != descriptor.digest) {
+                        withContext(Dispatchers.IO) {
+                            file.delete()
+                        }
+                        throw OCIException.DigestMismatch(descriptor, digest)
+                    }
                 }
             }
         } finally {
-            mu.unlock()
             val pair = pushing[descriptor]
+            if (wasLocked == true) {
+                println("was locked ${descriptor.digest.hex.slice(0..8)} $pair")
+            }
             if (pair != null) {
                 val count = pair.second.decrementAndGet()
                 if (count <= 0) {
                     pushing.remove(descriptor, pair)
                 }
             }
+            if (wasLocked == true) {
+                println("pushing still:")
+                pushing.forEach {
+                    println("${it.key.digest.hex.slice(0..8)} ${it.value.second}")
+                }
+                println()
+            }
         }
     }
-
 
     /**
      * Retrieves content from the layout as an input stream.

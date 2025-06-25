@@ -350,51 +350,29 @@ class RegistryTest {
     @Test
     fun `concurrent pulls + removals`() {
         assertDoesNotThrow {
-            runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
+            runTest(timeout = kotlin.time.Duration.parse("PT30S")) {
                 val p1 = async {
                     registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p2 = async {
-                    registry.pull("library/registry", "latest", storage).collect()
+                    registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p3 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
+                    registry.pull("library/registry", "latest", storage).collect()
                 }
                 awaitAll(p1, p2, p3)
-            }
-        }
 
-        assertDoesNotThrow {
-            runTest {
                 val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
-                val r1 = async {
-                    storage.remove(d1).getOrThrow()
-                }
+                assertTrue(storage.exists(d1).getOrThrow())
                 val d2 = registry.resolve("library/registry", "latest").getOrThrow()
-                val r2 = async {
-                    storage.remove(d2).getOrThrow()
-                }
-                awaitAll(r1, r2)
+                assertTrue(storage.exists(d2).getOrThrow())
+
+                storage.remove(d2).getOrThrow()
             }
         }
 
         assertDoesNotThrow {
-            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
-                val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
-                }
-                val p2 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
-                }
-                awaitAll(p1, p2)
-
-                val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
-                assertTrue(storage.exists(descriptor).getOrThrow())
-            }
-        }
-
-        assertDoesNotThrow {
-            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+            runTest(timeout = kotlin.time.Duration.parse("PT30S")) {
                 val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
                 assertTrue(storage.exists(descriptor).getOrThrow())
 

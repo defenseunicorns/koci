@@ -297,17 +297,12 @@ class Layout private constructor(
      * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
      * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
      */
-    fun push(descriptor: Descriptor, stream: ByteReadChannel): Flow<Int> = channelFlow {
+    fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
         val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
             Pair(Mutex(), AtomicInteger(0))
         }
 
         refCount.incrementAndGet()
-
-        var wasLocked: Boolean? = null
-        if (mu.isLocked) {
-            wasLocked = true
-        }
 
         try {
             mu.withLock {
@@ -338,7 +333,7 @@ class Layout private constructor(
                     var bytesRead: Int
                     withContext(Dispatchers.IO) {
                         FileOutputStream(file, true).use { out ->
-                            while (stream.readAvailable(buffer).also { bytesRead = it } != -1) {
+                            while (stream.read(buffer).also { bytesRead = it } != -1) {
                                 md.update(buffer, 0, bytesRead)
                                 out.write(buffer, 0, bytesRead)
 
@@ -365,21 +360,11 @@ class Layout private constructor(
             }
         } finally {
             val pair = pushing[descriptor]
-            if (wasLocked == true) {
-                println("was locked ${descriptor.digest.hex.slice(0..8)} $pair")
-            }
             if (pair != null) {
                 val count = pair.second.decrementAndGet()
                 if (count <= 0) {
                     pushing.remove(descriptor, pair)
                 }
-            }
-            if (wasLocked == true) {
-                println("pushing still:")
-                pushing.forEach {
-                    println("${it.key.digest.hex.slice(0..8)} ${it.value.second}")
-                }
-                println()
             }
         }
     }

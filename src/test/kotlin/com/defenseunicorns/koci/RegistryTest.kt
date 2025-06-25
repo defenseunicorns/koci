@@ -23,6 +23,7 @@ import org.junit.jupiter.api.*
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.concurrent.Executors
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.absolutePathString
@@ -191,7 +192,7 @@ class RegistryTest {
             annotations = mutableMapOf()
         )
 
-        val stream = ByteReadChannel("Hello World!")
+        val stream = "Hello World!".byteInputStream()
 
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
 
@@ -354,32 +355,28 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage).onCompletion {
-                        println("p1 done")
-                    }.collect()
+                    registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p3 = async {
-                    registry.pull("dos-games", "1.1.0", storage).onCompletion {
-                        println("p3 done")
-                    }.collect()
+                    registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 awaitAll(p1, p3)
             }
         }
 
-//        assertDoesNotThrow {
-//            runTest {
-//                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
-//                val r1 = async {
-//                    storage.remove(d1).getOrThrow()
-//                }
-//                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
-//                val r2 = async {
-//                    storage.remove(d2).getOrThrow()
-//                }
-//                awaitAll(r1, r2)
-//            }
-//        }
+        assertDoesNotThrow {
+            runTest {
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                val r1 = async {
+                    storage.remove(d1).getOrThrow()
+                }
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
+                val r2 = async {
+                    storage.remove(d2).getOrThrow()
+                }
+                awaitAll(r1, r2)
+            }
+        }
     }
 
     @Test

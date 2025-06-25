@@ -54,7 +54,6 @@ class LayoutTest {
             }.digest()),
             size = content1.toByteArray().size.toLong()
         )
-        println(blob1)
         val blob2 = Descriptor(
             mediaType = TEST_BLOB_MEDIATYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -62,17 +61,16 @@ class LayoutTest {
             }.digest()),
             size = content2.toByteArray().size.toLong()
         )
-        println(blob2)
         assertEquals(blob1, blob2)
 
         val r1 = async {
-            layout.push(blob1, content1.byteInputStream().toByteReadChannel()).collect()
+            layout.push(blob1, content1.byteInputStream()).collect()
         }
         val r2 = async {
-            layout.push(blob2, content2.byteInputStream().toByteReadChannel()).collect()
+            layout.push(blob2, content2.byteInputStream()).collect()
         }
         val r3 = async {
-            layout.push(blob2, content2.byteInputStream().toByteReadChannel()).collect()
+            layout.push(blob2, content2.byteInputStream()).collect()
         }
         awaitAll(r1, r2, r3)
 
@@ -96,7 +94,7 @@ class LayoutTest {
         )
 
         val manifestJson = Json.encodeToString(manifest)
-        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
+        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray())
         val manifestDescriptor = Descriptor(
             mediaType = MANIFEST_MEDIA_TYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -153,7 +151,7 @@ class LayoutTest {
         )
 
         val manifestJson = Json.encodeToString(manifest)
-        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
+        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray())
         val manifestDescriptor = Descriptor(
             mediaType = MANIFEST_MEDIA_TYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -292,7 +290,7 @@ class LayoutTest {
             size = bytes.size.toLong()
         )
 
-        val stream = ByteArrayInputStream(bytes).toByteReadChannel()
+        val stream = ByteArrayInputStream(bytes)
         layout.push(descriptor, stream).collect { }
 
         return descriptor

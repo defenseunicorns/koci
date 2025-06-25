@@ -22,6 +22,8 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
  *
@@ -276,8 +278,6 @@ class Layout private constructor(
     private fun blob(descriptor: Descriptor): File {
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
-
-    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
     /**
      * Pushes content to the layout from a byte channel.

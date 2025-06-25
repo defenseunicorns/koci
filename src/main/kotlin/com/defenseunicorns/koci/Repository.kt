@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 
-private val activeDownloads = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+private val downloading = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
 /**
  * Extracts upload status from HTTP response headers for resumable uploads.
@@ -342,16 +342,12 @@ class Repository(
 
                 val acc = AtomicInteger(0)
 
-                println("about to pull $descriptor")
-
                 layersToFetch.asFlow().map { layer ->
                     flow {
-                        println("+ ${layer.digest.hex.slice(0..8)} ${store.pushing}")
                         copy(layer, store).collect { progress ->
                             val curr = acc.addAndGet(progress)
                             emit((curr.toDouble() * 100 / total).roundToInt())
                         }
-                        println("- ${layer.digest.hex.slice(0..8)} ${store.pushing}")
                     }
                 }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
@@ -418,7 +414,7 @@ class Repository(
      */
     private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
         // Get or create a mutex for this descriptor to prevent concurrent downloads
-        val (mutex, refCount) = activeDownloads.computeIfAbsent(descriptor) {
+        val (mutex, refCount) = downloading.computeIfAbsent(descriptor) {
             Pair(Mutex(), AtomicInteger(0))
         }
 
@@ -486,12 +482,12 @@ class Repository(
             }
         } finally {
             // Get the current pair
-            val pair = activeDownloads[descriptor]
+            val pair = downloading[descriptor]
             if (pair != null) {
                 val count = pair.second.decrementAndGet()
                 // Only remove from map if this was the last reference
                 if (count <= 0) {
-                    activeDownloads.remove(descriptor, pair)
+                    downloading.remove(descriptor, pair)
                 }
             }
         }

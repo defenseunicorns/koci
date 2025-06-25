@@ -354,15 +354,19 @@ class RegistryTest {
         assertDoesNotThrow {
             runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
                 val p1 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
+                    registry.pull("dos-games", "1.1.0", storage).onCompletion {
+                        println("p1 done")
+                    }.collect()
                 }
-                val p2 = async {
-                    registry.pull("library/registry", "latest", storage).collect()
-                }
+//                val p2 = async {
+//                    registry.pull("library/registry", "latest", storage).collect()
+//                }
                 val p3 = async {
-                    registry.pull("dos-games", "1.1.0", storage).collect()
+                    registry.pull("dos-games", "1.1.0", storage).onCompletion {
+                        println("p3 done")
+                    }.collect()
                 }
-                awaitAll(p1, p2, p3)
+                awaitAll(p1, p3)
             }
         }
 

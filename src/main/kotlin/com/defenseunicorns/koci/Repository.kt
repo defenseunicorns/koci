@@ -17,7 +17,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
+
 
 /**
  * Extracts upload status from HTTP response headers for resumable uploads.
@@ -334,21 +336,21 @@ class Repository(
                 val layersToFetch = manifest.layers.toMutableList() + manifest.config
                 val total = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
 
-                var acc = 0.0
+                val acc = AtomicInteger(0)
 
                 layersToFetch.asFlow().map { layer ->
                     flow {
                         copy(layer, store).collect { progress ->
-                            acc += progress
-                            emit((acc * 100 / total).roundToInt())
+                            val curr = acc.addAndGet(progress)
+                            emit((curr.toDouble() * 100 / total).roundToInt())
                         }
                     }
                 }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
                     .onCompletion { cause ->
                         if (cause == null) {
                             copy(descriptor, store).collect { progress ->
-                                acc += progress
-                                emit((acc * 100 / total).roundToInt())
+                                val curr = acc.addAndGet(progress)
+                                emit((curr.toDouble() * 100 / total).roundToInt())
                             }
                         }
                     }.collect { progress ->
@@ -458,8 +460,10 @@ class Repository(
                 }
             }
         }.execute { response ->
-            store.push(descriptor, response.body()).collect { prog ->
-                send(prog)
+            response.body<InputStream>().use { stream ->
+                store.push(descriptor, stream).collect { prog ->
+                    send(prog)
+                }
             }
         }
     }

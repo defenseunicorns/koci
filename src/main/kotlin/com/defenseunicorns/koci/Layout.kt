@@ -7,7 +7,6 @@ package com.defenseunicorns.koci
 
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
@@ -22,6 +21,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
@@ -192,6 +192,10 @@ class Layout private constructor(
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+        if (pushing.keys.contains(descriptor)) {
+            throw OCIException.UnableToRemove(descriptor, "download in progress")
+        }
+
         val file = blob(descriptor)
 
         val exists = withContext(Dispatchers.IO) { file.exists() }
@@ -278,7 +282,7 @@ class Layout private constructor(
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
 
-    private val pushing = ConcurrentHashMap<Descriptor, Mutex>()
+    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
     /**
      * Pushes content to the layout from a byte channel.
@@ -293,11 +297,15 @@ class Layout private constructor(
      * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
      * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
      */
-    fun push(descriptor: Descriptor, stream: ByteReadChannel): Flow<Int> = channelFlow {
-        val mu = pushing.computeIfAbsent(descriptor) { Mutex() }
+    fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
+        val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
+            Pair(Mutex(), AtomicInteger(0))
+        }
 
-        mu.withLock {
-            try {
+        refCount.incrementAndGet()
+
+        try {
+            mu.withLock {
                 val ok = exists(descriptor).getOrDefault(false)
 
                 if (!ok) {
@@ -325,7 +333,7 @@ class Layout private constructor(
                     var bytesRead: Int
                     withContext(Dispatchers.IO) {
                         FileOutputStream(file, true).use { out ->
-                            while (stream.readAvailable(buffer).also { bytesRead = it } != -1) {
+                            while (stream.read(buffer).also { bytesRead = it } != -1) {
                                 md.update(buffer, 0, bytesRead)
                                 out.write(buffer, 0, bytesRead)
 
@@ -349,8 +357,14 @@ class Layout private constructor(
                         throw OCIException.DigestMismatch(descriptor, digest)
                     }
                 }
-            } finally {
-                pushing.remove(descriptor, mu)
+            }
+        } finally {
+            val pair = pushing[descriptor]
+            if (pair != null) {
+                val count = pair.second.decrementAndGet()
+                if (count <= 0) {
+                    pushing.remove(descriptor, pair)
+                }
             }
         }
     }

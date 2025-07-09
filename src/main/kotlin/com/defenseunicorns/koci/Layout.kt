@@ -7,7 +7,6 @@ package com.defenseunicorns.koci
 
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
@@ -22,6 +21,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
@@ -42,6 +42,8 @@ class Layout private constructor(
     internal val index: Index,
     private val root: String,
 ) {
+    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+
     companion object {
         /**
          * Creates a new Layout or opens an existing one at the specified path.
@@ -192,70 +194,88 @@ class Layout private constructor(
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
-        val file = blob(descriptor)
-
-        val exists = withContext(Dispatchers.IO) { file.exists() }
-
-        if (!exists) {
-            return@runCatching true
+        val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
+            Pair(Mutex(), AtomicInteger(0))
         }
 
-        return when (descriptor.mediaType) {
-            INDEX_MEDIA_TYPE -> {
-                val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
+        refCount.incrementAndGet()
 
-                index.manifests.removeAll {
-                    it.digest == descriptor.digest
+        try {
+            mu.withLock {
+                val file = blob(descriptor)
+
+                val exists = withContext(Dispatchers.IO) { file.exists() }
+
+                if (!exists) {
+                    return@runCatching true
                 }
 
-                withContext(Dispatchers.IO) {
-                    syncIndex()
-                }
+                return when (descriptor.mediaType) {
+                    INDEX_MEDIA_TYPE -> {
+                        val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
-                for (manifestDesc in indexToRemove.manifests) {
-                    remove(manifestDesc).getOrThrow()
-                }
+                        index.manifests.removeAll {
+                            it.digest == descriptor.digest
+                        }
 
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
+                        withContext(Dispatchers.IO) {
+                            syncIndex()
+                        }
 
-                Result.success(deleted)
-            }
+                        for (manifestDesc in indexToRemove.manifests) {
+                            remove(manifestDesc).getOrThrow()
+                        }
 
-            MANIFEST_MEDIA_TYPE -> {
-                val manifests = index.manifests.filter {
-                    it.digest != descriptor.digest
-                }
+                        val deleted = withContext(Dispatchers.IO) { file.delete() }
 
-                index.manifests.removeAll {
-                    it.digest == descriptor.digest
-                }
+                        Result.success(deleted)
+                    }
 
-                withContext(Dispatchers.IO) {
-                    syncIndex()
-                }
+                    MANIFEST_MEDIA_TYPE -> {
+                        val manifests = index.manifests.filter {
+                            it.digest != descriptor.digest
+                        }
 
-                val allOtherLayers = expand(manifests)
+                        index.manifests.removeAll {
+                            it.digest == descriptor.digest
+                        }
 
-                if (allOtherLayers.contains(descriptor)) {
-                    throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
-                }
+                        withContext(Dispatchers.IO) {
+                            syncIndex()
+                        }
 
-                val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+                        val allOtherLayers = expand(manifests)
 
-                (manifest.layers + manifest.config).forEach { layer ->
-                    if (!allOtherLayers.contains(layer)) {
-                        remove(layer).getOrThrow()
+                        if (allOtherLayers.contains(descriptor)) {
+                            throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+                        }
+
+                        val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+
+                        (manifest.layers + manifest.config).forEach { layer ->
+                            if (!allOtherLayers.contains(layer)) {
+                                remove(layer).getOrThrow()
+                            }
+                        }
+
+                        val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                        Result.success(deleted)
+                    }
+
+                    else -> {
+                        val ret = withContext(Dispatchers.IO) { file.delete() }
+                        Result.success(ret)
                     }
                 }
-
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
-
-                Result.success(deleted)
             }
-
-            else -> {
-                val ret = withContext(Dispatchers.IO) { file.delete() }
-                Result.success(ret)
+        } finally {
+            val pair = pushing[descriptor]
+            if (pair != null) {
+                val count = pair.second.decrementAndGet()
+                if (count <= 0) {
+                    pushing.remove(descriptor, pair)
+                }
             }
         }
     }
@@ -278,8 +298,6 @@ class Layout private constructor(
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
 
-    private val pushing = ConcurrentHashMap<Descriptor, Mutex>()
-
     /**
      * Pushes content to the layout from a byte channel.
      *
@@ -293,11 +311,15 @@ class Layout private constructor(
      * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
      * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
      */
-    fun push(descriptor: Descriptor, stream: ByteReadChannel): Flow<Int> = channelFlow {
-        val mu = pushing.computeIfAbsent(descriptor) { Mutex() }
+    fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
+        val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
+            Pair(Mutex(), AtomicInteger(0))
+        }
 
-        mu.withLock {
-            try {
+        refCount.incrementAndGet()
+
+        try {
+            mu.withLock {
                 val ok = exists(descriptor).getOrDefault(false)
 
                 if (!ok) {
@@ -325,7 +347,7 @@ class Layout private constructor(
                     var bytesRead: Int
                     withContext(Dispatchers.IO) {
                         FileOutputStream(file, true).use { out ->
-                            while (stream.readAvailable(buffer).also { bytesRead = it } != -1) {
+                            while (stream.read(buffer).also { bytesRead = it } != -1) {
                                 md.update(buffer, 0, bytesRead)
                                 out.write(buffer, 0, bytesRead)
 
@@ -349,8 +371,14 @@ class Layout private constructor(
                         throw OCIException.DigestMismatch(descriptor, digest)
                     }
                 }
-            } finally {
-                pushing.remove(descriptor, mu)
+            }
+        } finally {
+            val pair = pushing[descriptor]
+            if (pair != null) {
+                val count = pair.second.decrementAndGet()
+                if (count <= 0) {
+                    pushing.remove(descriptor, pair)
+                }
             }
         }
     }

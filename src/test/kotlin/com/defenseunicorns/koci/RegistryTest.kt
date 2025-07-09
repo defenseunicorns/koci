@@ -8,9 +8,7 @@ package com.defenseunicorns.koci
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
-import io.ktor.utils.io.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.onCompletion
@@ -191,7 +189,7 @@ class RegistryTest {
             annotations = mutableMapOf()
         )
 
-        val stream = ByteReadChannel("Hello World!")
+        val stream = "Hello World!".byteInputStream()
 
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
 
@@ -352,28 +350,41 @@ class RegistryTest {
     @Test
     fun `concurrent pulls + removals`() {
         assertDoesNotThrow {
-            runTest(timeout = kotlin.time.Duration.parse("PT2M")) {
+            runTest(timeout = kotlin.time.Duration.parse("PT30S")) {
                 val p1 = async {
                     registry.pull("dos-games", "1.1.0", storage).collect()
                 }
                 val p2 = async {
+                    registry.pull("dos-games", "1.1.0", storage).collect()
+                }
+                val p3 = async {
                     registry.pull("library/registry", "latest", storage).collect()
                 }
-                awaitAll(p1, p2)
+                awaitAll(p1, p2, p3)
+
+                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(d1).getOrThrow())
+                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
+                assertTrue(storage.exists(d2).getOrThrow())
+
+                storage.remove(d2).getOrThrow()
             }
         }
 
         assertDoesNotThrow {
-            runTest {
-                val d1 = registry.resolve("dos-games", "1.1.0").getOrThrow()
+            runTest(timeout = kotlin.time.Duration.parse("PT30S")) {
+                val descriptor = registry.resolve("dos-games", "1.1.0").getOrThrow()
+                assertTrue(storage.exists(descriptor).getOrThrow())
+
                 val r1 = async {
-                    storage.remove(d1).getOrThrow()
+                    storage.remove(descriptor).getOrThrow()
                 }
-                val d2 = registry.resolve("library/registry", "latest").getOrThrow()
                 val r2 = async {
-                    storage.remove(d2).getOrThrow()
+                    storage.remove(descriptor).getOrThrow()
                 }
                 awaitAll(r1, r2)
+
+                assertFalse(storage.exists(descriptor).getOrThrow())
             }
         }
     }
@@ -468,7 +479,7 @@ class RegistryTest {
         // Get an existing blob from the source repository
         val indexDesc = registry.resolve("dos-games", "1.1.0").getOrThrow()
         val index = sourceRepo.index(indexDesc).getOrThrow()
-        
+
         // First get a manifest, then use its layers
         val manifestDesc = index.manifests.first()
         val manifest = sourceRepo.manifest(manifestDesc).getOrThrow()
@@ -478,38 +489,38 @@ class RegistryTest {
         val nonExistentContent = "This blob doesn't exist yet".byteInputStream()
         val nonExistentDesc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = nonExistentContent)
         nonExistentContent.reset()
-        
+
         val nonExistentResult = targetRepo.mount(nonExistentDesc, "dos-games").getOrThrow()
         assertFalse(nonExistentResult, "Mount should fail for non-existent blob")
-        
+
         val pushResult = targetRepo.push(nonExistentContent, nonExistentDesc).last()
         assertEquals(nonExistentDesc.size, pushResult, "Push after failed mount should succeed")
-        
+
         assertTrue(targetRepo.exists(nonExistentDesc).getOrThrow(), "Blob should exist after push")
-        
+
         assertTrue(targetRepo.remove(nonExistentDesc).getOrThrow(), "Blob removal should succeed")
 
         // Case 2: Mount a blob that already exists in target repo
         val duplicateContent = "This is a duplicate blob".byteInputStream()
         val duplicateDesc = Descriptor.fromInputStream(mediaType = TEST_BLOB_MEDIATYPE, stream = duplicateContent)
         duplicateContent.reset()
-        
+
         targetRepo.push(duplicateContent, duplicateDesc).collect()
-        
+
         val duplicateResult = targetRepo.mount(duplicateDesc, "dos-games").getOrThrow()
         assertTrue(duplicateResult, "Mount should report success for blob that already exists")
-        
+
         assertTrue(targetRepo.remove(duplicateDesc).getOrThrow(), "Blob removal should succeed")
 
         // Case 3: Successfully mount a blob from source repo
         assertTrue(sourceRepo.exists(existingBlob).getOrThrow(), "Blob should exist in source repo")
         assertFalse(targetRepo.exists(existingBlob).getOrDefault(false), "Blob should not exist in target repo yet")
-        
+
         val mountResult = targetRepo.mount(existingBlob, "dos-games").getOrThrow()
         assertTrue(mountResult, "Mount should succeed for existing blob")
-        
+
         assertTrue(targetRepo.exists(existingBlob).getOrThrow(), "Blob should exist in target repo after mount")
-        
+
         assertTrue(targetRepo.remove(existingBlob).getOrThrow(), "Blob removal should succeed")
     }
 

@@ -6,6 +6,9 @@
 package com.defenseunicorns.koci
 
 import io.ktor.utils.io.jvm.javaio.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
@@ -41,6 +44,41 @@ class LayoutTest {
     }
 
     @Test
+    fun `test concurrent pushes of the same descriptor`() = runTest(timeout = kotlin.time.Duration.parse("PT15S")) {
+        val content1 = "Hello World!\n".repeat(6000)
+        val content2 = "Hello World!\n".repeat(6000)
+        val blob1 = Descriptor(
+            mediaType = TEST_BLOB_MEDIATYPE,
+            digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
+                update(content1.toByteArray())
+            }.digest()),
+            size = content1.toByteArray().size.toLong()
+        )
+        val blob2 = Descriptor(
+            mediaType = TEST_BLOB_MEDIATYPE,
+            digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
+                update(content2.toByteArray())
+            }.digest()),
+            size = content2.toByteArray().size.toLong()
+        )
+        assertEquals(blob1, blob2)
+
+        val r1 = async {
+            layout.push(blob1, content1.byteInputStream()).collect()
+        }
+        val r2 = async {
+            layout.push(blob2, content2.byteInputStream()).collect()
+        }
+        val r3 = async {
+            layout.push(blob2, content2.byteInputStream()).collect()
+        }
+        awaitAll(r1, r2, r3)
+
+        assertTrue(layout.exists(blob1).getOrThrow())
+        assertTrue(layout.exists(blob2).getOrThrow())
+    }
+
+    @Test
     fun `test gc removes zombie layers`() = runTest {
         val configDescriptor = createTestBlob("config-content", "application/vnd.oci.image.config.v1+json")
         val layer1Descriptor = createTestBlob("layer1-content", "application/vnd.oci.image.layer.v1.tar+gzip")
@@ -56,7 +94,7 @@ class LayoutTest {
         )
 
         val manifestJson = Json.encodeToString(manifest)
-        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
+        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray())
         val manifestDescriptor = Descriptor(
             mediaType = MANIFEST_MEDIA_TYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -113,7 +151,7 @@ class LayoutTest {
         )
 
         val manifestJson = Json.encodeToString(manifest)
-        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray()).toByteReadChannel()
+        val manifestStream = ByteArrayInputStream(manifestJson.toByteArray())
         val manifestDescriptor = Descriptor(
             mediaType = MANIFEST_MEDIA_TYPE,
             digest = Digest(RegisteredAlgorithm.SHA256, RegisteredAlgorithm.SHA256.hasher().apply {
@@ -252,7 +290,7 @@ class LayoutTest {
             size = bytes.size.toLong()
         )
 
-        val stream = ByteArrayInputStream(bytes).toByteReadChannel()
+        val stream = ByteArrayInputStream(bytes)
         layout.push(descriptor, stream).collect { }
 
         return descriptor

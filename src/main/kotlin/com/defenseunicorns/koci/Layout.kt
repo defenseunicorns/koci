@@ -42,6 +42,8 @@ class Layout private constructor(
     internal val index: Index,
     private val root: String,
 ) {
+    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+
     companion object {
         /**
          * Creates a new Layout or opens an existing one at the specified path.
@@ -196,71 +198,81 @@ class Layout private constructor(
             throw OCIException.UnableToRemove(descriptor, "download in progress")
         }
 
-        val file = blob(descriptor)
-
-        val exists = withContext(Dispatchers.IO) { file.exists() }
-
-        if (!exists) {
-            return@runCatching true
+        val (mu, _) = pushing.computeIfAbsent(descriptor) {
+            Pair(Mutex(), AtomicInteger(0))
         }
 
-        return when (descriptor.mediaType) {
-            INDEX_MEDIA_TYPE -> {
-                val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
+        try {
+            mu.withLock {
+                val file = blob(descriptor)
 
-                index.manifests.removeAll {
-                    it.digest == descriptor.digest
+                val exists = withContext(Dispatchers.IO) { file.exists() }
+
+                if (!exists) {
+                    return@runCatching true
                 }
 
-                withContext(Dispatchers.IO) {
-                    syncIndex()
-                }
+                return when (descriptor.mediaType) {
+                    INDEX_MEDIA_TYPE -> {
+                        val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
-                for (manifestDesc in indexToRemove.manifests) {
-                    remove(manifestDesc).getOrThrow()
-                }
+                        index.manifests.removeAll {
+                            it.digest == descriptor.digest
+                        }
 
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
+                        withContext(Dispatchers.IO) {
+                            syncIndex()
+                        }
 
-                Result.success(deleted)
-            }
+                        for (manifestDesc in indexToRemove.manifests) {
+                            remove(manifestDesc).getOrThrow()
+                        }
 
-            MANIFEST_MEDIA_TYPE -> {
-                val manifests = index.manifests.filter {
-                    it.digest != descriptor.digest
-                }
+                        val deleted = withContext(Dispatchers.IO) { file.delete() }
 
-                index.manifests.removeAll {
-                    it.digest == descriptor.digest
-                }
+                        Result.success(deleted)
+                    }
 
-                withContext(Dispatchers.IO) {
-                    syncIndex()
-                }
+                    MANIFEST_MEDIA_TYPE -> {
+                        val manifests = index.manifests.filter {
+                            it.digest != descriptor.digest
+                        }
 
-                val allOtherLayers = expand(manifests)
+                        index.manifests.removeAll {
+                            it.digest == descriptor.digest
+                        }
 
-                if (allOtherLayers.contains(descriptor)) {
-                    throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
-                }
+                        withContext(Dispatchers.IO) {
+                            syncIndex()
+                        }
 
-                val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+                        val allOtherLayers = expand(manifests)
 
-                (manifest.layers + manifest.config).forEach { layer ->
-                    if (!allOtherLayers.contains(layer)) {
-                        remove(layer).getOrThrow()
+                        if (allOtherLayers.contains(descriptor)) {
+                            throw OCIException.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+                        }
+
+                        val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
+
+                        (manifest.layers + manifest.config).forEach { layer ->
+                            if (!allOtherLayers.contains(layer)) {
+                                remove(layer).getOrThrow()
+                            }
+                        }
+
+                        val deleted = withContext(Dispatchers.IO) { file.delete() }
+
+                        Result.success(deleted)
+                    }
+
+                    else -> {
+                        val ret = withContext(Dispatchers.IO) { file.delete() }
+                        Result.success(ret)
                     }
                 }
-
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
-
-                Result.success(deleted)
             }
-
-            else -> {
-                val ret = withContext(Dispatchers.IO) { file.delete() }
-                Result.success(ret)
-            }
+        } finally {
+            pushing.remove(descriptor)
         }
     }
 
@@ -281,8 +293,6 @@ class Layout private constructor(
     private fun blob(descriptor: Descriptor): File {
         return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
     }
-
-    internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
     /**
      * Pushes content to the layout from a byte channel.

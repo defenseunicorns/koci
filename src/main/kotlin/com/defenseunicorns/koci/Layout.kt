@@ -194,13 +194,11 @@ class Layout private constructor(
     @OptIn(ExperimentalSerializationApi::class)
     @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
     suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
-        if (pushing.keys.contains(descriptor)) {
-            throw OCIException.UnableToRemove(descriptor, "download in progress")
-        }
-
-        val (mu, _) = pushing.computeIfAbsent(descriptor) {
+        val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
             Pair(Mutex(), AtomicInteger(0))
         }
+
+        refCount.incrementAndGet()
 
         try {
             mu.withLock {
@@ -272,7 +270,13 @@ class Layout private constructor(
                 }
             }
         } finally {
-            pushing.remove(descriptor)
+            val pair = pushing[descriptor]
+            if (pair != null) {
+                val count = pair.second.decrementAndGet()
+                if (count <= 0) {
+                    pushing.remove(descriptor, pair)
+                }
+            }
         }
     }
 

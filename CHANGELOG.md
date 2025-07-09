@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 (2025-07-09)
+
+## What's Changed
+* ci(deps): bump the github-actions group across 1 directory with 2 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/103
+* build(deps): bump the gradle group across 1 directory with 6 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/107
+* fix: hangs on concurrent layer pulls by @Noxsios in https://github.com/defenseunicorns/koci/pull/108
+* build(deps): bump the gradle group across 1 directory with 4 updates by @dependabot in https://github.com/defenseunicorns/koci/pull/112
+* ci(deps): bump github/codeql-action from 3.29.0 to 3.29.1 in the github-actions group by @dependabot in https://github.com/defenseunicorns/koci/pull/110
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.4.0...v0.4.1
+
 ## 0.4.0 (2025-06-02)
 
 ## What's Changed

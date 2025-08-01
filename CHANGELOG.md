@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 (2025-08-01)
+
+## What's Changed
+* build(deps): bump the gradle group with 4 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/115
+* ci(deps): bump github/codeql-action from 3.29.1 to 3.29.2 in the github-actions group by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/113
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.4.1...v0.4.2
+
 ## 0.4.1 (2025-07-09)
 
 ## What's Changed

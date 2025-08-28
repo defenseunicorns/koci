@@ -608,9 +608,9 @@ class Repository(
 
                             val status = res.headers.toUploadStatus()
                             uploading[expected] = status
-                            offset = status.offset
+                            offset = status.offset + 1
 
-                            send(offset + 1)
+                            send(offset)
 
                             yield()
                         }

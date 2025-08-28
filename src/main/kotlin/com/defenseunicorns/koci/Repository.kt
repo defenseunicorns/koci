@@ -57,7 +57,7 @@ fun Headers.toUploadStatus(): UploadStatus {
  *
  * @property client HTTP client for registry communication
  * @property router URL routing for registry endpoints
- * @property name Repository name in format "[host]/[namespace]/[repository]"
+ * @property name Repository name as retrieved from a reference (e.g., "[host]/[name]:[tag]")
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
 @Suppress("detekt:TooManyFunctions")

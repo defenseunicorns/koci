@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.2 (2025-08-28)
+
+## What's Changed
+* build(deps): bump the gradle group with 4 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/115
+* ci(deps): bump github/codeql-action from 3.29.1 to 3.29.2 in the github-actions group by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/113
+* ci(deps): bump the github-actions group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/121
+* chore: fix repository class name comment by @Racer159 in https://github.com/defenseunicorns/koci/pull/126
+* build(deps): bump the gradle group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/122
+* fix: offset byte issue with chunked uploads by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/127
+
+## New Contributors
+* @Racer159 made their first contribution in https://github.com/defenseunicorns/koci/pull/126
+* @LandonPatmore made their first contribution in https://github.com/defenseunicorns/koci/pull/127
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.4.1...v0.4.2
+
 ## 0.4.1 (2025-07-09)
 
 ## What's Changed

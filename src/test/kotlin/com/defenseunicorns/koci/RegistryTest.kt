@@ -406,17 +406,23 @@ class RegistryTest {
 
         assertTrue { repo.exists(desc).getOrThrow() }
 
-        val tmp10 = tmp.resolve("10mb.txt").absolutePathString()
+        val tmp11 = tmp.resolve("11mb.txt").absolutePathString()
 
-        val tmp10Desc = generateRandomFile(tmp10, 10 * 1024 * 1024)
+        /**
+         * 11mb causes a POST, PATCH, PATCH, PUT
+         * 10mb only causes a POST, PATCH, PUT
+         *
+         * Ensures that offsets are calculated correctly on PATCH
+         */
+        val tmp11Desc = generateRandomFile(tmp11, 11 * 1024 * 1024)
 
-        repo.push(File(tmp10).inputStream(), tmp10Desc).collect()
+        repo.push(File(tmp11).inputStream(), tmp11Desc).collect()
 
-        assertTrue { repo.exists(tmp10Desc).getOrThrow() }
+        assertTrue { repo.exists(tmp11Desc).getOrThrow() }
         assertTrue { repo.remove(desc).getOrThrow() }
         assertFailsWith<ClientRequestException> { repo.exists(desc).getOrThrow() }
-        assertTrue { repo.remove(tmp10Desc).getOrThrow() }
-        assertFailsWith<ClientRequestException> { !repo.exists(tmp10Desc).getOrThrow() }
+        assertTrue { repo.remove(tmp11Desc).getOrThrow() }
+        assertFailsWith<ClientRequestException> { !repo.exists(tmp11Desc).getOrThrow() }
 
         val tmp15 = tmp.resolve("15mb.txt").absolutePathString()
         val tmp15Desc = generateRandomFile(tmp15, 15 * 1024 * 1024 + 300)

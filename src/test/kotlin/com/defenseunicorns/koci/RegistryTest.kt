@@ -299,7 +299,7 @@ class RegistryTest {
         val prog = registry.pull("library/gradle", "latest", storage)
 
         assertEquals(
-            100, prog.last()
+            1753448172, prog.last()
         )
 
         assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest").getOrThrow()).isSuccess)

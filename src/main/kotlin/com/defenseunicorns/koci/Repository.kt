@@ -11,6 +11,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -304,94 +305,121 @@ class Repository(
      * @param store Layout to store content in
      * @return Flow emitting the _total_ number of bytes written thus far
      */
-    @OptIn(ExperimentalCoroutinesApi::class, ExperimentalSerializationApi::class)
     fun pull(descriptor: Descriptor, store: Layout): Flow<Long> = channelFlow {
         when (descriptor.mediaType) {
             INDEX_MEDIA_TYPE -> {
-                val index = index(descriptor).getOrThrow()
-                
-                if (store.exists(descriptor).getOrDefault(false)) {
-                    var allManifestsExist = true
-                    var totalBytes = 0L
-                    
-                    for (manifestDesc in index.manifests) {
-                        if (store.exists(manifestDesc).getOrDefault(false)) {
-                            val manifest = store.fetch(manifestDesc).use { stream ->
-                                Json.decodeFromStream<Manifest>(stream)
-                            }
-                            val manifestBytes = manifest.layers.sumOf { it.size } + manifest.config.size + manifestDesc.size
-                            totalBytes += manifestBytes
-                        } else {
-                            // If any manifest doesn't exist, we need to do a pull
-                            allManifestsExist = false
-                            break
-                        }
-                    }
-
-                    if (allManifestsExist) {
-                        totalBytes += descriptor.size
-                        send(totalBytes)
-                        return@channelFlow
-                    }
-                }
-
-                var currIndexBytes = 0L
-                index.manifests.forEach { manifestDescriptor ->
-                    var currManifestBytes: Long = 0
-                    pull(manifestDescriptor, store).collect { manifestProgress ->
-                        currManifestBytes += manifestProgress
-                        send(currIndexBytes + currManifestBytes)
-                    }
-                    currIndexBytes += currManifestBytes
-                }
-
-                copy(descriptor, store).collect()
-
-                currIndexBytes += descriptor.size
-
-                send(currIndexBytes)
+                pullIndex(descriptor, store, this)
             }
-
             MANIFEST_MEDIA_TYPE -> {
-                val manifest = manifest(descriptor).getOrThrow()
-                val layersToFetch = manifest.layers.toMutableList() + manifest.config
-
-                if (store.exists(descriptor).getOrDefault(false)) {
-                    val totalBytes = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
-                    send(totalBytes)
-                    return@channelFlow
-                }
-
-                val acc = AtomicLong(0)
-
-                layersToFetch.asFlow().map { layer ->
-                    flow {
-                        copy(layer, store).collect { bytesRead ->
-                            val curr = acc.addAndGet(bytesRead)
-                            emit(curr)
-                        }
-                    }
-                }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
-                    .onCompletion { cause ->
-                        if (cause == null) {
-                            copy(descriptor, store).collect { bytesRead ->
-                                val curr = acc.addAndGet(bytesRead)
-                                emit(curr)
-                            }
-                        }
-                    }.collect { totalBytes ->
-                        send(totalBytes)
-                    }
+                pullManifest(descriptor, store, this)
             }
-
             else -> {
-                var curr = 0L
+                var totalBytes = 0L
                 copy(descriptor, store).collect { bytesRead ->
-                    curr += bytesRead
-                    send(curr)
+                    totalBytes += bytesRead
+                    send(totalBytes)
                 }
             }
         }
+    }
+    
+    /**
+     * Pulls an index by descriptor and stores it in the provided layout.
+     *
+     * Handles index manifests by recursively pulling all referenced manifests.
+     * Sends progress updates to the provided channel.
+     *
+     * @param descriptor Index descriptor to pull
+     * @param store Layout to store content in
+     * @param channel Channel to send progress updates to
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun pullIndex(
+        descriptor: Descriptor,
+        store: Layout,
+        channel: SendChannel<Long>
+    ) {
+        val index = index(descriptor).getOrThrow()
+        var totalManifestsBytes = 0L
+
+        if (store.exists(descriptor).getOrDefault(false)) {
+            var allManifestsExist = true
+
+            for (manifestDesc in index.manifests) {
+                if (!store.exists(manifestDesc).getOrDefault(false)) {
+                    // If any manifest doesn't exist, we need to do a pull to correct it
+                    allManifestsExist = false
+                    break
+                }
+
+                val manifest = store.fetch(manifestDesc).use { stream ->
+                    Json.decodeFromStream<Manifest>(stream)
+                }
+                val totalBytes = manifest.layers.sumOf { it.size } + manifest.config.size + manifestDesc.size
+                totalManifestsBytes += totalBytes
+            }
+
+            if (allManifestsExist) {
+                channel.send(totalManifestsBytes + descriptor.size)
+                return
+            }
+        }
+
+        var completedManifestsBytes = 0L
+        index.manifests.forEach { manifestDescriptor ->
+            val finalManifest = pull(manifestDescriptor, store).fold(0L) { _, currManifestBytes ->
+                channel.send(completedManifestsBytes + currManifestBytes)
+                currManifestBytes
+            }
+            completedManifestsBytes += finalManifest
+        }
+
+        copy(descriptor, store).collect()
+        channel.send(completedManifestsBytes + descriptor.size)
+    }
+    
+    /**
+     * Pulls a manifest by descriptor and stores it in the provided layout.
+     *
+     * Downloads all layers and config referenced by the manifest in parallel.
+     * Sends progress updates to the provided channel.
+     *
+     * @param descriptor Manifest descriptor to pull
+     * @param store Layout to store content in
+     * @param channel Channel to send progress updates to
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun pullManifest(
+        descriptor: Descriptor,
+        store: Layout,
+        channel: SendChannel<Long>
+    ) {
+        val manifest = manifest(descriptor).getOrThrow()
+        val layersToFetch = manifest.layers.toMutableList() + manifest.config
+
+        if (store.exists(descriptor).getOrDefault(false)) {
+            val totalBytes = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
+            channel.send(totalBytes)
+            return
+        }
+
+        val acc = AtomicLong(0)
+        layersToFetch.asFlow().map { layer ->
+            flow {
+                copy(layer, store).collect { bytesRead ->
+                    emit(acc.addAndGet(bytesRead))
+                }
+            }
+        }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
+            .onCompletion { cause ->
+                if (cause == null) {
+                    copy(descriptor, store).collect { bytesRead ->
+                        emit(acc.addAndGet(bytesRead))
+                    }
+                }
+            }.collect { totalBytes ->
+                channel.send(totalBytes)
+            }
     }
 
     @Volatile

@@ -158,7 +158,7 @@ class RegistryTest {
         )
 
         assertEquals(
-            manifest.config.size.toInt(), p.last()
+            manifest.config.size, p.last()
         )
 
         val config: String = repo.fetch(manifest.config) {
@@ -221,27 +221,27 @@ class RegistryTest {
         assertFalse { storage.exists(layer).getOrDefault(false) }
 
         for (at in cancelAtBytes) {
-            var bytesPulled = 0
+            var bytesPulled = 0L
             launch {
                 repo.pull(layer, storage).onCompletion { e ->
                     if (at == -100) {
                         assertNull(e)
-                        assertEquals(layer.size.toInt(), bytesPulled)
+                        assertEquals(layer.size, bytesPulled)
                     } else {
                         assertIs<CancellationException>(e)
                     }
-                }.collect { progress ->
-                    bytesPulled += progress
+                }.collect { currBytesPulled ->
+                    bytesPulled = currBytesPulled
                     if (at in 1..bytesPulled) cancel()
                 }
             }.join()
 
             storage.exists(layer).fold(onSuccess = {
-                assertEquals(bytesPulled, layer.size.toInt())
+                assertEquals(bytesPulled, layer.size)
             }, onFailure = { e ->
                 assertIs<OCIException.SizeMismatch>(e)
                 // bytesPulled will be an unreliable number during cancellations and should not be relied upon
-                assertTrue(bytesPulled <= e.actual.toInt())
+                assertTrue(bytesPulled <= e.actual)
             })
         }
 
@@ -313,24 +313,25 @@ class RegistryTest {
         }
 
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
-        val cancelPoints = listOf(5, 15, 50, -100)
+        // ~5%, ~15%, ~50%, ~-100%, ~1000% (should complete and not cancel)
+        val cancelPoints = listOf(186426L, 559279L, 1864263L, -3728527L, 37285270L)
 
         dispatcher.use { d ->
             for (cancelAt in cancelPoints) {
-                var lastProgress = 0
+                var lastBytes = 0L
 
                 val pullJob = async(d) {
                     try {
                         registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
-                            .collect { progress ->
-                                lastProgress = progress
-                                if (cancelAt == progress) {
+                            .collect { currBytes ->
+                                lastBytes = currBytes
+                                if (cancelAt <= currBytes) {
                                     throw CancellationException("download cancelled at $cancelAt")
                                 }
                             }
                         // Success case
                         assertNull(null)
-                        assertEquals(100, lastProgress)
+                        assertEquals(3728527, lastBytes)
                     } catch (e: CancellationException) {
                         // Cancellation case
                         assertEquals("download cancelled at $cancelAt", e.message)

@@ -311,7 +311,7 @@ class Layout private constructor(
      * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
      * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
      */
-    fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
+    fun push(descriptor: Descriptor, stream: InputStream): Flow<Long> = channelFlow {
         val (mu, refCount) = pushing.computeIfAbsent(descriptor) {
             Pair(Mutex(), AtomicInteger(0))
         }
@@ -351,7 +351,7 @@ class Layout private constructor(
                                 md.update(buffer, 0, bytesRead)
                                 out.write(buffer, 0, bytesRead)
 
-                                send(bytesRead)
+                                send(bytesRead.toLong())
                                 yield()
                             }
                         }

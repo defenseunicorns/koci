@@ -294,15 +294,15 @@ class RegistryTest {
 
     @Test
     @EnabledIfSystemProperty(named = "TESTS_WITH_EXTERNAL_SERVICES", matches = "true")
-    fun `pull and remove gradle from dockerhub`() = runTest(timeout = 10.minutes) {
-        val registry = Registry("https://registry-1.docker.io")
-        val prog = registry.pull("library/gradle", "latest", storage)
+    fun `pull and remove zarf agent from ghcr`() = runTest(timeout = 10.minutes) {
+        val registry = Registry("https://ghcr.io")
+        val prog = registry.pull("zarf-dev/zarf/agent", "v0.63.0", storage)
 
         assertEquals(
-            1753448172, prog.last()
+            108648729, prog.last()
         )
 
-        assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest").getOrThrow()).isSuccess)
+        assertTrue(storage.remove(Reference.parse("ghcr.io/zarf-dev/zarf/agent:v0.63.0").getOrThrow()).isSuccess)
     }
 
     @Test

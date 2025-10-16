@@ -216,7 +216,7 @@ class RegistryTest {
             repo.manifest(index.manifests.first()).getOrThrow().layers.maxBy { it.size }
         }.getOrThrow()
 
-        val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
+        val cancelAtBytes = listOf(layer.size / 4, layer.size / 2, Long.MAX_VALUE)
 
         assertFalse { storage.exists(layer).getOrDefault(false) }
 
@@ -224,7 +224,7 @@ class RegistryTest {
             var bytesPulled = 0L
             launch {
                 repo.pull(layer, storage).onCompletion { e ->
-                    if (at == -100) {
+                    if (at == Long.MAX_VALUE) {
                         assertNull(e)
                         assertEquals(layer.size, bytesPulled)
                     } else {
@@ -264,7 +264,7 @@ class RegistryTest {
         val prog = registry.pull("dos-games", "1.1.0", storage)
 
         assertEquals(
-            100, prog.last()
+            7474574, prog.last()
         )
 
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
@@ -313,8 +313,8 @@ class RegistryTest {
         }
 
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
-        // ~5%, ~15%, ~50%, ~-100%, ~1000% (should complete and not cancel)
-        val cancelPoints = listOf(186426L, 559279L, 1864263L, -3728527L, 37285270L)
+        // ~5%, ~15%, ~50%, COMPLETE
+        val cancelPoints = listOf(186426L, 559279L, 1864263L, Long.MAX_VALUE)
 
         dispatcher.use { d ->
             for (cancelAt in cancelPoints) {

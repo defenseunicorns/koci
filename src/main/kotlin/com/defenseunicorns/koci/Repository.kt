@@ -367,11 +367,12 @@ class Repository(
 
         var completedManifestsBytes = 0L
         index.manifests.forEach { manifestDescriptor ->
-            val finalManifest = pull(manifestDescriptor, store).fold(0L) { _, currManifestBytes ->
+            var manifestBytes = 0L
+            pull(manifestDescriptor, store).collect { currManifestBytes ->
+                manifestBytes = currManifestBytes
                 channel.send(completedManifestsBytes + currManifestBytes)
-                currManifestBytes
             }
-            completedManifestsBytes += finalManifest
+            completedManifestsBytes += manifestBytes
         }
 
         copy(descriptor, store).collect()

@@ -10,6 +10,7 @@ kover = "0.9.1"
 detekt = "1.23.8"
 detektFormatting = "1.23.8"
 mavenPublish = "0.34.0"
+spotless = "8.0.0"
 
 [libraries]
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detektFormatting" }
@@ -27,3 +28,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

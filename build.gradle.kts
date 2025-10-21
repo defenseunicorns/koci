@@ -14,8 +14,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kover)
     alias(libs.plugins.detekt)
-
     alias(libs.plugins.maven.publish)
+    alias(libs.plugins.spotless)
 }
 
 buildscript {
@@ -57,6 +57,34 @@ tasks.test {
         showExceptions = true
         showCauses = true
         showStackTraces = true
+    }
+}
+
+spotless {
+    val ktFiles = "**/*.kt"
+    val ktsFiles = "**/*.kts"
+
+    kotlin {
+        target(ktFiles, ktsFiles)
+
+        trimTrailingWhitespace()
+        leadingSpacesToTabs(2)
+        endWithNewline()
+
+        // Google style is blockIndent = 2, continuationIndent = 2, manageTrailingCommas = true
+        // renovate: datasource=github-tags depName=facebook/ktfmt
+        ktfmt("0.58").googleStyle().configure {
+            it.setMaxWidth(100)
+            it.setRemoveUnusedImports(true)
+        }
+    }
+
+    // Excludes kts files from license check
+    format("kt-license") {
+        target(ktFiles)
+        licenseHeaderFile("$rootDir/linting/LICENSE_TEMPLATE", "^((package|import)\\b)").apply {
+            updateYearWithLatest(true)
+        }
     }
 }
 

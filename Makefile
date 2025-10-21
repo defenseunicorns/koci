@@ -2,7 +2,6 @@
 
 ZARF_VERSION := "latest"
 ORAS_VERSION := "1.2.2"
-ADDLICENSE_VERSION := "v1.1.1"
 ARCH := $(shell go env GOARCH)
 OS := $(shell go env GOOS)
 
@@ -42,15 +41,11 @@ registry-seed: registry-up
 	@ ./bin/oras cp docker.io/library/registry:2.8.0  localhost:5005/library/registry:2.8.0
 	@ ./bin/oras cp docker.io/library/registry:latest localhost:5005/library/registry:latest
 
-.PHONY: addlicense
-addlicense:
-	addlicense -l apache -s=only -v -c 'Defense Unicorns' src
-
 .PHONY: install-deps
 install-deps:
 	@ZARF_VERSION=$(ZARF_VERSION) \
 	ORAS_VERSION=$(ORAS_VERSION) \
-	ADDLICENSE_VERSION=$(ADDLICENSE_VERSION) \
+
 	ARCH=$(ARCH) \
 	OS=$(OS) \
 	./hack/install-deps.sh

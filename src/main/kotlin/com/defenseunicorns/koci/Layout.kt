@@ -5,7 +5,22 @@
 
 package com.defenseunicorns.koci
 
-import io.ktor.utils.io.*
+import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
+import com.defenseunicorns.koci.models.Descriptor
+import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
+import com.defenseunicorns.koci.models.IMAGE_INDEX_FILE
+import com.defenseunicorns.koci.models.IMAGE_LAYOUT_FILE
+import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
+import com.defenseunicorns.koci.models.Index
+import com.defenseunicorns.koci.models.LayoutMarker
+import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.models.Manifest
+import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.Platform
+import com.defenseunicorns.koci.models.Reference
+import com.defenseunicorns.koci.models.RegisteredAlgorithm
+import com.defenseunicorns.koci.models.annotationRefName
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -88,8 +103,8 @@ class Layout private constructor(internal val index: Index, private val root: St
    * Performs size and digest verification to ensure the content matches the descriptor's metadata.
    *
    * @param descriptor The descriptor of the blob to check
-   * @throws OCIException.SizeMismatch if the blob's size doesn't match the descriptor
-   * @throws OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
+   * @throws com.defenseunicorns.koci.models.OCIException.SizeMismatch if the blob's size doesn't match the descriptor
+   * @throws com.defenseunicorns.koci.models.OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
    */
   suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
     val file = blob(descriptor)

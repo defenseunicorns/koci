@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.models
 
 /**
  * Annotations is a simple map of strings.

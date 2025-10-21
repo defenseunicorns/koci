@@ -80,10 +80,7 @@ spotless {
   }
 }
 
-detekt {
-  buildUponDefaultConfig = true
-  config.setFrom("$rootDir/linting/detekt-config.yml")
-  baseline = file("$rootDir/linting/detekt-baseline.xml")
+detekt {buildUponDefaultConfig = true config.setFrom("$rootDir/linting/detekt-config.yml") baseline = file("$rootDir/linting/detekt-baseline.xml")
 }
 
 tasks.withType<Detekt> {

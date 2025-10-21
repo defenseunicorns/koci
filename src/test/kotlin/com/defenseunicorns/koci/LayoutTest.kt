@@ -5,7 +5,13 @@
 
 package com.defenseunicorns.koci
 
-import io.ktor.utils.io.jvm.javaio.*
+import com.defenseunicorns.koci.models.Descriptor
+import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
+import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.models.Manifest
+import com.defenseunicorns.koci.models.Reference
+import com.defenseunicorns.koci.models.RegisteredAlgorithm
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Path

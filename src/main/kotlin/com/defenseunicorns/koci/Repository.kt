@@ -5,6 +5,19 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.models.Descriptor
+import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
+import com.defenseunicorns.koci.models.Index
+import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.models.Manifest
+import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.Platform
+import com.defenseunicorns.koci.models.Reference
+import com.defenseunicorns.koci.models.TagRegex
+import com.defenseunicorns.koci.models.TagsResponse
+import com.defenseunicorns.koci.models.UploadStatus
+import com.defenseunicorns.koci.models.Versioned
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -97,7 +110,7 @@ class Repository(
    *
    * @param tag Tag to resolve
    * @param platformResolver Optional function to select specific platform from index manifest
-   * @throws OCIException.PlatformNotFound if platformResolver provided but no matching platform
+   * @throws com.defenseunicorns.koci.models.OCIException.PlatformNotFound if platformResolver provided but no matching platform
    *   found
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI

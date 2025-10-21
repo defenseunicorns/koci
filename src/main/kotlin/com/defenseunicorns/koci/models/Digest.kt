@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.models
 
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
@@ -13,6 +13,12 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+
+/**
+ * Regex pattern for validating digest strings according to OCI spec. Digests must be in the format
+ * algorithm:hex where algorithm is a lowercase identifier and hex is a base64-encoded string.
+ */
+val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
 
 /**
  * Represents supported digest algorithms according to the OCI spec.

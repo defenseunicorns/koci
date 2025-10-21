@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.models
 
 import io.ktor.http.*
 import java.net.URI
@@ -21,12 +21,6 @@ val TagRegex = Regex("^\\w[\\w.-]{0,127}")
  */
 val RepositoryRegex =
   Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
-
-/**
- * Regex pattern for validating digest strings according to OCI spec. Digests must be in the format
- * algorithm:hex where algorithm is a lowercase identifier and hex is a base64-encoded string.
- */
-val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
 
 /**
  * Represents a complete reference to an OCI artifact.

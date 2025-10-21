@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.models.Descriptor
 import io.ktor.http.*
 import java.net.URI
 

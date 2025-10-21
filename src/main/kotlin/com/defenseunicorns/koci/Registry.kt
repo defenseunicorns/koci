@@ -5,6 +5,10 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.models.CatalogResponse
+import com.defenseunicorns.koci.models.Platform
+import com.defenseunicorns.koci.models.TagsResponse
+import com.defenseunicorns.koci.models.attemptThrow4XX
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -51,7 +55,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
           handleResponseExceptionWithRequest { exception, _ ->
             val clientException =
               exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
-            attemptThrow4XX(clientException.response)
+              attemptThrow4XX(clientException.response)
             return@handleResponseExceptionWithRequest
           }
         }

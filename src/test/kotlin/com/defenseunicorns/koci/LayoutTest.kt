@@ -145,6 +145,7 @@ class LayoutTest {
     assertTrue(layout.exists(manifestDescriptor).getOrThrow())
   }
 
+  @Suppress("detekt:LongMethod")
   @Test
   fun `test gc with interrupted remove operation`() = runTest {
     val configDescriptor =

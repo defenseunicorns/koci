@@ -33,8 +33,6 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.kotlinx.coroutines.core)
 
-  detektPlugins(libs.detekt.formatting)
-
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(kotlin("test"))

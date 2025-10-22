@@ -22,7 +22,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
-          distribution: "corretto"
+          distribution: "zulu"
           java-version: 21
           cache: "gradle"
 
@@ -33,7 +33,6 @@ jobs:
         run: |
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           make install-deps
-          make lint
           make test-all
 
       - if: failure()

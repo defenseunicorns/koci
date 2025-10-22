@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models
+package com.defenseunicorns.koci.models.errors
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.Serializable

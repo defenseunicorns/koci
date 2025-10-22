@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.auth
 
 import io.ktor.util.*
-import java.util.*
+import java.util.TreeSet
 
 /**
  * This file contains scope-related functionality for OCI registry authentication.

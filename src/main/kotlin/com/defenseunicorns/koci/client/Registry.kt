@@ -3,21 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.client
 
-import com.defenseunicorns.koci.models.CatalogResponse
-import com.defenseunicorns.koci.models.Platform
-import com.defenseunicorns.koci.models.TagsResponse
-import com.defenseunicorns.koci.models.attemptThrow4XX
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import com.defenseunicorns.koci.auth.OCIAuthPlugin
+import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
+import com.defenseunicorns.koci.auth.appendScopes
+import com.defenseunicorns.koci.http.Router
+import com.defenseunicorns.koci.models.content.Platform
+import com.defenseunicorns.koci.models.errors.FailureResponse
+import com.defenseunicorns.koci.models.errors.OCIError
+import com.defenseunicorns.koci.models.errors.OCIResult
+import io.ktor.client.HttpClient
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.pluginOrNull
+import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Url
+import io.ktor.http.contentType
+import io.ktor.http.headers
+import io.ktor.http.isSuccess
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
@@ -51,15 +68,6 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
           append("Docker-Distribution-API-Version", "registry/2.0")
         }
 
-        HttpResponseValidator {
-          handleResponseExceptionWithRequest { exception, _ ->
-            val clientException =
-              exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
-            attemptThrow4XX(clientException.response)
-            return@handleResponseExceptionWithRequest
-          }
-        }
-
         if (timeoutPlugin == null) {
           install(HttpTimeout) { this.requestTimeoutMillis = 10.minutes.inWholeMilliseconds }
         }
@@ -67,7 +75,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
           install(OCIAuthPlugin)
         }
 
-        expectSuccess = true
+        expectSuccess = false // Let responses through, handle errors explicitly
       }
   }
 
@@ -82,7 +90,17 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support">OCI
    *   Distribution Spec: API Version Check</a>
    */
-  suspend fun ping(): Result<Boolean> = runCatching { client.get(router.base()).status.isSuccess() }
+  suspend fun ping(): OCIResult<Boolean> {
+    return try {
+      val response = client.get(router.base())
+      if (!response.status.isSuccess()) {
+        return parseHTTPError(response)
+      }
+      OCIResult.ok(true)
+    } catch (e: Exception) {
+      OCIResult.err(OCIError.IOError("Network error: ${e.message}", e))
+    }
+  }
 
   /**
    * Provides access to OCI spec extensions.
@@ -104,9 +122,17 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
      *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
      *   Distribution Spec: Listing Repositories</a>
      */
-    suspend fun catalog(): Result<CatalogResponse> = runCatching {
-      val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-      Json.decodeFromString(res.body())
+    suspend fun catalog(): OCIResult<CatalogResponse> {
+      return try {
+        val response =
+          client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
+        if (!response.status.isSuccess()) {
+          return parseHTTPError(response)
+        }
+        OCIResult.ok(Json.decodeFromString(response.body()))
+      } catch (e: Exception) {
+        OCIResult.err(OCIError.IOError("Failed to fetch catalog: ${e.message}", e))
+      }
     }
 
     /**
@@ -129,6 +155,10 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
       while (endpoint != null) {
         val response = client.get(endpoint) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
 
+        if (!response.status.isSuccess()) {
+          throw IllegalStateException("HTTP ${response.status.value}: ${response.status.description}")
+        }
+
         // If the header is not present, the client can assume that all results have been received.
         val linkHeader = response.headers[HttpHeaders.Link]
 
@@ -138,15 +168,13 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
             // https://datatracker.ietf.org/doc/html/rfc5988#section-5
             val regex = Regex("<(.+)>;\\s+rel=\"next\"")
             val next =
-              checkNotNull(regex.find(linkHeader)?.groupValues?.get(1)) {
-                "$linkHeader does not satisfy $regex"
-              }
+              regex.find(linkHeader)?.groupValues?.get(1)
+                ?: throw IllegalStateException("$linkHeader does not satisfy $regex")
 
             val url = Url(next)
             val nextN =
-              checkNotNull(url.parameters["n"]?.toInt()) {
-                "$linkHeader does not contain an 'n' parameter"
-              }
+              url.parameters["n"]?.toInt()
+                ?: throw IllegalStateException("$linkHeader does not contain an 'n' parameter")
             router.catalog(nextN, url.parameters["last"])
           }
 
@@ -161,13 +189,15 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
      * flattened list of all repositories and their tags. This is not part of the OCI spec but
      * simplifies common workflows.
      *
+     * Emits OCIResult<TagsResponse> for each repository. Errors are emitted as OCIResult.Err.
+     *
      * @param n Number of repositories to return per page in the catalog request
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun list(n: Int = 1000): Flow<TagsResponse> =
+    fun list(n: Int = 1000): Flow<OCIResult<TagsResponse>> =
       catalog(n)
         .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
-        .map { repo -> tags(repo).getOrThrow() }
+        .map { repo -> tags(repo) }
   }
 }
 
@@ -229,3 +259,49 @@ fun Registry.pull(
   storage: Layout,
   platformResolver: ((Platform) -> Boolean)? = null,
 ) = repo(repository).pull(tag, storage, platformResolver)
+
+/**
+ * Parses an HTTP error response into an OCIError.
+ *
+ * Attempts to parse JSON error responses from OCI registries according to the OCI Distribution
+ * Specification error format. Falls back to generic HTTP errors if parsing fails.
+ *
+ * @param response The HTTP response with an error status code
+ * @return OCIResult.Err containing the parsed error
+ */
+suspend fun <T> parseHTTPError(response: HttpResponse): OCIResult<T> {
+  // Try to parse OCI-compliant error response
+  if (response.contentType() == ContentType.Application.Json) {
+    try {
+      val failureResponse: FailureResponse = response.body()
+      failureResponse.status = response.status
+      return OCIResult.err(OCIError.FromResponse(failureResponse))
+    } catch (_: NoTransformationFoundException) {
+      // Fall through to generic error
+    }
+  }
+
+  // Generic HTTP error
+  return OCIResult.err(
+    OCIError.HTTPError(response.status.value, response.status.description)
+  )
+}
+
+/**
+ * Response structure for repository catalog requests.
+ *
+ * Contains a list of repository names available in the registry.
+ *
+ * @property repositories List of repository names in the registry
+ */
+@Serializable data class CatalogResponse(val repositories: List<String>)
+
+/**
+ * Response structure for repository tags list requests.
+ *
+ * Contains the repository name and its associated tags.
+ *
+ * @property name Repository name
+ * @property tags List of tags associated with the repository, may be null if no tags exist
+ */
+@Serializable data class TagsResponse(val name: String, val tags: List<String>?)

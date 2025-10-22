@@ -5,14 +5,15 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.client.Layout
 import com.defenseunicorns.koci.models.Descriptor
-import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Manifest
-import com.defenseunicorns.koci.models.OCIResult
+import com.defenseunicorns.koci.models.errors.OCIResult
 import com.defenseunicorns.koci.models.Reference
-import com.defenseunicorns.koci.models.RegisteredAlgorithm
+import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
 import java.io.ByteArrayInputStream
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap

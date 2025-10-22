@@ -3,7 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models
+package com.defenseunicorns.koci.models.errors
+
+import com.defenseunicorns.koci.models.Descriptor
+import com.defenseunicorns.koci.models.content.Descriptor
+import com.defenseunicorns.koci.models.content.Digest
 
 /**
  * A result type for operations that can fail with domain errors.
@@ -180,6 +184,21 @@ sealed interface OCIError {
    * @param cause The underlying exception if available
    */
   data class IOError(val message: String, val cause: Throwable? = null) : OCIError
+
+  /**
+   * An HTTP error from a registry.
+   *
+   * @param statusCode The HTTP status code
+   * @param message Description of the error
+   */
+  data class HTTPError(val statusCode: Int, val message: String) : OCIError
+
+  /**
+   * An error response from an OCI registry.
+   *
+   * @param response The failure response from the registry
+   */
+  data class FromResponse(val response: FailureResponse) : OCIError
 
   /**
    * A generic error for cases not covered by specific error types.

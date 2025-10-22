@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models
+package com.defenseunicorns.koci.models.content
 
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer

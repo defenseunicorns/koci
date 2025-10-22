@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.auth
 
-import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.errors.OCIException
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.api.*

@@ -5,6 +5,9 @@
 
 package com.defenseunicorns.koci.models
 
+import com.defenseunicorns.koci.models.content.Digest
+import com.defenseunicorns.koci.models.errors.OCIError
+import com.defenseunicorns.koci.models.errors.OCIResult
 import io.ktor.http.*
 import java.net.URI
 
@@ -56,14 +59,14 @@ data class Reference(val registry: String, val repository: String, val reference
 
   companion object {
     /**
-     * <--- path --------------------------------------------> | - Decode `path` <=== REPOSITORY
      * ===> <--- reference ------------------> | - Decode `reference` <=== REPOSITORY ===> @
      * <=================== digest ===> | - Valid Form A <=== REPOSITORY ===> : <!!! TAG !!!> @ <===
      * digest ===> | - Valid Form B (tag is dropped) <=== REPOSITORY ===> : <=== TAG
      * ======================> | - Valid Form C <=== REPOSITORY
      * ======================================> | - Valid Form D
-     *
-     * Parses a string artifact reference into a Reference object.
+     */
+    /**
+     * Parses a string into a Reference.
      *
      * Supports multiple reference formats as defined in the OCI spec:
      * - Form A: registry/repository@digest
@@ -73,29 +76,36 @@ data class Reference(val registry: String, val repository: String, val reference
      *
      * @param artifact String representation of the artifact reference
      */
-    fun parse(artifact: String): Result<Reference> = runCatching {
-      val reg = artifact.substringBefore("/", "")
-      require(reg.isNotEmpty()) { "registry cannot be empty" }
-      val repoAndRef = artifact.substringAfter("/", "")
-
-      val (repo, ref) =
-        if (repoAndRef.contains("@")) {
-          val ref = repoAndRef.substringAfter("@")
-          // drop tag if it exists (valid form B)
-          val repoStrippedOfTag = repoAndRef.substringBefore("@").substringBefore(":")
-
-          repoStrippedOfTag to ref // valid form A
-        } else if (repoAndRef.contains(":")) {
-          val repo = repoAndRef.substringBefore(":")
-          val tag = repoAndRef.substringAfter(":")
-          repo to tag // valid form C
-        } else {
-          repoAndRef to "" // valid form D
+    fun parse(artifact: String): OCIResult<Reference> {
+      return try {
+        val reg = artifact.substringBefore("/", "")
+        if (reg.isEmpty()) {
+          return OCIResult.err(OCIError.Generic("Registry cannot be empty"))
         }
 
-      val reference = Reference(reg, repo, ref)
-      reference.validate()
-      reference
+        val repoAndRef = artifact.substringAfter("/", "")
+
+        val (repo, ref) =
+          if (repoAndRef.contains("@")) {
+            val ref = repoAndRef.substringAfter("@")
+            // drop tag if it exists (valid form B)
+            val repoStrippedOfTag = repoAndRef.substringBefore("@").substringBefore(":")
+
+            repoStrippedOfTag to ref // valid form A
+          } else if (repoAndRef.contains(":")) {
+            val repo = repoAndRef.substringBefore(":")
+            val tag = repoAndRef.substringAfter(":")
+            repo to tag // valid form C
+          } else {
+            repoAndRef to "" // valid form D
+          }
+
+        val reference = Reference(reg, repo, ref)
+        reference.validate()
+        OCIResult.ok(reference)
+      } catch (e: Exception) {
+        OCIResult.err(OCIError.Generic("Failed to parse reference: ${e.message}"))
+      }
     }
   }
 
@@ -120,7 +130,7 @@ data class Reference(val registry: String, val repository: String, val reference
   }
 
   /**
-   * Converts the reference string to a [Digest] object.
+   * Converts the reference string to a [com.defenseunicorns.koci.models.content.Digest] object.
    *
    * @throws IllegalArgumentException if the reference is not a valid digest
    */

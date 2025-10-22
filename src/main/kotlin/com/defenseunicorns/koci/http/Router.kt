@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.http
 
 import com.defenseunicorns.koci.models.Descriptor
+import com.defenseunicorns.koci.models.content.Descriptor
 import io.ktor.http.*
 import java.net.URI
 

@@ -5,17 +5,23 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.client.Layout
+import com.defenseunicorns.koci.client.Registry
+import com.defenseunicorns.koci.client.pull
+import com.defenseunicorns.koci.client.repo
+import com.defenseunicorns.koci.client.resolve
+import com.defenseunicorns.koci.client.tags
 import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
 import com.defenseunicorns.koci.models.CatalogResponse
 import com.defenseunicorns.koci.models.Descriptor
-import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.IMAGE_LAYOUT_FILE
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.LayoutMarker
 import com.defenseunicorns.koci.models.MANIFEST_CONFIG_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Manifest
-import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.errors.OCIException
 import com.defenseunicorns.koci.models.Platform
 import com.defenseunicorns.koci.models.Reference
 import com.defenseunicorns.koci.models.TagsResponse

@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci.client
 
+import co.touchlab.kermit.Logger
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Reference
@@ -554,6 +555,7 @@ private constructor(
      * @return OCIResult containing the Layout or an error
      */
     fun build(): OCIResult<Layout> {
+      Logger.i {"yo"}
       val fs = FileSystem.SYSTEM
       val rootDir = indexPath.toPath()
       val indexLocation = "$indexPath/$IMAGE_INDEX_FILE".toPath()

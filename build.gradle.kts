@@ -33,6 +33,7 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.okio)
+  implementation(libs.kermit)
 
   detektPlugins(libs.detekt.library.rules)
 

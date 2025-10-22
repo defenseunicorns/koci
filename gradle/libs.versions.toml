@@ -11,6 +11,7 @@ kover = "0.9.1"
 detekt = "2.0.0-alpha.1"
 mavenPublish = "0.34.0"
 spotless = "8.0.0"
+kermit = "2.0.8"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }
@@ -22,6 +23,7 @@ ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktorClien
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktorClient" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorSerializationKotlinxJson" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt" }

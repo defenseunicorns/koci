@@ -65,31 +65,112 @@ class Layout private constructor(internal val index: Index, private val root: St
      *
      * @param root The root directory path for the layout
      */
-    fun create(root: String): Result<Layout> = runCatching {
+    fun create(root: String): Result<Layout> = builder(root).build()
+
+    /**
+     * Returns a builder for creating a Layout with custom configuration.
+     *
+     * @param root The root directory path for the layout
+     */
+    fun builder(root: String): LayoutBuilder = LayoutBuilder(root)
+  }
+
+  /**
+   * Builder for creating a Layout with fine-grained control over initialization.
+   *
+   * Example usage:
+   * ```
+   * val layout = Layout.builder("/path/to/layout")
+   *   .createIfMissing(true)
+   *   .loadExistingIndex(true)
+   *   .build()
+   *   .getOrThrow()
+   * ```
+   */
+  class LayoutBuilder internal constructor(private val root: String) {
+    private var createIfMissing = true
+    private var loadExistingIndex = true
+    private var createLayoutFile = true
+    private var createBlobDirectories = true
+    private var initialIndex: Index? = null
+
+    /**
+     * Sets whether to create the root directory if it doesn't exist.
+     *
+     * @param create If true, creates the directory structure. Default: true
+     */
+    fun createIfMissing(create: Boolean) = apply { this.createIfMissing = create }
+
+    /**
+     * Sets whether to load an existing index.json file if present.
+     *
+     * @param load If true, loads existing index. If false, starts with empty index. Default: true
+     */
+    fun loadExistingIndex(load: Boolean) = apply { this.loadExistingIndex = load }
+
+    /**
+     * Sets whether to create the oci-layout file if missing.
+     *
+     * @param create If true, creates the layout marker file. Default: true
+     */
+    fun createLayoutFile(create: Boolean) = apply { this.createLayoutFile = create }
+
+    /**
+     * Sets whether to create blob storage directories.
+     *
+     * @param create If true, creates sha256/sha512 directories. Default: true
+     */
+    fun createBlobDirectories(create: Boolean) = apply { this.createBlobDirectories = create }
+
+    /**
+     * Sets an initial index to use instead of loading from disk.
+     *
+     * @param index The index to use. If set, overrides loadExistingIndex behavior.
+     */
+    fun withIndex(index: Index) = apply { this.initialIndex = index }
+
+    /**
+     * Builds the Layout with the configured options.
+     *
+     * @return Result containing the Layout or an error
+     */
+    fun build(): Result<Layout> = runCatching {
       val fs = FileSystem.SYSTEM
-      var index = Index()
+      val rootDir = root.toPath()
       val indexLocation = "$root/$IMAGE_INDEX_FILE".toPath()
       val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE".toPath()
-      val rootDir = root.toPath()
 
+      // Handle root directory creation
       if (!fs.exists(rootDir)) {
-        fs.createDirectories(rootDir)
-        fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
-      } else {
-        require(fs.metadata(rootDir).isDirectory) { "$root must be an existing directory" }
-        // TODO: handle oci-layout version checking
-        if (!fs.exists(layoutFileLocation)) {
-          fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
+        if (createIfMissing) {
+          fs.createDirectories(rootDir)
+        } else {
+          throw IllegalStateException("Root directory does not exist: $root")
         }
+      } else {
+        require(fs.metadata(rootDir).isDirectory) { "$root must be a directory" }
       }
 
-      if (fs.exists(indexLocation)) {
-        index = fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+      // Handle oci-layout file
+      if (createLayoutFile && !fs.exists(layoutFileLocation)) {
+        fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
       }
 
-      // TODO: do this for all supported algorithms
-      fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha256".toPath())
-      fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha512".toPath())
+      // Determine which index to use
+      val index =
+        when {
+          initialIndex != null -> initialIndex!!
+          loadExistingIndex && fs.exists(indexLocation) ->
+            fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+          else -> Index()
+        }
+
+      // Create blob storage directories
+      if (createBlobDirectories) {
+        // TODO: do this for all supported algorithms
+        fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha256".toPath())
+        fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha512".toPath())
+      }
 
       Layout(index, root)
     }

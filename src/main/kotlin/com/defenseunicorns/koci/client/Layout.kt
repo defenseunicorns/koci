@@ -633,11 +633,6 @@ private constructor(
      * Image Layout
      */
     const val IMAGE_INDEX_FILE = "index.json"
-
-    /**
-     * IMAGE_BLOBS_DIR is the directory name containing content addressable blobs in an OCI Image Layout
-     */
-    const val IMAGE_BLOBS_DIR = "blobs"
     /**
      * Creates a new Layout or opens an existing one at the specified path.
      *

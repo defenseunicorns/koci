@@ -21,8 +21,6 @@ import kotlinx.serialization.encoding.Encoder
 val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
 
 /**
- * Represents supported digest algorithms according to the OCI spec.
- *
  * Each algorithm provides a string representation and a way to create a [MessageDigest] instance
  * for computing digests using that algorithm.
  */
@@ -39,6 +37,14 @@ enum class RegisteredAlgorithm(private val n: String) {
     return when (this) {
       SHA256 -> MessageDigest.getInstance("SHA-256")
       SHA512 -> MessageDigest.getInstance("SHA-512")
+    }
+  }
+
+  /** Returns the algorithm name for Okio hashing. */
+  fun toOkioAlgorithm(): String {
+    return when (this) {
+      SHA256 -> "SHA-256"
+      SHA512 -> "SHA-512"
     }
   }
 }

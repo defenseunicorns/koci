@@ -55,7 +55,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
           handleResponseExceptionWithRequest { exception, _ ->
             val clientException =
               exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
-              attemptThrow4XX(clientException.response)
+            attemptThrow4XX(clientException.response)
             return@handleResponseExceptionWithRequest
           }
         }

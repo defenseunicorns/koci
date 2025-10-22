@@ -110,8 +110,8 @@ class Repository(
    *
    * @param tag Tag to resolve
    * @param platformResolver Optional function to select specific platform from index manifest
-   * @throws com.defenseunicorns.koci.models.OCIException.PlatformNotFound if platformResolver provided but no matching platform
-   *   found
+   * @throws com.defenseunicorns.koci.models.OCIException.PlatformNotFound if platformResolver
+   *   provided but no matching platform found
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
    *   Distribution Spec: Pulling Manifests</a>

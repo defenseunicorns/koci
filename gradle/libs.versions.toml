@@ -6,6 +6,7 @@ kotlinxCoroutinesTest = "1.10.2"
 kotlinxSerializationJson = "1.9.0"
 ktorClient = "3.2.3"
 ktorSerializationKotlinxJson = "3.2.3"
+okio = "3.16.2"
 kover = "0.9.1"
 detekt = "2.0.0-alpha.1"
 mavenPublish = "0.34.0"
@@ -20,6 +21,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktorClient" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktorClient" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorSerializationKotlinxJson" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt" }

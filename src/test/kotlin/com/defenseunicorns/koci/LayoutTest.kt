@@ -13,7 +13,6 @@ import com.defenseunicorns.koci.models.Manifest
 import com.defenseunicorns.koci.models.Reference
 import com.defenseunicorns.koci.models.RegisteredAlgorithm
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.async
@@ -23,6 +22,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import okio.FileSystem
+import okio.Path.Companion.toPath
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -45,7 +46,7 @@ class LayoutTest {
 
   @AfterEach
   fun cleanup() {
-    tempDir.toFile().deleteRecursively()
+    FileSystem.SYSTEM.deleteRecursively(tempDir.toString().toPath())
   }
 
   @Test
@@ -130,16 +131,15 @@ class LayoutTest {
     assertTrue(layout.exists(manifestDescriptor).getOrThrow())
 
     // Verify layer2 is a zombie (not referenced by any manifest)
-    val zombieFile =
-      File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
-      )
-    assertTrue(zombieFile.exists())
+    val zombiePath =
+      "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        .toPath()
+    assertTrue(FileSystem.SYSTEM.exists(zombiePath))
 
     val removedDigests = layout.gc().getOrThrow()
 
     // Verify layer2 was removed
-    assertFalse(zombieFile.exists())
+    assertFalse(FileSystem.SYSTEM.exists(zombiePath))
 
     // Verify only layer2 was removed
     assertEquals(1, removedDigests.size)
@@ -203,35 +203,32 @@ class LayoutTest {
     layout.syncIndex()
 
     // Verify blobs still exist on disk
-    val configFile =
-      File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
-      )
-    val layer1File =
-      File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
-      )
-    val layer2File =
-      File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
-      )
-    val manifestFile =
-      File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
-      )
+    val fs = FileSystem.SYSTEM
+    val configPath =
+      "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
+        .toPath()
+    val layer1Path =
+      "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+        .toPath()
+    val layer2Path =
+      "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        .toPath()
+    val manifestPath =
+      "$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
+        .toPath()
 
-    assertTrue(configFile.exists())
-    assertTrue(layer1File.exists())
-    assertTrue(layer2File.exists())
-    assertTrue(manifestFile.exists())
+    assertTrue(fs.exists(configPath))
+    assertTrue(fs.exists(layer1Path))
+    assertTrue(fs.exists(layer2Path))
+    assertTrue(fs.exists(manifestPath))
 
     val removedDigests = layout.gc().getOrThrow()
 
     // Verify all blobs were removed since none are referenced in the index
-    assertFalse(configFile.exists())
-    assertFalse(layer1File.exists())
-    assertFalse(layer2File.exists())
-    assertFalse(manifestFile.exists())
+    assertFalse(fs.exists(configPath))
+    assertFalse(fs.exists(layer1Path))
+    assertFalse(fs.exists(layer2Path))
+    assertFalse(fs.exists(manifestPath))
 
     // Verify all layers were removed
     assertEquals(4, removedDigests.size)
@@ -272,16 +269,15 @@ class LayoutTest {
       assertEquals("there are downloads in progress", exception.message)
 
       // Verify both layers still exist on disk
-      val layer1File =
-        File(
-          "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
-        )
-      val layer2File =
-        File(
-          "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
-        )
-      assertTrue(layer1File.exists())
-      assertTrue(layer2File.exists())
+      val fs = FileSystem.SYSTEM
+      val layer1Path =
+        "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+          .toPath()
+      val layer2Path =
+        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+          .toPath()
+      assertTrue(fs.exists(layer1Path))
+      assertTrue(fs.exists(layer2Path))
       assertTrue(layout.exists(layer1Descriptor).getOrThrow())
       assertTrue(layout.exists(layer2Descriptor).getOrThrow())
     } finally {
@@ -300,18 +296,19 @@ class LayoutTest {
         RegisteredAlgorithm.SHA256.hasher().apply { update(layerBytes) }.digest(),
       )
 
-    val layerFile = File("$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}")
-    layerFile.parentFile.mkdirs()
-    layerFile.writeBytes(layerBytes)
+    val fs = FileSystem.SYSTEM
+    val layerPath = "$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}".toPath()
+    fs.createDirectories(layerPath.parent!!)
+    fs.write(layerPath) { write(layerBytes) }
 
-    assertTrue(layerFile.exists())
+    assertTrue(fs.exists(layerPath))
 
     // Run gc - this should remove the layer since it's not referenced and not being pushed
     val removedDigests = layout.gc().getOrThrow()
 
     // Verify layer was removed
     assertTrue(removedDigests.contains(layerDigest))
-    assertFalse(layerFile.exists())
+    assertFalse(fs.exists(layerPath))
 
     // This demonstrates that if gc runs between an interrupted download and a retry,
     // it will reset the download progress

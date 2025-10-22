@@ -21,22 +21,21 @@ import com.defenseunicorns.koci.models.Platform
 import com.defenseunicorns.koci.models.Reference
 import com.defenseunicorns.koci.models.RegisteredAlgorithm
 import com.defenseunicorns.koci.models.annotationRefName
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
+import okio.FileSystem
+import okio.Path
+import okio.Path.Companion.toPath
+import okio.buffer
 
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
@@ -55,6 +54,7 @@ import kotlinx.serialization.json.decodeFromStream
 @Suppress("detekt:TooManyFunctions")
 class Layout private constructor(internal val index: Index, private val root: String) {
   internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+  private val fileSystem = FileSystem.SYSTEM
 
   companion object {
     /**
@@ -65,36 +65,34 @@ class Layout private constructor(internal val index: Index, private val root: St
      *
      * @param root The root directory path for the layout
      */
-    suspend fun create(root: String): Result<Layout> =
-      withContext(Dispatchers.IO) {
-        runCatching {
-          var index = Index()
-          val indexLocation = "$root/$IMAGE_INDEX_FILE"
-          val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE"
+    fun create(root: String): Result<Layout> = runCatching {
+      val fs = FileSystem.SYSTEM
+      var index = Index()
+      val indexLocation = "$root/$IMAGE_INDEX_FILE".toPath()
+      val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE".toPath()
+      val rootDir = root.toPath()
 
-          val rootDir = File(root)
-          if (!rootDir.exists()) {
-            rootDir.mkdirs()
-            File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
-          } else {
-            require(rootDir.isDirectory) { "$root must be an existing directory" }
-            // TODO: handle oci-layout version checking
-            if (!File(layoutFileLocation).exists()) {
-              File(layoutFileLocation).writeText(Json.encodeToString(LayoutMarker("1.0.0")))
-            }
-          }
-
-          if (File(indexLocation).exists()) {
-            index = Json.decodeFromString(File(indexLocation).readText())
-          }
-
-          // TODO: do this for all supported algorithms
-          File("$root/$IMAGE_BLOBS_DIR/sha256").mkdirs()
-          File("$root/$IMAGE_BLOBS_DIR/sha512").mkdirs()
-
-          Layout(index, root)
+      if (!fs.exists(rootDir)) {
+        fs.createDirectories(rootDir)
+        fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
+      } else {
+        require(fs.metadata(rootDir).isDirectory) { "$root must be an existing directory" }
+        // TODO: handle oci-layout version checking
+        if (!fs.exists(layoutFileLocation)) {
+          fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
         }
       }
+
+      if (fs.exists(indexLocation)) {
+        index = fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+      }
+
+      // TODO: do this for all supported algorithms
+      fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha256".toPath())
+      fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha512".toPath())
+
+      Layout(index, root)
+    }
   }
 
   /**
@@ -103,33 +101,32 @@ class Layout private constructor(internal val index: Index, private val root: St
    * Performs size and digest verification to ensure the content matches the descriptor's metadata.
    *
    * @param descriptor The descriptor of the blob to check
-   * @throws com.defenseunicorns.koci.models.OCIException.SizeMismatch if the blob's size doesn't match the descriptor
-   * @throws com.defenseunicorns.koci.models.OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
+   * @throws com.defenseunicorns.koci.models.OCIException.SizeMismatch if the blob's size doesn't
+   *   match the descriptor
+   * @throws com.defenseunicorns.koci.models.OCIException.DigestMismatch if the blob's digest
+   *   doesn't match the descriptor
    */
-  suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
-    val file = blob(descriptor)
+  fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+    val path = blob(descriptor)
 
-    val exists = withContext(Dispatchers.IO) { file.exists() }
-    if (!exists) {
+    if (!fileSystem.exists(path)) {
       return@runCatching false
     }
 
-    val length = withContext(Dispatchers.IO) { file.length() }
+    val length = fileSystem.metadata(path).size ?: 0L
     if (length != descriptor.size) {
       throw OCIException.SizeMismatch(descriptor, length)
     }
 
     val digest =
-      withContext(Dispatchers.IO) {
-        file.inputStream().use { s ->
-          val buffer = ByteArray(1024)
-          val md = descriptor.digest.algorithm.hasher()
-          var bytesRead: Int
-          while (s.read(buffer).also { bytesRead = it } != -1) {
-            md.update(buffer, 0, bytesRead)
-          }
-          Digest(descriptor.digest.algorithm, md.digest())
+      fileSystem.source(path).buffer().use { source ->
+        val buffer = ByteArray(1024)
+        val md = descriptor.digest.algorithm.hasher()
+        var bytesRead: Int
+        while (source.read(buffer).also { bytesRead = it } != -1) {
+          md.update(buffer, 0, bytesRead)
         }
+        Digest(descriptor.digest.algorithm, md.digest())
       }
     if (digest != descriptor.digest) {
       throw OCIException.DigestMismatch(descriptor, digest)
@@ -147,12 +144,12 @@ class Layout private constructor(internal val index: Index, private val root: St
    * @param descriptors List of descriptors to expand
    */
   @OptIn(ExperimentalSerializationApi::class)
-  private suspend fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
+  private fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
     return descriptors
       .flatMap { desc ->
         when (desc.mediaType) {
           INDEX_MEDIA_TYPE -> {
-            if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+            if (fileSystem.exists(blob(desc))) {
               val i: Index = fetch(desc).use { Json.decodeFromStream(it) }
               listOf(desc) + i.manifests + expand(i.manifests)
             } else {
@@ -161,7 +158,7 @@ class Layout private constructor(internal val index: Index, private val root: St
           }
 
           MANIFEST_MEDIA_TYPE -> {
-            if (withContext(Dispatchers.IO) { blob(desc).exists() }) {
+            if (fileSystem.exists(blob(desc))) {
               fetch(desc).use {
                 val m: Manifest = Json.decodeFromStream(it)
                 listOf(desc, m.config) + expand(m.layers)
@@ -207,11 +204,9 @@ class Layout private constructor(internal val index: Index, private val root: St
 
     try {
       mu.withLock {
-        val file = blob(descriptor)
+        val path = blob(descriptor)
 
-        val exists = withContext(Dispatchers.IO) { file.exists() }
-
-        if (!exists) {
+        if (!fileSystem.exists(path)) {
           return@runCatching true
         }
 
@@ -221,15 +216,15 @@ class Layout private constructor(internal val index: Index, private val root: St
 
             index.manifests.removeAll { it.digest == descriptor.digest }
 
-            withContext(Dispatchers.IO) { syncIndex() }
+            syncIndex()
 
             for (manifestDesc in indexToRemove.manifests) {
               remove(manifestDesc).getOrThrow()
             }
 
-            val deleted = withContext(Dispatchers.IO) { file.delete() }
+            fileSystem.delete(path)
 
-            Result.success(deleted)
+            Result.success(true)
           }
 
           MANIFEST_MEDIA_TYPE -> {
@@ -237,7 +232,7 @@ class Layout private constructor(internal val index: Index, private val root: St
 
             index.manifests.removeAll { it.digest == descriptor.digest }
 
-            withContext(Dispatchers.IO) { syncIndex() }
+            syncIndex()
 
             val allOtherLayers = expand(manifests)
 
@@ -256,14 +251,14 @@ class Layout private constructor(internal val index: Index, private val root: St
               }
             }
 
-            val deleted = withContext(Dispatchers.IO) { file.delete() }
+            fileSystem.delete(path)
 
-            Result.success(deleted)
+            Result.success(true)
           }
 
           else -> {
-            val ret = withContext(Dispatchers.IO) { file.delete() }
-            Result.success(ret)
+            fileSystem.delete(path)
+            Result.success(true)
           }
         }
       }
@@ -284,7 +279,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    * Writes the current state of the index to the index.json file in the layout.
    */
   internal fun syncIndex() {
-    File("$root/$IMAGE_INDEX_FILE").writeText(Json.encodeToString(index))
+    fileSystem.write("$root/$IMAGE_INDEX_FILE".toPath()) { writeUtf8(Json.encodeToString(index)) }
   }
 
   /**
@@ -292,8 +287,8 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param descriptor The descriptor of the blob
    */
-  private fun blob(descriptor: Descriptor): File {
-    return File("$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}")
+  private fun blob(descriptor: Descriptor): Path {
+    return "$root/$IMAGE_BLOBS_DIR/${descriptor.digest.algorithm}/${descriptor.digest.hex}".toPath()
   }
 
   /**
@@ -318,49 +313,44 @@ class Layout private constructor(internal val index: Index, private val root: St
         val ok = exists(descriptor).getOrDefault(false)
 
         if (!ok) {
-          val file = blob(descriptor)
+          val path = blob(descriptor)
           val md = descriptor.digest.algorithm.hasher()
           // If resuming a download, start calculating the SHA from the data on disk
           //
           // it is up to the caller to properly resume the stream at the proper location,
           // otherwise a DigestMismatch will occur
-          val fileExists = withContext(Dispatchers.IO) { file.exists() }
-          if (fileExists) {
-            withContext(Dispatchers.IO) {
-              file.inputStream().use { fis ->
-                val buffer = ByteArray(32 * 1024)
-                var bytesRead: Int
-                while (fis.read(buffer).also { bytesRead = it } != -1) {
-                  md.update(buffer, 0, bytesRead)
-                  // Not emitting bytes read from existing file
-                }
+          if (fileSystem.exists(path)) {
+            fileSystem.source(path).buffer().use { source ->
+              val buffer = ByteArray(32 * 1024)
+              var bytesRead: Int
+              while (source.read(buffer).also { bytesRead = it } != -1) {
+                md.update(buffer, 0, bytesRead)
+                // Not emitting bytes read from existing file
               }
             }
           }
 
           val buffer = ByteArray(4 * 1024)
           var bytesRead: Int
-          withContext(Dispatchers.IO) {
-            FileOutputStream(file, true).use { out ->
-              while (stream.read(buffer).also { bytesRead = it } != -1) {
-                md.update(buffer, 0, bytesRead)
-                out.write(buffer, 0, bytesRead)
+          fileSystem.appendingSink(path).buffer().use { sink ->
+            while (stream.read(buffer).also { bytesRead = it } != -1) {
+              md.update(buffer, 0, bytesRead)
+              sink.write(buffer, 0, bytesRead)
 
-                send(bytesRead)
-                yield()
-              }
+              send(bytesRead)
+              yield()
             }
           }
 
-          val length = withContext(Dispatchers.IO) { file.length() }
+          val length = fileSystem.metadata(path).size ?: 0L
           if (length != descriptor.size) {
-            throw OCIException.SizeMismatch(descriptor, file.length())
+            throw OCIException.SizeMismatch(descriptor, length)
           }
 
           val digest = Digest(descriptor.digest.algorithm, md.digest())
 
           if (digest != descriptor.digest) {
-            withContext(Dispatchers.IO) { file.delete() }
+            fileSystem.delete(path)
             throw OCIException.DigestMismatch(descriptor, digest)
           }
         }
@@ -381,8 +371,8 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param descriptor The descriptor of the content to fetch
    */
-  suspend fun fetch(descriptor: Descriptor): InputStream =
-    withContext(Dispatchers.IO) { FileInputStream(blob(descriptor)) }
+  fun fetch(descriptor: Descriptor): InputStream =
+    fileSystem.source(blob(descriptor)).buffer().inputStream()
 
   /**
    * Resolves a descriptor from the layout's index using a predicate function.
@@ -432,7 +422,7 @@ class Layout private constructor(internal val index: Index, private val root: St
   //
   // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
-  suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
+  fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
     require(descriptor.mediaType.isNotEmpty())
     require(descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE)
     require(descriptor.size > 0)
@@ -457,7 +447,7 @@ class Layout private constructor(internal val index: Index, private val root: St
     }
 
     index.manifests.add(copy)
-    withContext(Dispatchers.IO) { syncIndex() }
+    syncIndex()
   }
 
   /**
@@ -484,35 +474,31 @@ class Layout private constructor(internal val index: Index, private val root: St
 
     val blobsOnDisk = mutableListOf<Digest>()
 
-    withContext(Dispatchers.IO) {
-      val sha256Dir = File("$root/$IMAGE_BLOBS_DIR/sha256")
-      if (sha256Dir.exists() && sha256Dir.isDirectory) {
-        sha256Dir.listFiles()?.forEach { file ->
-          if (file.isFile) {
-            val digest = Digest(RegisteredAlgorithm.SHA256, file.name)
-            blobsOnDisk.add(digest)
-          }
-        }
-      }
-
-      val sha512Dir = File("$root/$IMAGE_BLOBS_DIR/sha512")
-      if (sha512Dir.exists() && sha512Dir.isDirectory) {
-        sha512Dir.listFiles()?.forEach { file ->
-          if (file.isFile) {
-            val digest = Digest(RegisteredAlgorithm.SHA512, file.name)
-            blobsOnDisk.add(digest)
-          }
+    val sha256Dir = "$root/$IMAGE_BLOBS_DIR/sha256".toPath()
+    if (fileSystem.exists(sha256Dir) && fileSystem.metadata(sha256Dir).isDirectory) {
+      fileSystem.list(sha256Dir).forEach { path ->
+        if (!fileSystem.metadata(path).isDirectory) {
+          val digest = Digest(RegisteredAlgorithm.SHA256, path.name)
+          blobsOnDisk.add(digest)
         }
       }
     }
 
-    withContext(Dispatchers.IO) {
-      blobsOnDisk
-        .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
-        .mapNotNull { zombieDigest ->
-          val file = File("$root/$IMAGE_BLOBS_DIR/${zombieDigest.algorithm}/${zombieDigest.hex}")
-          if (file.delete()) zombieDigest else null
+    val sha512Dir = "$root/$IMAGE_BLOBS_DIR/sha512".toPath()
+    if (fileSystem.exists(sha512Dir) && fileSystem.metadata(sha512Dir).isDirectory) {
+      fileSystem.list(sha512Dir).forEach { path ->
+        if (!fileSystem.metadata(path).isDirectory) {
+          val digest = Digest(RegisteredAlgorithm.SHA512, path.name)
+          blobsOnDisk.add(digest)
         }
+      }
     }
+
+    blobsOnDisk
+      .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
+      .mapNotNull { zombieDigest ->
+        val path = "$root/$IMAGE_BLOBS_DIR/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
+        runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
+      }
   }
 }

@@ -7,14 +7,15 @@ package com.defenseunicorns.koci
 
 import com.defenseunicorns.koci.models.Descriptor
 import com.defenseunicorns.koci.models.Digest
+import com.defenseunicorns.koci.models.IMAGE_MEDIA_TYPE
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
-import com.defenseunicorns.koci.models.Index
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Manifest
 import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.OCIResult
 import com.defenseunicorns.koci.models.Platform
 import com.defenseunicorns.koci.models.Reference
-import com.defenseunicorns.koci.models.TagRegex
+import com.defenseunicorns.koci.models.RegisteredAlgorithm
 import com.defenseunicorns.koci.models.TagsResponse
 import com.defenseunicorns.koci.models.UploadStatus
 import com.defenseunicorns.koci.models.Versioned
@@ -316,12 +317,15 @@ class Repository(
           .onCompletion { cause ->
             if (cause == null) {
               val ref = Reference(registry = router.base(), repository = name, reference = tag)
-              val ok = store.exists(desc).getOrThrow()
+              val ok = store.exists(desc).getOrNull() ?: false
               if (!ok) {
                 throw OCIException.IncompletePull(ref)
               }
               // if pull was successful, tag the resolved desc w/ the image's ref
-              store.tag(desc, ref).getOrThrow()
+              when (val result = store.tag(desc, ref)) {
+                is OCIResult.Err -> throw IllegalStateException("Failed to tag: ${result.error}")
+                is OCIResult.Ok -> {}
+              }
             }
           }
           .collect { progress -> send(progress) }
@@ -342,7 +346,7 @@ class Repository(
   fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
     when (descriptor.mediaType) {
       INDEX_MEDIA_TYPE -> {
-        if (store.exists(descriptor).getOrDefault(false)) {
+        if (store.exists(descriptor).getOrNull() == true) {
           send(100)
           return@channelFlow
         }
@@ -363,7 +367,7 @@ class Repository(
       }
 
       MANIFEST_MEDIA_TYPE -> {
-        if (store.exists(descriptor).getOrDefault(false)) {
+        if (store.exists(descriptor).getOrNull() == true) {
           send(100)
           return@channelFlow
         }
@@ -452,7 +456,7 @@ class Repository(
     val ok = store.exists(descriptor)
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return
-    if (ok.getOrDefault(false)) {
+    if (ok.getOrNull() == true) {
       send(descriptor.size.toInt())
       return@channelFlow
     }

@@ -16,7 +16,9 @@ import com.defenseunicorns.koci.models.Index
 import com.defenseunicorns.koci.models.LayoutMarker
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Manifest
+import com.defenseunicorns.koci.models.OCIError
 import com.defenseunicorns.koci.models.OCIException
+import com.defenseunicorns.koci.models.OCIResult
 import com.defenseunicorns.koci.models.Platform
 import com.defenseunicorns.koci.models.Reference
 import com.defenseunicorns.koci.models.RegisteredAlgorithm
@@ -56,164 +58,47 @@ class Layout private constructor(internal val index: Index, private val root: St
   internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
   private val fileSystem = FileSystem.SYSTEM
 
-  companion object {
-    /**
-     * Creates a new Layout or opens an existing one at the specified path.
-     *
-     * If the directory doesn't exist, it will be created along with the necessary structure for an
-     * OCI Image Layout. If it exists, the existing layout will be loaded.
-     *
-     * @param root The root directory path for the layout
-     */
-    fun create(root: String): Result<Layout> = builder(root).build()
-
-    /**
-     * Returns a builder for creating a Layout with custom configuration.
-     *
-     * @param root The root directory path for the layout
-     */
-    fun builder(root: String): LayoutBuilder = LayoutBuilder(root)
-  }
-
-  /**
-   * Builder for creating a Layout with fine-grained control over initialization.
-   *
-   * Example usage:
-   * ```
-   * val layout = Layout.builder("/path/to/layout")
-   *   .createIfMissing(true)
-   *   .loadExistingIndex(true)
-   *   .build()
-   *   .getOrThrow()
-   * ```
-   */
-  class LayoutBuilder internal constructor(private val root: String) {
-    private var createIfMissing = true
-    private var loadExistingIndex = true
-    private var createLayoutFile = true
-    private var createBlobDirectories = true
-    private var initialIndex: Index? = null
-
-    /**
-     * Sets whether to create the root directory if it doesn't exist.
-     *
-     * @param create If true, creates the directory structure. Default: true
-     */
-    fun createIfMissing(create: Boolean) = apply { this.createIfMissing = create }
-
-    /**
-     * Sets whether to load an existing index.json file if present.
-     *
-     * @param load If true, loads existing index. If false, starts with empty index. Default: true
-     */
-    fun loadExistingIndex(load: Boolean) = apply { this.loadExistingIndex = load }
-
-    /**
-     * Sets whether to create the oci-layout file if missing.
-     *
-     * @param create If true, creates the layout marker file. Default: true
-     */
-    fun createLayoutFile(create: Boolean) = apply { this.createLayoutFile = create }
-
-    /**
-     * Sets whether to create blob storage directories.
-     *
-     * @param create If true, creates sha256/sha512 directories. Default: true
-     */
-    fun createBlobDirectories(create: Boolean) = apply { this.createBlobDirectories = create }
-
-    /**
-     * Sets an initial index to use instead of loading from disk.
-     *
-     * @param index The index to use. If set, overrides loadExistingIndex behavior.
-     */
-    fun withIndex(index: Index) = apply { this.initialIndex = index }
-
-    /**
-     * Builds the Layout with the configured options.
-     *
-     * @return Result containing the Layout or an error
-     */
-    fun build(): Result<Layout> = runCatching {
-      val fs = FileSystem.SYSTEM
-      val rootDir = root.toPath()
-      val indexLocation = "$root/$IMAGE_INDEX_FILE".toPath()
-      val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE".toPath()
-
-      // Handle root directory creation
-      if (!fs.exists(rootDir)) {
-        if (createIfMissing) {
-          fs.createDirectories(rootDir)
-        } else {
-          throw IllegalStateException("Root directory does not exist: $root")
-        }
-      } else {
-        require(fs.metadata(rootDir).isDirectory) { "$root must be a directory" }
-      }
-
-      // Handle oci-layout file
-      if (createLayoutFile && !fs.exists(layoutFileLocation)) {
-        fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
-      }
-
-      // Determine which index to use
-      val index =
-        when {
-          initialIndex != null -> initialIndex!!
-          loadExistingIndex && fs.exists(indexLocation) ->
-            fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
-          else -> Index()
-        }
-
-      // Create blob storage directories
-      if (createBlobDirectories) {
-        // TODO: do this for all supported algorithms
-        fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha256".toPath())
-        fs.createDirectories("$root/$IMAGE_BLOBS_DIR/sha512".toPath())
-      }
-
-      Layout(index, root)
-    }
-  }
-
   /**
    * Checks if a blob exists in the layout and verifies its integrity.
    *
    * Performs size and digest verification to ensure the content matches the descriptor's metadata.
    *
    * @param descriptor The descriptor of the blob to check
-   * @throws com.defenseunicorns.koci.models.OCIException.SizeMismatch if the blob's size doesn't
-   *   match the descriptor
-   * @throws com.defenseunicorns.koci.models.OCIException.DigestMismatch if the blob's digest
-   *   doesn't match the descriptor
+   * @return Ok(true) if blob exists and is valid, Ok(false) if not found, or Err with the specific
+   *   error
    */
-  fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+  fun exists(descriptor: Descriptor): OCIResult<Boolean> {
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
-      return@runCatching false
+      return OCIResult.ok(false)
     }
 
     val length = fileSystem.metadata(path).size ?: 0L
     if (length != descriptor.size) {
-      throw OCIException.SizeMismatch(descriptor, length)
+      return OCIResult.err(OCIError.SizeMismatch(descriptor, length))
     }
 
     val digest =
-      fileSystem.source(path).buffer().use { source ->
-        val buffer = ByteArray(1024)
-        val md = descriptor.digest.algorithm.hasher()
-        var bytesRead: Int
-        while (source.read(buffer).also { bytesRead = it } != -1) {
-          md.update(buffer, 0, bytesRead)
+      try {
+        fileSystem.source(path).buffer().use { source ->
+          val buffer = ByteArray(1024)
+          val md = descriptor.digest.algorithm.hasher()
+          var bytesRead: Int
+          while (source.read(buffer).also { bytesRead = it } != -1) {
+            md.update(buffer, 0, bytesRead)
+          }
+          Digest(descriptor.digest.algorithm, md.digest())
         }
-        Digest(descriptor.digest.algorithm, md.digest())
+      } catch (e: Exception) {
+        return OCIResult.err(OCIError.IOError("Failed to read blob: ${e.message}", e))
       }
+
     if (digest != descriptor.digest) {
-      throw OCIException.DigestMismatch(descriptor, digest)
+      return OCIResult.err(OCIError.DigestMismatch(descriptor, digest))
     }
 
-    true
+    return OCIResult.ok(true)
   }
 
   /**
@@ -263,8 +148,8 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param reference The reference to remove
    */
-  suspend fun remove(reference: Reference): Result<Boolean> =
-    resolve(reference).map { descriptor -> remove(descriptor).getOrThrow() }
+  suspend fun remove(reference: Reference): OCIResult<Boolean> =
+    resolve(reference).flatMap { descriptor -> remove(descriptor) }
 
   /**
    * Removes a descriptor and its associated content from the layout.
@@ -278,17 +163,17 @@ class Layout private constructor(internal val index: Index, private val root: St
   // TODO: ensure removals do not impact other images through unit tests
   @OptIn(ExperimentalSerializationApi::class)
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+  suspend fun remove(descriptor: Descriptor): OCIResult<Boolean> {
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
 
-    try {
+    return try {
       mu.withLock {
         val path = blob(descriptor)
 
         if (!fileSystem.exists(path)) {
-          return@runCatching true
+          return OCIResult.ok(false) // TODO: File was not removed since it does not exist
         }
 
         return when (descriptor.mediaType) {
@@ -300,12 +185,12 @@ class Layout private constructor(internal val index: Index, private val root: St
             syncIndex()
 
             for (manifestDesc in indexToRemove.manifests) {
-              remove(manifestDesc).getOrThrow()
+              remove(manifestDesc)
             }
 
             fileSystem.delete(path)
 
-            Result.success(true)
+            OCIResult.ok(true)
           }
 
           MANIFEST_MEDIA_TYPE -> {
@@ -318,9 +203,8 @@ class Layout private constructor(internal val index: Index, private val root: St
             val allOtherLayers = expand(manifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              throw OCIException.UnableToRemove(
-                descriptor,
-                "manifest is referenced by another artifact",
+              return OCIResult.err(
+                OCIError.UnableToRemove(descriptor, "manifest is referenced by another artifact")
               )
             }
 
@@ -328,21 +212,23 @@ class Layout private constructor(internal val index: Index, private val root: St
 
             (manifest.layers + manifest.config).forEach { layer ->
               if (!allOtherLayers.contains(layer)) {
-                remove(layer).getOrThrow()
+                remove(layer)
               }
             }
 
             fileSystem.delete(path)
 
-            Result.success(true)
+            OCIResult.ok(true)
           }
 
           else -> {
             fileSystem.delete(path)
-            Result.success(true)
+            OCIResult.ok(true)
           }
         }
       }
+    } catch (e: Exception) {
+      OCIResult.err(OCIError.IOError("Failed to remove descriptor: ${e.message}", e))
     } finally {
       val pair = pushing[descriptor]
       if (pair != null) {
@@ -391,7 +277,7 @@ class Layout private constructor(internal val index: Index, private val root: St
 
     try {
       mu.withLock {
-        val ok = exists(descriptor).getOrDefault(false)
+        val ok = exists(descriptor).getOrNull() ?: false
 
         if (!ok) {
           val path = blob(descriptor)
@@ -425,14 +311,19 @@ class Layout private constructor(internal val index: Index, private val root: St
 
           val length = fileSystem.metadata(path).size ?: 0L
           if (length != descriptor.size) {
-            throw OCIException.SizeMismatch(descriptor, length)
+            fileSystem.delete(path)
+            close(IllegalStateException("Size mismatch: expected ${descriptor.size}, got $length"))
+            return@channelFlow
           }
 
           val digest = Digest(descriptor.digest.algorithm, md.digest())
 
           if (digest != descriptor.digest) {
             fileSystem.delete(path)
-            throw OCIException.DigestMismatch(descriptor, digest)
+            close(
+              IllegalStateException("Digest mismatch: expected ${descriptor.digest}, got $digest")
+            )
+            return@channelFlow
           }
         }
       }
@@ -460,10 +351,14 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param predicate Function that returns true for the desired descriptor
    */
-  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Result<Descriptor> =
-    runCatching {
-      index.manifests.first { predicate(it) }
+  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): OCIResult<Descriptor> {
+    val descriptor = index.manifests.firstOrNull { predicate(it) }
+    return if (descriptor != null) {
+      OCIResult.ok(descriptor)
+    } else {
+      OCIResult.err(OCIError.DescriptorNotFound("No descriptor matched the predicate"))
     }
+  }
 
   /**
    * Resolves a reference to a descriptor, optionally filtering by platform.
@@ -477,17 +372,18 @@ class Layout private constructor(internal val index: Index, private val root: St
   suspend fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Result<Descriptor> {
+  ): OCIResult<Descriptor> {
     return resolve { desc ->
-      val refMatches = desc.annotations?.annotationRefName == reference.toString()
-      val platformMatches =
-        if (platformResolver != null && desc.platform != null) {
-          platformResolver(desc.platform)
-        } else {
-          true
-        }
-      refMatches && platformMatches
-    }
+        val refMatches = desc.annotations?.annotationRefName == reference.toString()
+        val platformMatches =
+          if (platformResolver != null && desc.platform != null) {
+            platformResolver(desc.platform)
+          } else {
+            true
+          }
+        refMatches && platformMatches
+      }
+      .mapErr { OCIError.DescriptorNotFound("Reference not found: $reference") }
   }
 
   /**
@@ -503,32 +399,49 @@ class Layout private constructor(internal val index: Index, private val root: St
   //
   // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
-  fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
-    require(descriptor.mediaType.isNotEmpty())
-    require(descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE)
-    require(descriptor.size > 0)
-    reference.validate()
-
-    val copy =
-      descriptor.copy(
-        annotations =
-          descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())
-            ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
+  fun tag(descriptor: Descriptor, reference: Reference): OCIResult<Unit> {
+    if (descriptor.mediaType.isEmpty()) {
+      return OCIResult.err(OCIError.Generic("Descriptor mediaType cannot be empty"))
+    }
+    if (descriptor.mediaType != MANIFEST_MEDIA_TYPE && descriptor.mediaType != INDEX_MEDIA_TYPE) {
+      return OCIResult.err(
+        OCIError.UnsupportedManifest(
+          descriptor.mediaType,
+          "Only manifests and indexes can be tagged",
+        )
       )
-    // untag the first manifests w/ this exact ref, there should only be one
-    val prevIndex =
-      index.manifests.indexOfFirst {
-        it.annotations?.annotationRefName == reference.toString() &&
-          it.platform == descriptor.platform
-      }
-    if (prevIndex != -1) {
-      val prev = index.manifests[prevIndex]
-      index.manifests[prevIndex] =
-        prev.copy(annotations = prev.annotations?.minus(ANNOTATION_REF_NAME))
+    }
+    if (descriptor.size <= 0) {
+      return OCIResult.err(OCIError.Generic("Descriptor size must be greater than 0"))
     }
 
-    index.manifests.add(copy)
-    syncIndex()
+    return try {
+      reference.validate()
+
+      val copy =
+        descriptor.copy(
+          annotations =
+            descriptor.annotations?.plus(ANNOTATION_REF_NAME to reference.toString())
+              ?: mapOf(ANNOTATION_REF_NAME to reference.toString())
+        )
+      // untag the first manifests w/ this exact ref, there should only be one
+      val prevIndex =
+        index.manifests.indexOfFirst {
+          it.annotations?.annotationRefName == reference.toString() &&
+            it.platform == descriptor.platform
+        }
+      if (prevIndex != -1) {
+        val prev = index.manifests[prevIndex]
+        index.manifests[prevIndex] =
+          prev.copy(annotations = prev.annotations?.minus(ANNOTATION_REF_NAME))
+      }
+
+      index.manifests.add(copy)
+      syncIndex()
+      OCIResult.ok(Unit)
+    } catch (e: Exception) {
+      OCIResult.err(OCIError.IOError("Failed to tag descriptor: ${e.message}", e))
+    }
   }
 
   /**
@@ -548,38 +461,196 @@ class Layout private constructor(internal val index: Index, private val root: St
    * should be used to clean up zombie layers that might be left on disk if a remove operation is
    * interrupted.
    */
-  suspend fun gc(): Result<List<Digest>> = runCatching {
-    check(pushing.isEmpty()) { "there are downloads in progress" }
-
-    val referencedDescriptors = expand(index.manifests).toSet()
-
-    val blobsOnDisk = mutableListOf<Digest>()
-
-    val sha256Dir = "$root/$IMAGE_BLOBS_DIR/sha256".toPath()
-    if (fileSystem.exists(sha256Dir) && fileSystem.metadata(sha256Dir).isDirectory) {
-      fileSystem.list(sha256Dir).forEach { path ->
-        if (!fileSystem.metadata(path).isDirectory) {
-          val digest = Digest(RegisteredAlgorithm.SHA256, path.name)
-          blobsOnDisk.add(digest)
-        }
-      }
+  fun gc(): OCIResult<List<Digest>> {
+    if (pushing.isNotEmpty()) {
+      return OCIResult.err(OCIError.Generic("Cannot run GC: downloads are in progress"))
     }
 
-    val sha512Dir = "$root/$IMAGE_BLOBS_DIR/sha512".toPath()
-    if (fileSystem.exists(sha512Dir) && fileSystem.metadata(sha512Dir).isDirectory) {
-      fileSystem.list(sha512Dir).forEach { path ->
-        if (!fileSystem.metadata(path).isDirectory) {
-          val digest = Digest(RegisteredAlgorithm.SHA512, path.name)
-          blobsOnDisk.add(digest)
+    return try {
+
+      val referencedDescriptors = expand(index.manifests).toSet()
+
+      val blobsOnDisk = mutableListOf<Digest>()
+
+      val sha256Dir = "$root/$IMAGE_BLOBS_DIR/sha256".toPath()
+      if (fileSystem.exists(sha256Dir) && fileSystem.metadata(sha256Dir).isDirectory) {
+        fileSystem.list(sha256Dir).forEach { path ->
+          if (!fileSystem.metadata(path).isDirectory) {
+            val digest = Digest(RegisteredAlgorithm.SHA256, path.name)
+            blobsOnDisk.add(digest)
+          }
         }
       }
-    }
 
-    blobsOnDisk
-      .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
-      .mapNotNull { zombieDigest ->
-        val path = "$root/$IMAGE_BLOBS_DIR/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
-        runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
+      val sha512Dir = "$root/$IMAGE_BLOBS_DIR/sha512".toPath()
+      if (fileSystem.exists(sha512Dir) && fileSystem.metadata(sha512Dir).isDirectory) {
+        fileSystem.list(sha512Dir).forEach { path ->
+          if (!fileSystem.metadata(path).isDirectory) {
+            val digest = Digest(RegisteredAlgorithm.SHA512, path.name)
+            blobsOnDisk.add(digest)
+          }
+        }
       }
+
+      val removed =
+        blobsOnDisk
+          .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
+          .mapNotNull { zombieDigest ->
+            val path =
+              "$root/$IMAGE_BLOBS_DIR/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
+            runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
+          }
+      OCIResult.ok(removed)
+    } catch (e: Exception) {
+      OCIResult.err(OCIError.IOError("Failed to run GC: ${e.message}", e))
+    }
+  }
+
+  /**
+   * Builder for creating a Layout with fine-grained control over initialization.
+   *
+   * Example usage:
+   * ```
+   * val layout = Layout.builder("/path/to/layout")
+   *   .loadExistingIndex(true)
+   *   .createLayoutFile(true)
+   *   .blobsDirectory("/mnt/fast-storage/blobs")  // Optional: custom blob storage
+   *   .tempDirectory("/mnt/scratch/tmp")          // Optional: custom staging area
+   *   .build()
+   * ```
+   */
+  class LayoutBuilder internal constructor(private val root: String) {
+    private var loadExistingIndex = true
+    private var createLayoutFile = true
+    private var initialIndex: Index? = null
+    private var blobsDirectory: String? = null
+    private var tempDirectory: String? = null
+
+    /**
+     * Sets whether to load an existing index.json file if present.
+     *
+     * @param load If true, loads existing index. If false, starts with empty index. Default: true
+     */
+    fun loadExistingIndex(load: Boolean) = apply { this.loadExistingIndex = load }
+
+    /**
+     * Sets an initial index to use instead of loading from disk.
+     *
+     * @param index The index to use. If set, overrides loadExistingIndex behavior.
+     */
+    fun withIndex(index: Index) = apply { this.initialIndex = index }
+
+    /**
+     * Sets whether to create the oci-layout file if missing.
+     *
+     * @param create If true, creates the layout marker file. Default: true
+     */
+    fun createLayoutFile(create: Boolean) = apply { this.createLayoutFile = create }
+
+    /**
+     * Sets a custom directory for blob storage.
+     *
+     * @param directory Absolute path to the blobs directory. If null, defaults to
+     *   `$root/blobs`. The directory will be created if it doesn't exist.
+     */
+    fun blobsDirectory(directory: String?) = apply { this.blobsDirectory = directory }
+
+    /**
+     * Sets a custom directory for temporary/staging operations.
+     *
+     * @param directory Absolute path to the temp directory. If null, defaults to `$root/tmp`.
+     *   The directory will be created if it doesn't exist. Used for staging partial downloads and
+     *   other temporary operations.
+     */
+    fun tempDirectory(directory: String?) = apply { this.tempDirectory = directory }
+
+    /**
+     * Builds the Layout with the configured options.
+     *
+     * @return OCIResult containing the Layout or an error
+     */
+    fun build(): OCIResult<Layout> {
+      val fs = FileSystem.SYSTEM
+      val rootDir = root.toPath()
+      val indexLocation = "$root/$IMAGE_INDEX_FILE".toPath()
+      val layoutFileLocation = "$root/$IMAGE_LAYOUT_FILE".toPath()
+
+      // Handle root directory creation
+      if (!fs.exists(rootDir)) {
+        try {
+          fs.createDirectories(rootDir)
+        } catch (e: Exception) {
+          return OCIResult.err(
+            OCIError.InvalidLayout(root, "Failed to create directory: ${e.message}")
+          )
+        }
+      } else {
+        if (!fs.metadata(rootDir).isDirectory) {
+          return OCIResult.err(OCIError.InvalidLayout(root, "Path exists but is not a directory"))
+        }
+      }
+
+      // Handle oci-layout file
+      if (createLayoutFile && !fs.exists(layoutFileLocation)) {
+        try {
+          fs.write(layoutFileLocation) { writeUtf8(Json.encodeToString(LayoutMarker("1.0.0"))) }
+        } catch (e: Exception) {
+          return OCIResult.err(OCIError.IOError("Failed to write layout file: ${e.message}", e))
+        }
+      }
+
+      // Determine which index to use
+      val index =
+        try {
+          when {
+            // Compiler is not smart casting this, but it is not null
+            initialIndex != null -> initialIndex!!
+            loadExistingIndex && fs.exists(indexLocation) ->
+              fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+            else -> Index()
+          }
+        } catch (e: Exception) {
+          return OCIResult.err(OCIError.IOError("Failed to read index: ${e.message}", e))
+        }
+
+      // Create blob storage directories
+      val blobsPath = blobsDirectory ?: "$root/$IMAGE_BLOBS_DIR"
+      try {
+        listOf("sha256", "sha512").forEach { algorithm ->
+          fs.createDirectories("$blobsPath/$algorithm".toPath())
+        }
+      } catch (e: Exception) {
+        return OCIResult.err(OCIError.IOError("Failed to create blob directories: ${e.message}", e))
+      }
+
+      // Create temp directory for staging operations
+      val tmpPath = tempDirectory ?: "$root/tmp"
+      try {
+        fs.createDirectories(tmpPath.toPath())
+      } catch (e: Exception) {
+        return OCIResult.err(OCIError.IOError("Failed to create temp directory: ${e.message}", e))
+      }
+
+      return OCIResult.ok(Layout(index, root))
+    }
+  }
+
+  companion object {
+    /**
+     * Creates a new Layout or opens an existing one at the specified path.
+     *
+     * If the directory doesn't exist, it will be created along with the necessary structure for an
+     * OCI Image Layout. If it exists, the existing layout will be loaded.
+     *
+     * @param root The root directory path for the layout
+     */
+    fun create(root: String): OCIResult<Layout> = builder(root).build()
+
+    /**
+     * Returns a builder for creating a Layout with custom configuration.
+     *
+     * @param root The root directory path for the layout
+     */
+    fun builder(root: String): LayoutBuilder = LayoutBuilder(root)
   }
 }

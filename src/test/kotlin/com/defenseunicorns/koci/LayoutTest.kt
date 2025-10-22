@@ -10,6 +10,7 @@ import com.defenseunicorns.koci.models.Digest
 import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Manifest
+import com.defenseunicorns.koci.models.OCIResult
 import com.defenseunicorns.koci.models.Reference
 import com.defenseunicorns.koci.models.RegisteredAlgorithm
 import java.io.ByteArrayInputStream
@@ -28,7 +29,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 
 class LayoutTest {
@@ -41,7 +41,11 @@ class LayoutTest {
   @BeforeEach
   fun setup() = runBlocking {
     rootDir = tempDir.toString()
-    layout = Layout.create(rootDir).getOrThrow()
+    layout =
+      when (val result = Layout.create(rootDir)) {
+        is OCIResult.Ok -> result.value
+        is OCIResult.Err -> throw AssertionError("Failed to create layout: ${result.error}")
+      }
   }
 
   @AfterEach
@@ -81,8 +85,8 @@ class LayoutTest {
       val r3 = async { layout.push(blob2, content2.byteInputStream()).collect() }
       awaitAll(r1, r2, r3)
 
-      assertTrue(layout.exists(blob1).getOrThrow())
-      assertTrue(layout.exists(blob2).getOrThrow())
+      assertTrue(layout.exists(blob1).getOrNull() == true)
+      assertTrue(layout.exists(blob2).getOrNull() == true)
     }
 
   @Test
@@ -122,13 +126,16 @@ class LayoutTest {
     layout.push(manifestDescriptor, manifestStream).collect {}
 
     val reference = Reference(registry = "localhost", repository = "test", reference = "latest")
-    layout.tag(manifestDescriptor, reference).getOrThrow()
+    when (val result = layout.tag(manifestDescriptor, reference)) {
+      is OCIResult.Err -> throw AssertionError("Failed to tag: ${result.error}")
+      is OCIResult.Ok -> {}
+    }
 
     // Verify all blobs exist
-    assertTrue(layout.exists(configDescriptor).getOrThrow())
-    assertTrue(layout.exists(layer1Descriptor).getOrThrow())
-    assertTrue(layout.exists(layer2Descriptor).getOrThrow())
-    assertTrue(layout.exists(manifestDescriptor).getOrThrow())
+    assertTrue(layout.exists(configDescriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer1Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer2Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(manifestDescriptor).getOrNull() == true)
 
     // Verify layer2 is a zombie (not referenced by any manifest)
     val zombiePath =
@@ -136,7 +143,11 @@ class LayoutTest {
         .toPath()
     assertTrue(FileSystem.SYSTEM.exists(zombiePath))
 
-    val removedDigests = layout.gc().getOrThrow()
+    val removedDigests =
+      when (val result = layout.gc()) {
+        is OCIResult.Ok -> result.value
+        is OCIResult.Err -> throw AssertionError("GC failed: ${result.error}")
+      }
 
     // Verify layer2 was removed
     assertFalse(FileSystem.SYSTEM.exists(zombiePath))
@@ -146,9 +157,9 @@ class LayoutTest {
     assertEquals(layer2Descriptor.digest, removedDigests[0])
 
     // Verify other blobs still exist
-    assertTrue(layout.exists(configDescriptor).getOrThrow())
-    assertTrue(layout.exists(layer1Descriptor).getOrThrow())
-    assertTrue(layout.exists(manifestDescriptor).getOrThrow())
+    assertTrue(layout.exists(configDescriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer1Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(manifestDescriptor).getOrNull() == true)
   }
 
   @Suppress("detekt:LongMethod")
@@ -189,13 +200,16 @@ class LayoutTest {
     layout.push(manifestDescriptor, manifestStream).collect {}
 
     val reference = Reference(registry = "localhost", repository = "test", reference = "latest")
-    layout.tag(manifestDescriptor, reference).getOrThrow()
+    when (val result = layout.tag(manifestDescriptor, reference)) {
+      is OCIResult.Err -> throw AssertionError("Failed to tag: ${result.error}")
+      is OCIResult.Ok -> {}
+    }
 
     // Verify all blobs exist
-    assertTrue(layout.exists(configDescriptor).getOrThrow())
-    assertTrue(layout.exists(layer1Descriptor).getOrThrow())
-    assertTrue(layout.exists(layer2Descriptor).getOrThrow())
-    assertTrue(layout.exists(manifestDescriptor).getOrThrow())
+    assertTrue(layout.exists(configDescriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer1Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer2Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(manifestDescriptor).getOrNull() == true)
 
     // Simulate an interrupted remove operation by manually removing the manifest from the index
     // but leaving the blobs on disk
@@ -222,7 +236,11 @@ class LayoutTest {
     assertTrue(fs.exists(layer2Path))
     assertTrue(fs.exists(manifestPath))
 
-    val removedDigests = layout.gc().getOrThrow()
+    val removedDigests =
+      when (val result = layout.gc()) {
+        is OCIResult.Ok -> result.value
+        is OCIResult.Err -> throw AssertionError("GC failed: ${result.error}")
+      }
 
     // Verify all blobs were removed since none are referenced in the index
     assertFalse(fs.exists(configPath))
@@ -249,8 +267,8 @@ class LayoutTest {
       createTestBlob("layer2-content", "application/vnd.oci.image.layer.v1.tar+gzip")
 
     // Verify both layers exist
-    assertTrue(layout.exists(layer1Descriptor).getOrThrow())
-    assertTrue(layout.exists(layer2Descriptor).getOrThrow())
+    assertTrue(layout.exists(layer1Descriptor).getOrNull() == true)
+    assertTrue(layout.exists(layer2Descriptor).getOrNull() == true)
 
     // Get access to the pushing collection via reflection
     val pushingField = Layout::class.java.getDeclaredField("pushing")
@@ -262,11 +280,12 @@ class LayoutTest {
       // Add layer2 to the pushing collection to simulate an active push
       pushing[layer2Descriptor] = Mutex()
 
-      // Verify gc throws an IllegalStateException when there are active pushes
-      val exception = assertThrows<IllegalStateException> { layout.gc().getOrThrow() }
-
-      // Verify the exception message
-      assertEquals("there are downloads in progress", exception.message)
+      // Verify gc returns an error when there are active pushes
+      val result = layout.gc()
+      assertTrue(result.isErr())
+      val error = result.errorOrNull()
+      assertTrue(error is OCIError.Generic)
+      assertTrue((error as OCIError.Generic).message.contains("downloads are in progress"))
 
       // Verify both layers still exist on disk
       val fs = FileSystem.SYSTEM
@@ -278,8 +297,8 @@ class LayoutTest {
           .toPath()
       assertTrue(fs.exists(layer1Path))
       assertTrue(fs.exists(layer2Path))
-      assertTrue(layout.exists(layer1Descriptor).getOrThrow())
-      assertTrue(layout.exists(layer2Descriptor).getOrThrow())
+      assertTrue(layout.exists(layer1Descriptor).getOrNull() == true)
+      assertTrue(layout.exists(layer2Descriptor).getOrNull() == true)
     } finally {
       pushing.remove(layer2Descriptor)
     }
@@ -304,7 +323,11 @@ class LayoutTest {
     assertTrue(fs.exists(layerPath))
 
     // Run gc - this should remove the layer since it's not referenced and not being pushed
-    val removedDigests = layout.gc().getOrThrow()
+    val removedDigests =
+      when (val result = layout.gc()) {
+        is OCIResult.Ok -> result.value
+        is OCIResult.Err -> throw AssertionError("GC failed: ${result.error}")
+      }
 
     // Verify layer was removed
     assertTrue(removedDigests.contains(layerDigest))

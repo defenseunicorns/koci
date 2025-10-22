@@ -45,7 +45,6 @@ registry-seed: registry-up
 install-deps:
 	@ZARF_VERSION=$(ZARF_VERSION) \
 	ORAS_VERSION=$(ORAS_VERSION) \
-
 	ARCH=$(ARCH) \
 	OS=$(OS) \
 	./hack/install-deps.sh

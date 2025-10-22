@@ -9,9 +9,6 @@ einfo() {
   echo -e "${BLUE}${1}${RESET}"
 }
 
-einfo "installing addlicense@$ADDLICENSE_VERSION to $(go env GOPATH)/bin"
-go install "github.com/google/addlicense@$ADDLICENSE_VERSION"
-
 einfo "installing oras@$ORAS_VERSION to $(pwd)/bin"
 curl -sLO "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_${OS}_${ARCH}.tar.gz"
 mkdir -p oras-install/

@@ -158,7 +158,7 @@ class RegistryTest {
         )
 
         assertEquals(
-            manifest.config.size.toInt(), p.last()
+            manifest.config.size, p.last()
         )
 
         val config: String = repo.fetch(manifest.config) {
@@ -216,32 +216,32 @@ class RegistryTest {
             repo.manifest(index.manifests.first()).getOrThrow().layers.maxBy { it.size }
         }.getOrThrow()
 
-        val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
+        val cancelAtBytes = listOf(layer.size / 4, layer.size / 2, Long.MAX_VALUE)
 
         assertFalse { storage.exists(layer).getOrDefault(false) }
 
         for (at in cancelAtBytes) {
-            var bytesPulled = 0
+            var bytesPulled = 0L
             launch {
                 repo.pull(layer, storage).onCompletion { e ->
-                    if (at == -100) {
+                    if (at == Long.MAX_VALUE) {
                         assertNull(e)
-                        assertEquals(layer.size.toInt(), bytesPulled)
+                        assertEquals(layer.size, bytesPulled)
                     } else {
                         assertIs<CancellationException>(e)
                     }
-                }.collect { progress ->
-                    bytesPulled += progress
+                }.collect { currBytesPulled ->
+                    bytesPulled = currBytesPulled
                     if (at in 1..bytesPulled) cancel()
                 }
             }.join()
 
             storage.exists(layer).fold(onSuccess = {
-                assertEquals(bytesPulled, layer.size.toInt())
+                assertEquals(bytesPulled, layer.size)
             }, onFailure = { e ->
                 assertIs<OCIException.SizeMismatch>(e)
                 // bytesPulled will be an unreliable number during cancellations and should not be relied upon
-                assertTrue(bytesPulled <= e.actual.toInt())
+                assertTrue(bytesPulled <= e.actual)
             })
         }
 
@@ -264,7 +264,7 @@ class RegistryTest {
         val prog = registry.pull("dos-games", "1.1.0", storage)
 
         assertEquals(
-            100, prog.last()
+            7474574, prog.last()
         )
 
         val ref = Reference.parse("127.0.0.1:5005/dos-games:1.1.0").getOrThrow()
@@ -294,15 +294,15 @@ class RegistryTest {
 
     @Test
     @EnabledIfSystemProperty(named = "TESTS_WITH_EXTERNAL_SERVICES", matches = "true")
-    fun `pull and remove gradle from dockerhub`() = runTest(timeout = 10.minutes) {
-        val registry = Registry("https://registry-1.docker.io")
-        val prog = registry.pull("library/gradle", "latest", storage)
+    fun `pull and remove zarf agent from ghcr`() = runTest(timeout = 10.minutes) {
+        val registry = Registry("https://ghcr.io")
+        val prog = registry.pull("zarf-dev/zarf/agent", "v0.63.0", storage)
 
         assertEquals(
-            100, prog.last()
+            108648729, prog.last()
         )
 
-        assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest").getOrThrow()).isSuccess)
+        assertTrue(storage.remove(Reference.parse("ghcr.io/zarf-dev/zarf/agent:v0.63.0").getOrThrow()).isSuccess)
     }
 
     @Test
@@ -313,24 +313,25 @@ class RegistryTest {
         }
 
         val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
-        val cancelPoints = listOf(5, 15, 50, -100)
+        // ~5%, ~15%, ~50%, COMPLETE
+        val cancelPoints = listOf(186426L, 559279L, 1864263L, Long.MAX_VALUE)
 
         dispatcher.use { d ->
             for (cancelAt in cancelPoints) {
-                var lastProgress = 0
+                var lastBytes = 0L
 
                 val pullJob = async(d) {
                     try {
                         registry.pull("dos-games", "1.1.0", storage, amd64Resolver)
-                            .collect { progress ->
-                                lastProgress = progress
-                                if (cancelAt == progress) {
+                            .collect { currBytes ->
+                                lastBytes = currBytes
+                                if (cancelAt <= currBytes) {
                                     throw CancellationException("download cancelled at $cancelAt")
                                 }
                             }
                         // Success case
                         assertNull(null)
-                        assertEquals(100, lastProgress)
+                        assertEquals(3728527, lastBytes)
                     } catch (e: CancellationException) {
                         // Cancellation case
                         assertEquals("download cancelled at $cancelAt", e.message)

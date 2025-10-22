@@ -11,14 +11,14 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.roundToInt
+import java.util.concurrent.atomic.AtomicLong
 
 
 /**
@@ -272,9 +272,10 @@ class Repository(
      * @param tag Tag to pull
      * @param store Layout to store content in
      * @param platformResolver Optional function to select platform from index
+     * @return Flow emitting the _total_ number of bytes written thus far
      * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI Distribution Spec: Pulling Manifests</a>
      */
-    fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> = channelFlow {
+    fun pull(tag: String, store: Layout, platformResolver: ((Platform) -> Boolean)? = null): Flow<Long> = channelFlow {
         resolve(tag, platformResolver).map { desc ->
             pull(desc, store).onCompletion { cause ->
                 if (cause == null) {
@@ -288,8 +289,8 @@ class Repository(
                     // if pull was successful, tag the resolved desc w/ the image's ref
                     store.tag(desc, ref).getOrThrow()
                 }
-            }.collect { progress ->
-                send(progress)
+            }.collect { currBytes ->
+                send(currBytes)
             }
         }.getOrThrow()
     }
@@ -302,68 +303,124 @@ class Repository(
      *
      * @param descriptor Content descriptor to pull
      * @param store Layout to store content in
+     * @return Flow emitting the _total_ number of bytes written thus far
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
+    fun pull(descriptor: Descriptor, store: Layout): Flow<Long> = channelFlow {
         when (descriptor.mediaType) {
             INDEX_MEDIA_TYPE -> {
-                if (store.exists(descriptor).getOrDefault(false)) {
-                    send(100)
-                    return@channelFlow
-                }
-                val index = index(descriptor).getOrThrow()
-                val total = index.manifests.size
-                var completedPulls = 0
-                index.manifests.forEach { manifestDescriptor ->
-                    pull(manifestDescriptor, store).collect { manifestProgress ->
-                        val currentManifestContribution = manifestProgress.toDouble() / 100.0
-                        val overallProgress =
-                            ((completedPulls + currentManifestContribution) / total * 100).roundToInt()
-                        send(overallProgress)
-                    }
-                    completedPulls += 1
-                }
-                copy(descriptor, store).collect()
-                send(100)
+                pullIndex(descriptor, store, this)
             }
-
             MANIFEST_MEDIA_TYPE -> {
-                if (store.exists(descriptor).getOrDefault(false)) {
-                    send(100)
-                    return@channelFlow
-                }
-                val manifest = manifest(descriptor).getOrThrow()
-                val layersToFetch = manifest.layers.toMutableList() + manifest.config
-                val total = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
-
-                val acc = AtomicInteger(0)
-
-                layersToFetch.asFlow().map { layer ->
-                    flow {
-                        copy(layer, store).collect { progress ->
-                            val curr = acc.addAndGet(progress)
-                            emit((curr.toDouble() * 100 / total).roundToInt())
-                        }
-                    }
-                }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
-                    .onCompletion { cause ->
-                        if (cause == null) {
-                            copy(descriptor, store).collect { progress ->
-                                val curr = acc.addAndGet(progress)
-                                emit((curr.toDouble() * 100 / total).roundToInt())
-                            }
-                        }
-                    }.collect { progress ->
-                        send(progress)
-                    }
+                pullManifest(descriptor, store, this)
             }
-
             else -> {
-                copy(descriptor, store).collect { progress ->
-                    send(progress)
+                var totalBytes = 0L
+                copy(descriptor, store).collect { bytesRead ->
+                    totalBytes += bytesRead
+                    send(totalBytes)
                 }
             }
         }
+    }
+    
+    /**
+     * Pulls an index by descriptor and stores it in the provided layout.
+     *
+     * Handles index manifests by recursively pulling all referenced manifests.
+     * Sends progress updates to the provided channel.
+     *
+     * @param descriptor Index descriptor to pull
+     * @param store Layout to store content in
+     * @param channel Channel to send progress updates to
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun pullIndex(
+        descriptor: Descriptor,
+        store: Layout,
+        channel: SendChannel<Long>
+    ) {
+        val index = index(descriptor).getOrThrow()
+        var totalManifestsBytes = 0L
+
+        if (store.exists(descriptor).getOrDefault(false)) {
+            var allManifestsExist = true
+
+            for (manifestDesc in index.manifests) {
+                if (!store.exists(manifestDesc).getOrDefault(false)) {
+                    // If any manifest doesn't exist, we need to do a pull to correct it
+                    allManifestsExist = false
+                    break
+                }
+
+                val manifest = store.fetch(manifestDesc).use { stream ->
+                    Json.decodeFromStream<Manifest>(stream)
+                }
+                val totalBytes = manifest.layers.sumOf { it.size } + manifest.config.size + manifestDesc.size
+                totalManifestsBytes += totalBytes
+            }
+
+            if (allManifestsExist) {
+                channel.send(totalManifestsBytes + descriptor.size)
+                return
+            }
+        }
+
+        var completedManifestsBytes = 0L
+        index.manifests.forEach { manifestDescriptor ->
+            var manifestBytes = 0L
+            pull(manifestDescriptor, store).collect { currManifestBytes ->
+                manifestBytes = currManifestBytes
+                channel.send(completedManifestsBytes + currManifestBytes)
+            }
+            completedManifestsBytes += manifestBytes
+        }
+
+        copy(descriptor, store).collect()
+        channel.send(completedManifestsBytes + descriptor.size)
+    }
+    
+    /**
+     * Pulls a manifest by descriptor and stores it in the provided layout.
+     *
+     * Downloads all layers and config referenced by the manifest in parallel.
+     * Sends progress updates to the provided channel.
+     *
+     * @param descriptor Manifest descriptor to pull
+     * @param store Layout to store content in
+     * @param channel Channel to send progress updates to
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun pullManifest(
+        descriptor: Descriptor,
+        store: Layout,
+        channel: SendChannel<Long>
+    ) {
+        val manifest = manifest(descriptor).getOrThrow()
+        val layersToFetch = manifest.layers.toMutableList() + manifest.config
+
+        if (store.exists(descriptor).getOrDefault(false)) {
+            val totalBytes = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
+            channel.send(totalBytes)
+            return
+        }
+
+        val acc = AtomicLong(0)
+        layersToFetch.asFlow().map { layer ->
+            flow {
+                copy(layer, store).collect { bytesRead ->
+                    emit(acc.addAndGet(bytesRead))
+                }
+            }
+        }.flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
+            .onCompletion { cause ->
+                if (cause == null) {
+                    copy(descriptor, store).collect { bytesRead ->
+                        emit(acc.addAndGet(bytesRead))
+                    }
+                }
+            }.collect { totalBytes ->
+                channel.send(totalBytes)
+            }
     }
 
     @Volatile
@@ -404,16 +461,17 @@ class Repository(
      *
      * @param descriptor Blob descriptor to copy
      * @param store Layout to store blob in
+     * @return Flow emitting the number of bytes written in each chunk
      * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI Distribution Spec: Pulling Blobs</a>
      *
      * Note: For complete images or manifests, use [pull] methods instead.
      */
-    private fun copy(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
+    private fun copy(descriptor: Descriptor, store: Layout): Flow<Long> = channelFlow {
         val ok = store.exists(descriptor)
 
         // if the descriptor is 100% downloaded w/ size and sha matching, early return
         if (ok.getOrDefault(false)) {
-            send(descriptor.size.toInt())
+            send(descriptor.size)
             return@channelFlow
         }
 
@@ -439,7 +497,7 @@ class Repository(
                         val start = exception.actual
 
                         // fire partial progress has happened
-                        send(start.toInt())
+                        send(start)
 
                         headers.append("Range", "bytes=$start-${descriptor.size - 1}")
                     } else {
@@ -461,8 +519,8 @@ class Repository(
             }
         }.execute { response ->
             response.body<InputStream>().use { stream ->
-                store.push(descriptor, stream).collect { prog ->
-                    send(prog)
+                store.push(descriptor, stream).collect { bytesRead ->
+                    send(bytesRead)
                 }
             }
         }

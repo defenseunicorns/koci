@@ -5,20 +5,20 @@
 
 package com.defenseunicorns.koci
 
+import co.touchlab.kermit.DefaultFormatter
 import co.touchlab.kermit.Logger
-import co.touchlab.kermit.NoTagFormatter
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.loggerConfigInit
 import co.touchlab.kermit.platformLogWriter
 
-fun createKociLogger(logLevel: KociLogLevel) =
+fun createKociLogger(logLevel: KociLogLevel, tag: String) =
   Logger(
     config =
       loggerConfigInit(
-        platformLogWriter(messageStringFormatter = NoTagFormatter),
+        platformLogWriter(messageStringFormatter = DefaultFormatter),
         minSeverity = logLevel.logLevelToSeverity(),
       ),
-    tag = "Koci",
+    tag = "Koci$tag",
   )
 
 enum class KociLogLevel {

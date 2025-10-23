@@ -54,6 +54,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flattenMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -82,6 +83,7 @@ internal constructor(
   private val router: Router,
   private val name: String,
   private val logger: Logger,
+  private val transferCoordinator: TransferCoordinator,
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
@@ -98,6 +100,7 @@ internal constructor(
    */
   suspend fun exists(descriptor: Descriptor): OCIResult<Boolean> {
     return try {
+      logger.d { "Checking existence of ${descriptor.digest}" }
       val endpoint =
         when (descriptor.mediaType) {
           MANIFEST_MEDIA_TYPE,
@@ -108,10 +111,13 @@ internal constructor(
       val response =
         client.head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
       if (!response.status.isSuccess()) {
+        logger.d { "Descriptor does not exist: ${descriptor.digest}" }
         return parseHTTPError(response)
       }
+      logger.d { "Descriptor exists: ${descriptor.digest}" }
       OCIResult.ok(true)
     } catch (e: Exception) {
+      logger.e(e) { "Failed to check existence: ${descriptor.digest}" }
       OCIResult.err(OCIError.IOError("Failed to check existence: ${e.message}", e))
     }
   }
@@ -137,6 +143,7 @@ internal constructor(
     platformResolver: ((Platform) -> Boolean)? = null,
   ): OCIResult<Descriptor> {
     return try {
+      logger.d { "Resolving tag: $name:$tag" }
       val endpoint = router.manifest(name, tag)
       val response =
         client.head(endpoint) {
@@ -175,11 +182,13 @@ internal constructor(
                 }
 
               if (descriptor == null) {
+                logger.e { "No matching platform found in index for $name:$tag" }
                 return@execute OCIResult.err(
                   OCIError.DescriptorNotFound("No matching platform found in index")
                 )
               }
 
+              logger.d { "Resolved $name:$tag to ${descriptor.digest}" }
               OCIResult.ok(descriptor)
             }
         }
@@ -196,19 +205,23 @@ internal constructor(
                   mediaType = MANIFEST_MEDIA_TYPE,
                   stream = res.body() as InputStream,
                 )
+              logger.d { "Resolved $name:$tag to ${descriptor.digest}" }
               OCIResult.ok(descriptor)
             }
         }
 
-        else ->
+        else -> {
+          logger.e { "Unsupported content type for $name:$tag: ${response.contentType()}" }
           OCIResult.err(
             OCIError.UnsupportedManifest(
               response.contentType()?.toString() ?: "unknown",
               "Unsupported content type for manifest",
             )
           )
+        }
       }
     } catch (e: Exception) {
+      logger.e(e) { "Failed to resolve tag: $name:$tag" }
       OCIResult.err(OCIError.IOError("Failed to resolve tag: ${e.message}", e))
     }
   }
@@ -379,6 +392,7 @@ internal constructor(
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
   ): Flow<OCIResult<Int>> = flow {
+    logger.d { "Pulling $name:$tag" }
     val desc =
       when (val result = resolve(tag, platformResolver)) {
         is OCIResult.Ok -> result.value
@@ -402,9 +416,12 @@ internal constructor(
     val ref = Reference(registry = router.base(), repository = name, reference = tag)
     val ok = store.exists(desc).getOrNull() ?: false
     if (!ok) {
+      logger.e { "Incomplete pull for $name:$tag: content not found after download" }
       emit(OCIResult.err(OCIError.Generic("Incomplete pull: content not found after download")))
       return@flow
     }
+    
+    logger.d { "Successfully pulled $name:$tag" }
 
     when (val result = store.tag(desc, ref)) {
       is OCIResult.Err -> {
@@ -413,7 +430,7 @@ internal constructor(
       }
       is OCIResult.Ok -> emit(OCIResult.ok(100))
     }
-  }
+  }.distinctUntilChanged()
 
   /**
    * Pulls content by descriptor and stores it in the provided layout.
@@ -429,6 +446,7 @@ internal constructor(
    */
   @OptIn(ExperimentalCoroutinesApi::class)
   fun pull(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
+    logger.d { "Pulling descriptor: ${descriptor.digest}" }
     when (descriptor.mediaType) {
       INDEX_MEDIA_TYPE -> {
         if (store.exists(descriptor).getOrNull() == true) {
@@ -464,7 +482,7 @@ internal constructor(
           }
           completedPulls += 1
         }
-        copy(descriptor, store).collect { result ->
+        download(descriptor, store).collect { result ->
           when (result) {
             is OCIResult.Err -> {
               emit(result)
@@ -500,7 +518,7 @@ internal constructor(
           .asFlow()
           .map { layer ->
             flow {
-              copy(layer, store).collect { result ->
+              download(layer, store).collect { result ->
                 when (result) {
                   is OCIResult.Ok -> {
                     val curr = acc.addAndGet(result.value)
@@ -515,7 +533,7 @@ internal constructor(
           .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
           .onCompletion { cause ->
             if (cause == null) {
-              copy(descriptor, store).collect { result ->
+              download(descriptor, store).collect { result ->
                 when (result) {
                   is OCIResult.Ok -> {
                     val curr = acc.addAndGet(result.value)
@@ -531,7 +549,7 @@ internal constructor(
       }
 
       else -> {
-        copy(descriptor, store).collect { result ->
+        download(descriptor, store).collect { result ->
           when (result) {
             is OCIResult.Ok -> emit(result)
             is OCIResult.Err -> {
@@ -578,16 +596,31 @@ internal constructor(
   }
 
   /**
+   * Downloads a descriptor from the registry, coordinating with concurrent requests.
+   *
+   * Uses the transfer coordinator to prevent duplicate downloads of the same descriptor.
+   */
+  private suspend fun download(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> =
+    transferCoordinator.transfer(
+      direction = TransferCoordinator.TransferType.Download,
+      descriptor = descriptor,
+    ) {
+      actualDownload(descriptor, store)
+    }
+
+  /**
    * Performs the actual download operation.
    *
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun copy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
+  private fun actualDownload(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
+    logger.d { "Downloading descriptor: ${descriptor.digest}" }
     val existsResult = store.exists(descriptor)
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return
     if (existsResult.getOrNull() == true) {
+      logger.d { "Descriptor already exists: ${descriptor.digest}" }
       emit(OCIResult.ok(descriptor.size.toInt()))
       return@flow
     }
@@ -660,6 +693,7 @@ internal constructor(
           }
         }
     } catch (e: Exception) {
+      logger.e(e) { "Failed to copy blob: ${descriptor.digest}" }
       emit(OCIResult.err(OCIError.IOError("Failed to download blob: ${e.message}", e)))
     }
   }
@@ -746,7 +780,9 @@ internal constructor(
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   fun push(stream: InputStream, expected: Descriptor): Flow<OCIResult<Long>> = flow {
     try {
+      logger.d { "Pushing blob: ${expected.digest}" }
       if (exists(expected).getOrNull() == true) {
+        logger.d { "Blob already exists: ${expected.digest}" }
         emit(OCIResult.ok(expected.size))
         withContext(Dispatchers.IO) { stream.close() }
         return@flow
@@ -844,7 +880,9 @@ internal constructor(
       }
 
       uploading.remove(expected)
+      logger.d { "Successfully pushed blob: ${expected.digest}" }
     } catch (e: Exception) {
+      logger.e(e) { "Failed to push blob: ${expected.digest}" }
       emit(OCIResult.err(OCIError.IOError("Failed to push blob: ${e.message}", e)))
     }
   }
@@ -1001,6 +1039,14 @@ internal constructor(
       client: HttpClient,
       repositoryName: String,
       logger: Logger,
-    ) = Repository(client = client, router = router, name = repositoryName, logger = logger)
+      transferCoordinator: TransferCoordinator,
+    ) =
+      Repository(
+        client = client,
+        router = router,
+        name = repositoryName,
+        logger = logger,
+        transferCoordinator = transferCoordinator,
+      )
   }
 }

@@ -52,6 +52,7 @@ class Registry
 internal constructor(
   registryUrl: String,
   private val logger: Logger,
+  private val transferCoordinator: TransferCoordinator,
   private var client: HttpClient = HttpClient(CIO),
 ) {
   val router = Router(registryUrl)
@@ -109,7 +110,7 @@ internal constructor(
    *
    * @param name Repository name (e.g., "library/ubuntu")
    */
-  fun repo(name: String) = Repository.create(router, client, name, logger)
+  fun repo(name: String) = Repository.create(router, client, name, logger, transferCoordinator)
 
   /**
    * Lists all tags in a repository.
@@ -193,8 +194,15 @@ internal constructor(
       .map { repo -> tags(repo) }
 
   companion object {
-    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG) =
-      Registry(registryUrl = registryUrl, logger = createKociLogger(logLevel))
+    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG): Registry {
+
+      return Registry(
+        registryUrl = registryUrl,
+        transferCoordinator =
+          TransferCoordinator(createKociLogger(logLevel, "RegistryTransferCoordinator")),
+        logger = createKociLogger(logLevel, "Registry"),
+      )
+    }
   }
 }
 
@@ -215,4 +223,4 @@ internal constructor(
  * @property name Repository name
  * @property tags List of tags associated with the repository, may be null if no tags exist
  */
-@Serializable data class TagsResponse(val name: String, val tags: List<String>?)
+@Serializable data class TagsResponse(val name: String, val tags: List<String>)

@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import okio.FileSystem
@@ -53,22 +54,24 @@ import okio.source
  * - Garbage collection
  *
  * @property index The index of all manifests in this layout
- * @property root The root directory path where the layout is stored
+ * @property rootPath The root directory path where the layout is stored
  * @property blobsPath The directory path where blobs are stored
  * @property stagingPath The directory path for staging/temporary operations
+ * @property transferCoordinator The transfer coordinator for managing concurrent transfers
  */
 @Suppress("detekt:TooManyFunctions")
 class Layout
 private constructor(
   private val index: Index,
-  private val root: String,
+  private val rootPath: String,
   private val blobsPath: String,
   private val stagingPath: String,
   private val strictChecking: Boolean,
   private val logger: Logger,
+  private val transferCoordinator: TransferCoordinator,
 ) {
-  internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
   private val fileSystem = FileSystem.SYSTEM
+  private val removing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
 
   /**
    * Checks if a blob exists in the layout and verifies its integrity.
@@ -85,11 +88,15 @@ private constructor(
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
+      logger.d { "Blob does not exist: ${descriptor.digest}" }
       return OCIResult.ok(false)
     }
 
     val length = fileSystem.metadata(path).size ?: 0L
     if (length != descriptor.size) {
+      logger.e {
+        "Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length"
+      }
       return OCIResult.err(OCIError.SizeMismatch(descriptor, length))
     }
 
@@ -114,9 +121,11 @@ private constructor(
       }
 
     if (digest != descriptor.digest) {
+      logger.e { "Digest mismatch for ${descriptor.digest}: computed $digest" }
       return OCIResult.err(OCIError.DigestMismatch(descriptor, digest))
     }
 
+    logger.d { "Blob exists and verified: ${descriptor.digest}" }
     return OCIResult.ok(true)
   }
 
@@ -167,8 +176,10 @@ private constructor(
    *
    * @param reference The reference to remove
    */
-  suspend fun remove(reference: Reference): OCIResult<Boolean> =
-    resolve(reference).flatMap { descriptor -> remove(descriptor) }
+  suspend fun remove(reference: Reference): OCIResult<Boolean> {
+    logger.d { "Removing reference: $reference" }
+    return resolve(reference).flatMap { descriptor -> remove(descriptor) }
+  }
 
   /**
    * Removes a descriptor and its associated content from the layout.
@@ -183,7 +194,8 @@ private constructor(
   @OptIn(ExperimentalSerializationApi::class)
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   suspend fun remove(descriptor: Descriptor): OCIResult<Boolean> {
-    val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
+    logger.d { "Removing descriptor: ${descriptor.digest}" }
+    val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
 
@@ -192,6 +204,7 @@ private constructor(
         val path = blob(descriptor)
 
         if (!fileSystem.exists(path)) {
+          logger.d { "Descriptor not found, nothing to remove: ${descriptor.digest}" }
           return OCIResult.ok(false)
         }
 
@@ -208,6 +221,7 @@ private constructor(
             }
 
             fileSystem.delete(path)
+            logger.d { "Removed index: ${descriptor.digest}" }
 
             OCIResult.ok(true)
           }
@@ -236,24 +250,27 @@ private constructor(
             }
 
             fileSystem.delete(path)
+            logger.d { "Removed manifest: ${descriptor.digest}" }
 
             OCIResult.ok(true)
           }
 
           else -> {
             fileSystem.delete(path)
+            logger.d { "Removed blob: ${descriptor.digest}" }
             OCIResult.ok(true)
           }
         }
       }
     } catch (e: Exception) {
+      logger.e(e) { "Failed to remove descriptor: ${descriptor.digest}" }
       OCIResult.err(OCIError.IOError("Failed to remove descriptor: ${e.message}", e))
     } finally {
-      val pair = pushing[descriptor]
+      val pair = removing[descriptor]
       if (pair != null) {
         val count = pair.second.decrementAndGet()
         if (count <= 0) {
-          pushing.remove(descriptor, pair)
+          removing.remove(descriptor, pair)
         }
       }
     }
@@ -265,7 +282,9 @@ private constructor(
    * Writes the current state of the index to the index.json file in the layout.
    */
   internal fun syncIndex() {
-    fileSystem.write("$root/$IMAGE_INDEX_FILE".toPath()) { writeUtf8(Json.encodeToString(index)) }
+    fileSystem.write("$rootPath/$IMAGE_INDEX_FILE".toPath()) {
+      writeUtf8(Json.encodeToString(index))
+    }
   }
 
   /**
@@ -283,76 +302,83 @@ private constructor(
    * Writes the content to disk, verifying its size and digest match the descriptor. Supports
    * resumable uploads by calculating the digest of existing content plus new content.
    *
+   * Uses the transfer coordinator to prevent duplicate concurrent writes to the same descriptor.
+   *
    * @param descriptor The descriptor of the content being pushed
    * @param stream The input stream containing the content
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
   fun push(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
+    transferCoordinator.transfer(
+      direction = TransferCoordinator.TransferType.Upload,
+      descriptor = descriptor,
+    ) {
+      actualPush(descriptor, stream)
+    }
+
+  /**
+   * Performs the actual push operation to disk.
+   *
+   * This is called by the coordinator when this is the first request for a descriptor. Other
+   * concurrent requests for the same descriptor will wait for this to complete.
+   */
+  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
     kotlinx.coroutines.flow.flow {
-      val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
+      logger.d { "Pushing to disk: ${descriptor.digest}" }
 
-      refCount.incrementAndGet()
+      val ok = exists(descriptor).getOrNull() ?: false
 
-      try {
-        mu.withLock {
-          val ok = exists(descriptor).getOrNull() ?: false
+      if (!ok) {
+        val path = blob(descriptor)
+        val md = descriptor.digest.algorithm.hasher()
 
-          if (!ok) {
-            val path = blob(descriptor)
-            val md = descriptor.digest.algorithm.hasher()
-
-            // If resuming a download, hash the existing file data first
-            // It is up to the caller to properly resume the stream at the proper location,
-            // otherwise a DigestMismatch will occur
-            if (fileSystem.exists(path)) {
-              fileSystem.source(path).buffer().use { source ->
-                val buffer = ByteArray(BUFFER_SIZE)
-                var bytesRead: Int
-                while (source.read(buffer).also { bytesRead = it } != -1) {
-                  md.update(buffer, 0, bytesRead)
-                }
-              }
-            }
-
-            // Stream new data, hashing as we write
-            fileSystem.appendingSink(path).buffer().use { sink ->
-              stream.source().buffer().use { source ->
-                val buffer = ByteArray(BUFFER_SIZE)
-                var bytesRead: Int
-                while (source.read(buffer).also { bytesRead = it } != -1) {
-                  md.update(buffer, 0, bytesRead)
-                  sink.write(buffer, 0, bytesRead)
-                  emit(OCIResult.ok(bytesRead))
-                }
-              }
-            }
-
-            val length = fileSystem.metadata(path).size ?: 0L
-            if (length != descriptor.size) {
-              fileSystem.delete(path)
-              emit(OCIResult.err(OCIError.SizeMismatch(descriptor, length)))
-              return@flow
-            }
-
-            val digest = Digest(descriptor.digest.algorithm, md.digest())
-
-            if (digest != descriptor.digest) {
-              fileSystem.delete(path)
-              emit(OCIResult.err(OCIError.DigestMismatch(descriptor, digest)))
-              return@flow
+        // If resuming a download, hash the existing file data first
+        // It is up to the caller to properly resume the stream at the proper location,
+        // otherwise a DigestMismatch will occur
+        if (fileSystem.exists(path)) {
+          logger.d { "Resuming push for ${descriptor.digest}" }
+          fileSystem.source(path).buffer().use { source ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            var bytesRead: Int
+            while (source.read(buffer).also { bytesRead = it } != -1) {
+              md.update(buffer, 0, bytesRead)
             }
           }
         }
-      } catch (e: Exception) {
-        emit(OCIResult.err(OCIError.IOError("Failed to push descriptor: ${e.message}", e)))
-      } finally {
-        val pair = pushing[descriptor]
-        if (pair != null) {
-          val count = pair.second.decrementAndGet()
-          if (count <= 0) {
-            pushing.remove(descriptor, pair)
+
+        // Stream new data, hashing as we write
+        fileSystem.appendingSink(path).buffer().use { sink ->
+          stream.source().buffer().use { source ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            var bytesRead: Int
+            while (source.read(buffer).also { bytesRead = it } != -1) {
+              md.update(buffer, 0, bytesRead)
+              sink.write(buffer, 0, bytesRead)
+              emit(OCIResult.ok(bytesRead))
+            }
           }
         }
+
+        val length = fileSystem.metadata(path).size ?: 0L
+        if (length != descriptor.size) {
+          logger.e {
+            "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
+          }
+          fileSystem.delete(path)
+          emit(OCIResult.err(OCIError.SizeMismatch(descriptor, length)))
+          return@flow
+        }
+
+        val digest = Digest(descriptor.digest.algorithm, md.digest())
+
+        if (digest != descriptor.digest) {
+          logger.e { "Digest mismatch pushing ${descriptor.digest}: computed $digest" }
+          fileSystem.delete(path)
+          emit(OCIResult.err(OCIError.DigestMismatch(descriptor, digest)))
+          return@flow
+        }
+
+        logger.d { "Successfully downloaded ${descriptor.digest}" }
       }
     }
 
@@ -480,7 +506,7 @@ private constructor(
    * interrupted.
    */
   fun gc(): OCIResult<List<Digest>> {
-    if (pushing.isNotEmpty()) {
+    if (transferCoordinator.activeTransfers() > 0) {
       return OCIResult.err(OCIError.Generic("Cannot run GC: downloads are in progress"))
     }
 
@@ -536,11 +562,13 @@ private constructor(
      */
     internal fun create(
       rootPath: String,
-      blobsPath: String,
-      stagingPath: String,
-      strictChecking: Boolean,
+      blobsPath: String = "$rootPath/blobs",
+      stagingPath: String = "$rootPath/staging",
+      strictChecking: Boolean = true,
       logLevel: KociLogLevel = KociLogLevel.DEBUG,
     ): OCIResult<Layout> {
+      val logger = createKociLogger(logLevel, "Layout")
+
       val fs = FileSystem.SYSTEM
       val rootDir = rootPath.toPath()
       val indexLocation = "$rootPath/$IMAGE_INDEX_FILE".toPath()
@@ -549,6 +577,7 @@ private constructor(
       // Handle root directory creation
       if (!fs.exists(rootDir)) {
         try {
+          logger.d("Creating root directory at $rootPath")
           fs.createDirectories(rootDir)
         } catch (e: IOException) {
           return OCIResult.err(OCIError.IOError("Failed to create root directory: ${e.message}", e))
@@ -564,6 +593,7 @@ private constructor(
       // Handle oci-layout file
       if (!fs.exists(layoutFileLocation)) {
         try {
+          logger.d("Layout version: $LAYOUT_VERSION")
           fs.write(layoutFileLocation) {
             writeUtf8(Json.encodeToString(LayoutMarker(LAYOUT_VERSION)))
           }
@@ -576,8 +606,15 @@ private constructor(
       val index =
         try {
           when {
-            fs.exists(indexLocation) -> fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
-            else -> Index()
+            fs.exists(indexLocation) -> {
+              logger.d("Loading index from $indexLocation")
+              fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+            }
+            else -> {
+              logger.d("Index not found at $indexLocation, creating new index")
+              fs.write(indexLocation) { writeUtf8("{}") }
+              Index()
+            }
           }
         } catch (e: Exception) {
           return OCIResult.err(OCIError.IOError("Failed to read index: ${e.message}", e))
@@ -586,6 +623,7 @@ private constructor(
       // Create blob storage directories
       try {
         listOf("sha256", "sha512").forEach { algorithm ->
+          logger.d("Creating blob directory at $blobsPath/$algorithm")
           fs.createDirectories("$blobsPath/$algorithm".toPath())
         }
       } catch (e: Exception) {
@@ -594,19 +632,24 @@ private constructor(
 
       // Create directory for staging operations
       try {
+        logger.d("Creating staging directory at $stagingPath")
         fs.createDirectories(stagingPath.toPath())
       } catch (e: Exception) {
         return OCIResult.err(OCIError.IOError("Failed to create temp directory: ${e.message}", e))
       }
 
+      logger.d { "Layout created" }
+
       return OCIResult.ok(
         Layout(
           index = index,
-          root = rootPath,
+          rootPath = rootPath,
           blobsPath = blobsPath,
           stagingPath = stagingPath,
           strictChecking = strictChecking,
-          logger = createKociLogger(logLevel),
+          logger = logger,
+          transferCoordinator =
+            TransferCoordinator(createKociLogger(logLevel, "LayoutTransferCoordinator")),
         )
       )
     }

@@ -10,8 +10,8 @@ import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.errors.OCIError
 import com.defenseunicorns.koci.models.errors.OCIResult
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -49,10 +49,13 @@ internal class TransferCoordinator(private val logger: Logger) {
     descriptor: Descriptor,
     transfer: suspend () -> Flow<OCIResult<Int>>,
   ): Flow<OCIResult<Int>> = flow {
+    val key = TransferKey(descriptor, direction)
+    
     // Check if already transferring or claim the transfer
     val (state, shouldTransfer) =
       mutex.withLock {
-        val state = inProgress.getOrPut(TransferKey(descriptor, direction)) { TransferState() }
+        val state = inProgress.getOrPut(key) { TransferState() }
+        state.refCount.incrementAndGet()
         val shouldTransfer = !state.claimed && !state.completion.isCompleted
         if (shouldTransfer) {
           state.claimed = true // Claim it so others wait
@@ -60,54 +63,57 @@ internal class TransferCoordinator(private val logger: Logger) {
         state to shouldTransfer
       }
 
-    if (shouldTransfer) {
-      logger.d { "Transferring $descriptor" }
-      // We're the one transferring - execute the transfer
-      try {
-        var hasError = false
+    try {
+      if (shouldTransfer) {
+        logger.d { "Transferring $descriptor" }
+        // We're the one transferring - execute the transfer
+        try {
+          var hasError = false
 
-        transfer().collect { result ->
-          when (result) {
-            is OCIResult.Ok -> emit(result)
-            is OCIResult.Err -> {
-              hasError = true
-              emit(result)
+          transfer().collect { result ->
+            when (result) {
+              is OCIResult.Ok -> emit(result)
+              is OCIResult.Err -> {
+                hasError = true
+                emit(result)
+              }
             }
           }
-        }
 
-        // Mark transfer complete
-        mutex.withLock {
-          logger.d { "Transfer complete for $descriptor" }
-          state.succeeded = !hasError
-          state.completion.complete(Unit)
+          // Mark transfer complete
+          mutex.withLock {
+            logger.d { "Transfer complete for $descriptor" }
+            state.succeeded = !hasError
+            state.completion.complete(Unit)
+          }
+        } catch (e: Exception) {
+          // Mark transfer failed
+          mutex.withLock {
+            logger.e { "Transfer failed for $descriptor: ${e.message}" }
+            state.succeeded = false
+            state.completion.complete(Unit)
+          }
+          throw e
         }
-      } catch (e: Exception) {
-        // Mark transfer failed
-        mutex.withLock {
-          logger.e { "Transfer failed for $descriptor: ${e.message}" }
-          state.succeeded = false
-          state.completion.complete(Unit)
-        }
-        throw e
-      } finally {
-        // Clean up after some time to prevent memory leak
-        // Keep it around briefly in case other operations are still checking
-        delay(1000)
-        mutex.withLock {
-          logger.d { "Removing $descriptor from progress tracking" }
-          inProgress.remove(TransferKey(descriptor, direction), state)
+      } else {
+        // Someone else is transferring (or already finished) - wait if needed
+        logger.d { "Waiting for transfer of $descriptor to complete" }
+        state.completion.await()
+
+        // Check the result
+        if (!state.succeeded) {
+          logger.e { "Transfer failed for $descriptor" }
+          emit(OCIResult.err(OCIError.TransferFailed(descriptor)))
         }
       }
-    } else {
-      // Someone else is transferring (or already finished) - wait if needed
-      logger.d { "Waiting for transfer of $descriptor to complete" }
-      state.completion.await()
-
-      // Check the result
-      if (!state.succeeded) {
-        logger.e { "Transfer failed for $descriptor" }
-        emit(OCIResult.err(OCIError.TransferFailed(descriptor)))
+    } finally {
+      // Decrement refcount and clean up if no one else is waiting
+      mutex.withLock {
+        val count = state.refCount.decrementAndGet()
+        if (count <= 0) {
+          logger.d { "Removing $descriptor from progress tracking" }
+          inProgress.remove(key, state)
+        }
       }
     }
   }
@@ -137,11 +143,13 @@ internal class TransferCoordinator(private val logger: Logger) {
    * @property completion Deferred that completes when transfer finishes (success or failure)
    * @property succeeded Whether the transfer succeeded (true) or failed (false)
    * @property claimed Whether someone has claimed this transfer (prevents duplicate downloads)
+   * @property refCount Number of operations waiting on this transfer
    */
   private data class TransferState(
     val completion: CompletableDeferred<Unit> = CompletableDeferred(),
     var succeeded: Boolean = false,
     var claimed: Boolean = false,
+    val refCount: AtomicInteger = AtomicInteger(0),
   )
 
   /**

@@ -43,9 +43,9 @@ data class Descriptor(
      * if no media type is specified, "application/octet-stream" will be used
      */
     fun fromInputStream(
+      stream: InputStream,
       mediaType: String = ContentType.Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
-      stream: InputStream,
     ): Descriptor {
       val md = algorithm.hasher()
       var size = 0L

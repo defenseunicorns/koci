@@ -32,6 +32,8 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import okio.FileSystem
+import okio.HashingSource.Companion.sha256
+import okio.HashingSource.Companion.sha512
 import okio.IOException
 import okio.Path
 import okio.Path.Companion.toPath
@@ -68,7 +70,9 @@ private constructor(
   /**
    * Checks if a blob exists in the layout and verifies its integrity.
    *
-   * Performs size and digest verification to ensure the content matches the descriptor's metadata.
+   * Performs size verification and optionally digest verification based on strictChecking setting.
+   * When strictChecking is enabled, reads and hashes the entire blob to verify integrity.
+   * When disabled, only checks file existence and size for better performance.
    *
    * @param descriptor The descriptor of the blob to check
    * @return Ok(true) if blob exists and is valid, Ok(false) if not found, or Err with the specific
@@ -86,16 +90,21 @@ private constructor(
       return OCIResult.err(OCIError.SizeMismatch(descriptor, length))
     }
 
+    // Skip expensive digest verification when strictChecking is disabled
+    if (!strictChecking) {
+      return OCIResult.ok(true)
+    }
+
     val digest =
       try {
-        fileSystem.source(path).buffer().use { source ->
-          val buffer = ByteArray(1024)
-          val md = descriptor.digest.algorithm.hasher()
-          var bytesRead: Int
-          while (source.read(buffer).also { bytesRead = it } != -1) {
-            md.update(buffer, 0, bytesRead)
-          }
-          Digest(descriptor.digest.algorithm, md.digest())
+        fileSystem.source(path).use { source ->
+          val hashingSource =
+            when (descriptor.digest.algorithm) {
+              RegisteredAlgorithm.SHA256 -> sha256(source)
+              RegisteredAlgorithm.SHA512 -> sha512(source)
+            }
+          hashingSource.buffer().readAll(okio.blackholeSink())
+          Digest(descriptor.digest.algorithm, hashingSource.hash.toByteArray())
         }
       } catch (e: Exception) {
         return OCIResult.err(OCIError.IOError("Failed to read blob: ${e.message}", e))

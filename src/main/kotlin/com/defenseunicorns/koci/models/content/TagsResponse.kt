@@ -11,4 +11,4 @@ import kotlinx.serialization.Serializable
  * @property tags List of tags associated with the repository, may be null if no tags exist
  */
 @Serializable
-data class TagsResponse(val name: String, val tags: List<String>?)
+data class TagsResponse(val name: String, val tags: List<String>)

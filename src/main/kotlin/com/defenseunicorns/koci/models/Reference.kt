@@ -12,20 +12,6 @@ import io.ktor.http.*
 import java.net.URI
 
 /**
- * Regex pattern for validating tags according to OCI spec. Tags must start with a word character
- * followed by up to 127 word, dot, or hyphen characters.
- */
-val TagRegex = Regex("^\\w[\\w.-]{0,127}")
-
-/**
- * Regex pattern for validating repository names according to OCI spec. Repository names must follow
- * a specific pattern with lowercase alphanumeric characters, separators, and optional path
- * components.
- */
-val RepositoryRegex =
-  Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
-
-/**
  * Represents a complete reference to an OCI artifact.
  *
  * A reference consists of three components:
@@ -47,9 +33,9 @@ data class Reference(val registry: String, val repository: String, val reference
     reference: String,
   ) : this(
     registry =
-      registry.toURI().let { uri ->
+      registry.let { uri ->
         when (uri.port) {
-          -1 -> registry.host // Use host instead of uri.toString() to avoid including the scheme
+          0 -> registry.host // Use host instead of uri.toString() to avoid including the scheme
           else -> registry.hostWithPort
         }
       },
@@ -57,56 +43,85 @@ data class Reference(val registry: String, val repository: String, val reference
     reference = reference,
   )
 
-  companion object {
-    /**
-     * ===> <--- reference ------------------> | - Decode `reference` <=== REPOSITORY ===> @
-     * <=================== digest ===> | - Valid Form A <=== REPOSITORY ===> : <!!! TAG !!!> @ <===
-     * digest ===> | - Valid Form B (tag is dropped) <=== REPOSITORY ===> : <=== TAG
-     * ======================> | - Valid Form C <=== REPOSITORY
-     * ======================================> | - Valid Form D
-     */
-    /**
-     * Parses a string into a Reference.
-     *
-     * Supports multiple reference formats as defined in the OCI spec:
-     * - Form A: registry/repository@digest
-     * - Form B: registry/repository:tag@digest (tag is dropped)
-     * - Form C: registry/repository:tag
-     * - Form D: registry/repository
-     *
-     * @param artifact String representation of the artifact reference
-     */
-    fun parse(artifact: String): OCIResult<Reference> {
-      return try {
-        val reg = artifact.substringBefore("/", "")
-        if (reg.isEmpty()) {
-          return OCIResult.err(OCIError.Generic("Registry cannot be empty"))
-        }
+  /**
+   * Converts the reference string to a [com.defenseunicorns.koci.models.content.Digest] object.
+   *
+   * @throws IllegalArgumentException if the reference is not a valid digest
+   */
+  fun digest(): Digest {
+    return Digest(reference)
+  }
 
-        val repoAndRef = artifact.substringAfter("/", "")
-
-        val (repo, ref) =
-          if (repoAndRef.contains("@")) {
-            val ref = repoAndRef.substringAfter("@")
-            // drop tag if it exists (valid form B)
-            val repoStrippedOfTag = repoAndRef.substringBefore("@").substringBefore(":")
-
-            repoStrippedOfTag to ref // valid form A
-          } else if (repoAndRef.contains(":")) {
-            val repo = repoAndRef.substringBefore(":")
-            val tag = repoAndRef.substringAfter(":")
-            repo to tag // valid form C
-          } else {
-            repoAndRef to "" // valid form D
-          }
-
-        val reference = Reference(reg, repo, ref)
-        reference.validate()
-        OCIResult.ok(reference)
-      } catch (e: Exception) {
-        OCIResult.err(OCIError.Generic("Failed to parse reference: ${e.message}"))
-      }
+  /**
+   * Validates that all components of the reference conform to the OCI spec.
+   *
+   * Checks that:
+   * - Registry is a valid hostname with optional port
+   * - Repository matches the required pattern
+   * - Reference is either empty, a valid tag, or a valid digest
+   *
+   * @return OCIResult.Ok if valid, OCIResult.Err with specific error type if invalid
+   */
+  fun validate(): OCIResult<Boolean> {
+    // Validate registry
+    if (registry.isBlank()) {
+      return OCIResult.err(OCIError.InvalidRegistry(registry, "Registry cannot be empty"))
     }
+
+    val uri =
+      try {
+        URI("koci://$registry")
+      } catch (e: Exception) {
+        return OCIResult.err(OCIError.InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
+      }
+
+    val hostWithPort =
+      when (uri.port) {
+        -1 -> uri.host
+        else -> "${uri.host}:${uri.port}"
+      }
+
+    if (hostWithPort != registry) {
+      return OCIResult.err(
+        OCIError.InvalidRegistry(
+          registry,
+          "Registry must be a valid hostname with optional port (e.g., 'registry.example.com:5000')",
+        )
+      )
+    }
+
+    // Validate repository
+    if (repositoryRegex.matchEntire(repository) == null) {
+      return OCIResult.err(
+        OCIError.InvalidRepository(
+          repository,
+          "Repository must contain only lowercase alphanumeric characters, separators (._-), and optional path components separated by /",
+        )
+      )
+    }
+
+    // Validate reference (tag or digest)
+    if (reference.isBlank()) {
+      return OCIResult.ok(true)
+    }
+
+    // Check if it's a valid tag
+    if (tagRegex.matchEntire(reference) != null) {
+      return OCIResult.ok(true)
+    }
+
+    // Check if it's a valid digest
+    return Digest.validate(reference)
+  }
+
+  /** Checks if this reference is empty (all components are empty strings). */
+  fun isEmpty(): Boolean {
+    return this.registry.isEmpty() && this.reference.isEmpty() && this.repository.isEmpty()
+  }
+
+  /** Checks if this reference is not empty (at least one component is non-empty). */
+  fun isNotEmpty(): Boolean {
+    return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
   }
 
   /**
@@ -129,56 +144,86 @@ data class Reference(val registry: String, val repository: String, val reference
     }
   }
 
-  /**
-   * Converts the reference string to a [com.defenseunicorns.koci.models.content.Digest] object.
-   *
-   * @throws IllegalArgumentException if the reference is not a valid digest
-   */
-  fun digest(): Digest {
-    return Digest(reference)
-  }
-
-  /**
-   * Validates that all components of the reference conform to the OCI spec.
-   *
-   * Checks that:
-   * - Registry is a valid hostname with optional port
-   * - Repository matches the required pattern
-   * - Reference is either empty, a valid tag, or a valid digest
-   *
-   * @throws IllegalArgumentException if any component is invalid
-   */
-  fun validate() {
-    // validate registry
-    require(registry.isNotEmpty()) { "registry cannot be empty" }
-    val uri = URI("dummy://$registry")
-    val hostWithPort =
-      when (uri.port) {
-        -1 -> uri.host
-        else -> "${uri.host}:${uri.port}"
+  companion object {
+    /**
+     * <--- path --------------------------------------------> | - Decode `path`
+     *
+     * <=== REPOSITORY ===> <--- reference ------------------> | - Decode `reference`
+     *
+     * <=== REPOSITORY ===> @ <=================== digest ===> | - Valid Form A
+     *
+     * <=== REPOSITORY ===> : <!!! TAG !!!> @ <=== digest ===> | - Valid Form B (tag is dropped)
+     *
+     * <=== REPOSITORY ===> : <=== TAG ======================> | - Valid Form C
+     *
+     * <=== REPOSITORY ======================================> | - Valid Form D
+     *
+     * Parses a string into a Reference.
+     *
+     * Supports multiple reference formats as defined in the OCI spec:
+     * - Form A: registry/repository@digest
+     * - Form B: registry/repository:tag@digest (tag is dropped)
+     * - Form C: registry/repository:tag
+     * - Form D: registry/repository
+     *
+     * @param artifact String representation of the artifact reference
+     */
+    fun parse(artifact: String): OCIResult<Reference> {
+      if (artifact.isBlank()) {
+        return OCIResult.err(OCIError.InvalidRegistry("", "Reference string cannot be empty"))
       }
-    require(hostWithPort == registry) { "invalid registry" }
 
-    // validate repository
-    requireNotNull(RepositoryRegex.matchEntire(repository)) { "invalid repository" }
+      val reg = artifact.substringBefore("/", "")
+      if (reg.isEmpty()) {
+        return OCIResult.err(
+          OCIError.InvalidRegistry(
+            "",
+            "Reference must include registry (e.g., 'registry.example.com/repo:tag')",
+          )
+        )
+      }
 
-    // validate reference
-    if (reference == "") {
-      return
+      val repoAndRef = artifact.substringAfter("/", "")
+      if (repoAndRef.isEmpty()) {
+        return OCIResult.err(
+          OCIError.InvalidRepository(
+            "",
+            "Reference must include repository after registry (e.g., 'registry.example.com/repo:tag')",
+          )
+        )
+      }
+
+      val (repo, ref) =
+        if (repoAndRef.contains("@")) {
+          val ref = repoAndRef.substringAfter("@")
+          // drop tag if it exists (valid form B)
+          val repoStrippedOfTag = repoAndRef.substringBefore("@").substringBefore(":")
+
+          repoStrippedOfTag to ref // valid form A
+        } else if (repoAndRef.contains(":")) {
+          val repo = repoAndRef.substringBefore(":")
+          val tag = repoAndRef.substringAfter(":")
+          repo to tag // valid form C
+        } else {
+          repoAndRef to "" // valid form D
+        }
+
+      val reference = Reference(reg, repo, ref)
+      return reference.validate().map { reference }
     }
-    if (TagRegex.matchEntire(reference) != null) {
-      return
-    }
-    Digest(reference)
-  }
 
-  /** Checks if this reference is empty (all components are empty strings). */
-  fun isEmpty(): Boolean {
-    return this.registry.isEmpty() && this.reference.isEmpty() && this.repository.isEmpty()
-  }
+    /**
+     * Regex pattern for validating tags according to OCI spec. Tags must start with a word
+     * character followed by up to 127 word, dot, or hyphen characters.
+     */
+    val tagRegex = Regex("^\\w[\\w.-]{0,127}")
 
-  /** Checks if this reference is not empty (at least one component is non-empty). */
-  fun isNotEmpty(): Boolean {
-    return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
+    /**
+     * Regex pattern for validating repository names according to OCI spec. Repository names must
+     * follow a specific pattern with lowercase alphanumeric characters, separators, and optional
+     * path components.
+     */
+    val repositoryRegex =
+      Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
   }
 }

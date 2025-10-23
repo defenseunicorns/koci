@@ -200,6 +200,38 @@ sealed interface OCIError {
   data class FromResponse(val response: FailureResponse) : OCIError
 
   /**
+   * The registry component of a reference is invalid.
+   *
+   * @param registry The invalid registry value
+   * @param reason Why the registry is invalid
+   */
+  data class InvalidRegistry(val registry: String, val reason: String) : OCIError
+
+  /**
+   * The repository component of a reference is invalid.
+   *
+   * @param repository The invalid repository value
+   * @param reason Why the repository is invalid
+   */
+  data class InvalidRepository(val repository: String, val reason: String) : OCIError
+
+  /**
+   * The tag component of a reference is invalid.
+   *
+   * @param tag The invalid tag value
+   * @param reason Why the tag is invalid
+   */
+  data class InvalidTag(val tag: String, val reason: String) : OCIError
+
+  /**
+   * The digest component of a reference is invalid.
+   *
+   * @param digest The invalid digest value
+   * @param reason Why the digest is invalid
+   */
+  data class InvalidDigest(val digest: String, val reason: String) : OCIError
+
+  /**
    * A generic error for cases not covered by specific error types.
    *
    * @param message Description of the error

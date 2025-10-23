@@ -5,6 +5,8 @@
 
 package com.defenseunicorns.koci.models.content
 
+import com.defenseunicorns.koci.models.errors.OCIError
+import com.defenseunicorns.koci.models.errors.OCIResult
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -60,7 +62,7 @@ enum class RegisteredAlgorithm(private val n: String) {
  * integrity.
  */
 @Serializable(with = DigestSerializer::class)
-class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
+data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
   /**
    * Creates a Digest from a string in the format "algorithm:hex".
    *
@@ -130,6 +132,66 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
     var result = algorithm.hashCode()
     result = 31 * result + hex.hashCode()
     return result
+  }
+
+  companion object {
+    /**
+     * Validates a digest string without constructing a Digest object.
+     *
+     * @param content The digest string to validate (e.g., "sha256:abc123...")
+     * @return OCIResult.Ok if valid, OCIResult.Err with specific error if invalid
+     */
+    fun validate(content: String): OCIResult<Boolean> {
+      val algo = content.substringBefore(":", "")
+
+      if (algo.isEmpty()) {
+        return OCIResult.err(
+          OCIError.InvalidDigest(
+            content,
+            "Digest must be in format 'algorithm:hex' (e.g., 'sha256:abc123...')",
+          )
+        )
+      }
+
+      return when (algo) {
+        "sha256",
+        "sha512" -> {
+          val hex = content.substringAfter(":")
+          val expectedLength =
+            when (algo == "sha256") {
+              true -> 64
+              false -> 128
+            }
+
+          when {
+            hex.length != expectedLength -> {
+              OCIResult.err(
+                OCIError.InvalidDigest(
+                  content,
+                  "$algo digest must have exactly $expectedLength hex characters, got ${hex.length}",
+                )
+              )
+            }
+            !hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } -> {
+              OCIResult.err(
+                OCIError.InvalidDigest(
+                  content,
+                  "Digest hex value must contain only hexadecimal characters (0-9, a-f, A-F)",
+                )
+              )
+            }
+            else -> OCIResult.ok(true)
+          }
+        }
+        else ->
+          OCIResult.err(
+            OCIError.InvalidDigest(
+              content,
+              "Algorithm '$algo' is not supported. Must be one of: sha256, sha512",
+            )
+          )
+      }
+    }
   }
 }
 

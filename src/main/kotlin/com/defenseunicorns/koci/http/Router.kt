@@ -5,21 +5,9 @@
 
 package com.defenseunicorns.koci.http
 
-import com.defenseunicorns.koci.models.Descriptor
 import com.defenseunicorns.koci.models.content.Descriptor
 import io.ktor.http.*
 import java.net.URI
-
-/**
- * Adds pagination parameters to a URL as specified in the OCI spec.
- *
- * @param n Number of results to return
- * @param last Optional token indicating where to resume listing
- */
-private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
-  parameters.append("n", n.toString())
-  last?.let { parameters.append("last", it) }
-}
 
 /**
  * Constructs API endpoints for an OCI spec compliant registry.
@@ -33,11 +21,8 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
  * All methods return fully constructed [Url] objects ready for use with HTTP clients.
  */
 class Router(registryURL: String) {
-  companion object {
-    private const val V2_PREFIX = "v2/"
-  }
 
-  private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
+  private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments("v2/")
 
   /** Returns the base URL for the registry API (v2 endpoint). */
   fun base(): Url {
@@ -149,5 +134,16 @@ class Router(registryURL: String) {
     }
 
     return URLBuilder().takeFrom(base.build()).apply { encodedPath = locationHeader }.build()
+  }
+
+  /**
+   * Adds pagination parameters to a URL as specified in the OCI spec.
+   *
+   * @param n Number of results to return
+   * @param last Optional token indicating where to resume listing
+   */
+  private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
+    parameters.append("n", n.toString())
+    last?.let { parameters.append("last", it) }
   }
 }

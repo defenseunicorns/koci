@@ -20,9 +20,9 @@ import com.defenseunicorns.koci.models.content.LayoutMarker
 import com.defenseunicorns.koci.models.content.Manifest
 import com.defenseunicorns.koci.models.content.Platform
 import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
-import com.defenseunicorns.koci.models.errors.OCIError
+import com.defenseunicorns.koci.models.errors.KociError
 import com.defenseunicorns.koci.models.errors.OCIException
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociResult
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -83,12 +83,12 @@ private constructor(
    * @return Ok(true) if blob exists and is valid, Ok(false) if not found, or Err with the specific
    *   error
    */
-  fun exists(descriptor: Descriptor): OCIResult<Boolean> {
+  fun exists(descriptor: Descriptor): KociResult<Boolean> {
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
       logger.d { "Blob does not exist: ${descriptor.digest}" }
-      return OCIResult.ok(false)
+      return KociResult.ok(false)
     }
 
     val length = fileSystem.metadata(path).size ?: 0L
@@ -96,12 +96,12 @@ private constructor(
       logger.e {
         "Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length"
       }
-      return OCIResult.err(OCIError.SizeMismatch(descriptor, length))
+      return KociResult.err(KociError.SizeMismatch(descriptor, length))
     }
 
     // Skip expensive digest verification when strictChecking is disabled
     if (!strictChecking) {
-      return OCIResult.ok(true)
+      return KociResult.ok(true)
     }
 
     val digest =
@@ -116,16 +116,16 @@ private constructor(
           Digest(descriptor.digest.algorithm, hashingSource.hash.toByteArray())
         }
       } catch (e: Exception) {
-        return OCIResult.err(OCIError.IOError("Failed to read blob: ${e.message}", e))
+        return KociResult.err(KociError.IOError("Failed to read blob: ${e.message}", e))
       }
 
     if (digest != descriptor.digest) {
       logger.e { "Digest mismatch for ${descriptor.digest}: computed $digest" }
-      return OCIResult.err(OCIError.DigestMismatch(descriptor, digest))
+      return KociResult.err(KociError.DigestMismatch(descriptor, digest))
     }
 
     logger.d { "Blob exists and verified: ${descriptor.digest}" }
-    return OCIResult.ok(true)
+    return KociResult.ok(true)
   }
 
   /**
@@ -175,7 +175,7 @@ private constructor(
    *
    * @param reference The reference to remove
    */
-  suspend fun remove(reference: Reference): OCIResult<Boolean> {
+  suspend fun remove(reference: Reference): KociResult<Boolean> {
     logger.d { "Removing reference: $reference" }
     return resolve(reference).flatMap { descriptor -> remove(descriptor) }
   }
@@ -192,7 +192,7 @@ private constructor(
   // TODO: ensure removals do not impact other images through unit tests
   @OptIn(ExperimentalSerializationApi::class)
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  suspend fun remove(descriptor: Descriptor): OCIResult<Boolean> {
+  suspend fun remove(descriptor: Descriptor): KociResult<Boolean> {
     logger.d { "Removing descriptor: ${descriptor.digest}" }
     val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
@@ -204,7 +204,7 @@ private constructor(
 
         if (!fileSystem.exists(path)) {
           logger.d { "Descriptor not found, nothing to remove: ${descriptor.digest}" }
-          return OCIResult.ok(false)
+          return KociResult.ok(false)
         }
 
         return when (descriptor.mediaType) {
@@ -222,7 +222,7 @@ private constructor(
             fileSystem.delete(path)
             logger.d { "Removed index: ${descriptor.digest}" }
 
-            OCIResult.ok(true)
+            KociResult.ok(true)
           }
 
           MANIFEST_MEDIA_TYPE -> {
@@ -235,8 +235,8 @@ private constructor(
             val allOtherLayers = expand(manifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              return OCIResult.err(
-                OCIError.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+              return KociResult.err(
+                KociError.UnableToRemove(descriptor, "manifest is referenced by another artifact")
               )
             }
 
@@ -251,19 +251,19 @@ private constructor(
             fileSystem.delete(path)
             logger.d { "Removed manifest: ${descriptor.digest}" }
 
-            OCIResult.ok(true)
+            KociResult.ok(true)
           }
 
           else -> {
             fileSystem.delete(path)
             logger.d { "Removed blob: ${descriptor.digest}" }
-            OCIResult.ok(true)
+            KociResult.ok(true)
           }
         }
       }
     } catch (e: Exception) {
       logger.e(e) { "Failed to remove descriptor: ${descriptor.digest}" }
-      OCIResult.err(OCIError.IOError("Failed to remove descriptor: ${e.message}", e))
+      KociResult.err(KociError.IOError("Failed to remove descriptor: ${e.message}", e))
     } finally {
       val pair = removing[descriptor]
       if (pair != null) {
@@ -320,7 +320,7 @@ private constructor(
    * @param stream The input stream containing the content
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
+  fun push(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Int>> =
     transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
   /**
@@ -329,7 +329,7 @@ private constructor(
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
+  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Int>> =
     kotlinx.coroutines.flow.flow {
       logger.d { "Pushing to disk: ${descriptor.digest}" }
 
@@ -365,7 +365,7 @@ private constructor(
             while (source.read(buffer).also { bytesRead = it } != -1) {
               md.update(buffer, 0, bytesRead)
               sink.write(buffer, 0, bytesRead)
-              emit(OCIResult.ok(bytesRead))
+              emit(KociResult.ok(bytesRead))
             }
           }
         }
@@ -377,7 +377,7 @@ private constructor(
             "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
           }
           fileSystem.delete(stagingPath)
-          emit(OCIResult.err(OCIError.SizeMismatch(descriptor, length)))
+          emit(KociResult.err(KociError.SizeMismatch(descriptor, length)))
           return@flow
         }
 
@@ -387,7 +387,7 @@ private constructor(
         if (digest != descriptor.digest) {
           logger.e { "Digest mismatch pushing ${descriptor.digest}: computed $digest" }
           fileSystem.delete(stagingPath)
-          emit(OCIResult.err(OCIError.DigestMismatch(descriptor, digest)))
+          emit(KociResult.err(KociError.DigestMismatch(descriptor, digest)))
           return@flow
         }
 
@@ -408,14 +408,14 @@ private constructor(
 
         // Verify the final file (uses strict checking if enabled)
         when (val verifyResult = exists(descriptor)) {
-          is OCIResult.Ok -> {
+          is KociResult.Ok -> {
             if (!verifyResult.value) {
               logger.e { "Final verification failed: ${descriptor.digest} not found after move" }
-              emit(OCIResult.err(OCIError.Generic("File not found after finalization move")))
+              emit(KociResult.err(KociError.Generic("File not found after finalization move")))
               return@flow
             }
           }
-          is OCIResult.Err -> {
+          is KociResult.Err -> {
             logger.e { "Final verification failed for ${descriptor.digest}" }
             fileSystem.delete(finalPath)
             emit(verifyResult)
@@ -440,12 +440,12 @@ private constructor(
    *
    * @param predicate Function that returns true for the desired descriptor
    */
-  fun resolve(predicate: (Descriptor) -> Boolean): OCIResult<Descriptor> {
+  fun resolve(predicate: (Descriptor) -> Boolean): KociResult<Descriptor> {
     val descriptor = index.manifests.firstOrNull { predicate(it) }
     return if (descriptor != null) {
-      OCIResult.ok(descriptor)
+      KociResult.ok(descriptor)
     } else {
-      OCIResult.err(OCIError.DescriptorNotFound("No descriptor matched the predicate"))
+      KociResult.err(KociError.DescriptorNotFound("No descriptor matched the predicate"))
     }
   }
 
@@ -461,7 +461,7 @@ private constructor(
   fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): OCIResult<Descriptor> {
+  ): KociResult<Descriptor> {
     return resolve { desc ->
         val refMatches = desc.annotations?.annotationRefName == reference.toString()
         val platformMatches =
@@ -472,7 +472,7 @@ private constructor(
           }
         refMatches && platformMatches
       }
-      .mapErr { OCIError.DescriptorNotFound("Reference not found: $reference") }
+      .mapErr { KociError.DescriptorNotFound("Reference not found: $reference") }
   }
 
   /**
@@ -488,20 +488,20 @@ private constructor(
   //
   // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
-  fun tag(descriptor: Descriptor, reference: Reference): OCIResult<Unit> {
+  fun tag(descriptor: Descriptor, reference: Reference): KociResult<Unit> {
     if (descriptor.mediaType.isEmpty()) {
-      return OCIResult.err(OCIError.Generic("Descriptor mediaType cannot be empty"))
+      return KociResult.err(KociError.Generic("Descriptor mediaType cannot be empty"))
     }
     if (descriptor.mediaType != MANIFEST_MEDIA_TYPE && descriptor.mediaType != INDEX_MEDIA_TYPE) {
-      return OCIResult.err(
-        OCIError.UnsupportedManifest(
+      return KociResult.err(
+        KociError.UnsupportedManifest(
           descriptor.mediaType,
           "Only manifests and indexes can be tagged",
         )
       )
     }
     if (descriptor.size <= 0) {
-      return OCIResult.err(OCIError.Generic("Descriptor size must be greater than 0"))
+      return KociResult.err(KociError.Generic("Descriptor size must be greater than 0"))
     }
 
     return try {
@@ -527,9 +527,9 @@ private constructor(
 
       index.manifests.add(copy)
       syncIndex()
-      OCIResult.ok(Unit)
+      KociResult.ok(Unit)
     } catch (e: Exception) {
-      OCIResult.err(OCIError.IOError("Failed to tag descriptor: ${e.message}", e))
+      KociResult.err(KociError.IOError("Failed to tag descriptor: ${e.message}", e))
     }
   }
 
@@ -548,7 +548,7 @@ private constructor(
    *
    * @return Ok with number of files cleaned up, or Err if cleanup fails
    */
-  private fun cleanStaging(): OCIResult<Int> {
+  private fun cleanStaging(): KociResult<Int> {
     return try {
       var cleaned = 0
       listOf("sha256", "sha512").forEach { algorithm ->
@@ -566,10 +566,10 @@ private constructor(
         }
       }
       logger.d { "Cleaned $cleaned staging files" }
-      OCIResult.ok(cleaned)
+      KociResult.ok(cleaned)
     } catch (e: Exception) {
       logger.e(e) { "Failed to clean staging directory" }
-      OCIResult.err(OCIError.IOError("Failed to clean staging: ${e.message}", e))
+      KociResult.err(KociError.IOError("Failed to clean staging: ${e.message}", e))
     }
   }
 
@@ -585,9 +585,9 @@ private constructor(
    * @throws OCIException.Generic if downloads are in progress - GC should not run while
    *   interrupted.
    */
-  fun gc(): OCIResult<List<Digest>> {
+  fun gc(): KociResult<List<Digest>> {
     if (transferCoordinator.activeTransfers() > 0) {
-      return OCIResult.err(OCIError.Generic("Cannot run GC: downloads are in progress"))
+      return KociResult.err(KociError.Generic("Cannot run GC: downloads are in progress"))
     }
 
     // Clean up staging first
@@ -618,9 +618,9 @@ private constructor(
             val path = "$blobsPath/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
             runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
           }
-      OCIResult.ok(removed)
+      KociResult.ok(removed)
     } catch (e: Exception) {
-      OCIResult.err(OCIError.IOError("Failed to run GC: ${e.message}", e))
+      KociResult.err(KociError.IOError("Failed to run GC: ${e.message}", e))
     }
   }
 
@@ -649,7 +649,7 @@ private constructor(
       stagingPath: String = "$rootPath/staging",
       strictChecking: Boolean = true,
       logLevel: KociLogLevel = KociLogLevel.DEBUG,
-    ): OCIResult<Layout> {
+    ): KociResult<Layout> {
       val logger = createKociLogger(logLevel, "Layout")
 
       val fs = FileSystem.SYSTEM
@@ -663,12 +663,12 @@ private constructor(
           logger.d("Creating root directory at $rootPath")
           fs.createDirectories(rootDir)
         } catch (e: IOException) {
-          return OCIResult.err(OCIError.IOError("Failed to create root directory: ${e.message}", e))
+          return KociResult.err(KociError.IOError("Failed to create root directory: ${e.message}", e))
         }
       } else {
         if (!fs.metadata(rootDir).isDirectory) {
-          return OCIResult.err(
-            OCIError.InvalidLayout(rootPath, "Path exists but is not a directory")
+          return KociResult.err(
+            KociError.InvalidLayout(rootPath, "Path exists but is not a directory")
           )
         }
       }
@@ -681,7 +681,7 @@ private constructor(
             writeUtf8(Json.encodeToString(LayoutMarker(LAYOUT_VERSION)))
           }
         } catch (e: Exception) {
-          return OCIResult.err(OCIError.IOError("Failed to write layout file: ${e.message}", e))
+          return KociResult.err(KociError.IOError("Failed to write layout file: ${e.message}", e))
         }
       }
 
@@ -700,7 +700,7 @@ private constructor(
             }
           }
         } catch (e: Exception) {
-          return OCIResult.err(OCIError.IOError("Failed to read index: ${e.message}", e))
+          return KociResult.err(KociError.IOError("Failed to read index: ${e.message}", e))
         }
 
       // Create blob storage directories
@@ -710,7 +710,7 @@ private constructor(
           fs.createDirectories("$blobsPath/$algorithm".toPath())
         }
       } catch (e: Exception) {
-        return OCIResult.err(OCIError.IOError("Failed to create blob directories: ${e.message}", e))
+        return KociResult.err(KociError.IOError("Failed to create blob directories: ${e.message}", e))
       }
 
       // Create directory for staging operations
@@ -718,7 +718,7 @@ private constructor(
         logger.d("Creating staging directory at $stagingPath")
         fs.createDirectories(stagingPath.toPath())
       } catch (e: Exception) {
-        return OCIResult.err(OCIError.IOError("Failed to create temp directory: ${e.message}", e))
+        return KociResult.err(KociError.IOError("Failed to create temp directory: ${e.message}", e))
       }
 
       logger.d { "Layout created" }
@@ -735,7 +735,7 @@ private constructor(
             TransferCoordinator(createKociLogger(logLevel, "LayoutTransferCoordinator")),
         )
 
-      return OCIResult.ok(layout)
+      return KociResult.ok(layout)
     }
   }
 }

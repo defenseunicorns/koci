@@ -16,7 +16,7 @@ fun createKociLogger(logLevel: KociLogLevel, tag: String) =
     config =
       loggerConfigInit(
         platformLogWriter(messageStringFormatter = DefaultFormatter),
-        minSeverity = Severity.Warn,
+        minSeverity = logLevel.logLevelToSeverity(),
       ),
     tag = "Koci$tag",
   )

@@ -9,8 +9,8 @@ import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.auth.appendScopes
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import com.defenseunicorns.koci.models.linkHeaderRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -42,16 +42,16 @@ class RegistryExtensions(private val client: HttpClient, private val router: Rou
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Repositories</a>
    */
-  suspend fun catalog(): OCIResult<CatalogResponse> {
+  suspend fun catalog(): KociResult<CatalogResponse> {
     return try {
       val response =
         client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
       if (!response.status.isSuccess()) {
         return parseHTTPError(response)
       }
-      OCIResult.ok(Json.decodeFromString(response.body()))
+      KociResult.ok(Json.decodeFromString(response.body()))
     } catch (e: Exception) {
-      OCIResult.err(OCIError.IOError("Failed to fetch catalog: ${e.message}", e))
+      KociResult.err(KociError.IOError("Failed to fetch catalog: ${e.message}", e))
     }
   }
 

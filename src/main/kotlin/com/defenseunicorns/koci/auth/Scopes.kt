@@ -5,7 +5,8 @@
 
 package com.defenseunicorns.koci.auth
 
-import io.ktor.util.*
+import io.ktor.util.AttributeKey
+import io.ktor.util.Attributes
 import java.util.TreeSet
 
 /**

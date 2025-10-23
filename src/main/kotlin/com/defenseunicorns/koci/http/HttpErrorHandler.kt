@@ -6,8 +6,8 @@
 package com.defenseunicorns.koci.http
 
 import com.defenseunicorns.koci.models.errors.FailureResponse
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
 import io.ktor.client.statement.HttpResponse
@@ -23,18 +23,18 @@ import io.ktor.http.contentType
  * @param response The HTTP response with an error status code
  * @return OCIResult.Err containing the parsed error
  */
-suspend fun <T> parseHTTPError(response: HttpResponse): OCIResult<T> {
+suspend fun <T> parseHTTPError(response: HttpResponse): KociResult<T> {
   // Try to parse OCI-compliant error response
   if (response.contentType() == ContentType.Application.Json) {
     try {
       val failureResponse: FailureResponse = response.body()
       failureResponse.status = response.status
-      return OCIResult.err(OCIError.FromResponse(failureResponse))
+      return KociResult.err(KociError.FromResponse(failureResponse))
     } catch (_: NoTransformationFoundException) {
       // Fall through to generic error
     }
   }
 
   // Generic HTTP error
-  return OCIResult.err(OCIError.HTTPError(response.status.value, response.status.description))
+  return KociResult.err(KociError.HTTPError(response.status.value, response.status.description))
 }

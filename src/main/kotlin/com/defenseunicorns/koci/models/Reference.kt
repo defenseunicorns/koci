@@ -6,8 +6,8 @@
 package com.defenseunicorns.koci.models
 
 import com.defenseunicorns.koci.models.content.Digest
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import io.ktor.http.Url
 import io.ktor.http.hostWithPort
 import java.net.URI
@@ -63,17 +63,17 @@ data class Reference(val registry: String, val repository: String, val reference
    *
    * @return OCIResult.Ok if valid, OCIResult.Err with specific error type if invalid
    */
-  fun validate(): OCIResult<Boolean> {
+  fun validate(): KociResult<Boolean> {
     // Validate registry
     if (registry.isBlank()) {
-      return OCIResult.err(OCIError.InvalidRegistry(registry, "Registry cannot be empty"))
+      return KociResult.err(KociError.InvalidRegistry(registry, "Registry cannot be empty"))
     }
 
     val uri =
       try {
         URI("koci://$registry")
       } catch (e: Exception) {
-        return OCIResult.err(OCIError.InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
+        return KociResult.err(KociError.InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
       }
 
     val hostWithPort =
@@ -83,8 +83,8 @@ data class Reference(val registry: String, val repository: String, val reference
       }
 
     if (hostWithPort != registry) {
-      return OCIResult.err(
-        OCIError.InvalidRegistry(
+      return KociResult.err(
+        KociError.InvalidRegistry(
           registry,
           "Registry must be a valid hostname with optional port (e.g., 'registry.example.com:5000')",
         )
@@ -93,8 +93,8 @@ data class Reference(val registry: String, val repository: String, val reference
 
     // Validate repository
     if (repositoryRegex.matchEntire(repository) == null) {
-      return OCIResult.err(
-        OCIError.InvalidRepository(
+      return KociResult.err(
+        KociError.InvalidRepository(
           repository,
           "Repository must contain only lowercase alphanumeric characters, separators (._-), and optional path components separated by /",
         )
@@ -103,12 +103,12 @@ data class Reference(val registry: String, val repository: String, val reference
 
     // Validate reference (tag or digest)
     if (reference.isBlank()) {
-      return OCIResult.ok(true)
+      return KociResult.ok(true)
     }
 
     // Check if it's a valid tag
     if (tagRegex.matchEntire(reference) != null) {
-      return OCIResult.ok(true)
+      return KociResult.ok(true)
     }
 
     // Check if it's a valid digest
@@ -169,15 +169,15 @@ data class Reference(val registry: String, val repository: String, val reference
      *
      * @param artifact String representation of the artifact reference
      */
-    fun parse(artifact: String): OCIResult<Reference> {
+    fun parse(artifact: String): KociResult<Reference> {
       if (artifact.isBlank()) {
-        return OCIResult.err(OCIError.InvalidRegistry("", "Reference string cannot be empty"))
+        return KociResult.err(KociError.InvalidRegistry("", "Reference string cannot be empty"))
       }
 
       val reg = artifact.substringBefore("/", "")
       if (reg.isEmpty()) {
-        return OCIResult.err(
-          OCIError.InvalidRegistry(
+        return KociResult.err(
+          KociError.InvalidRegistry(
             "",
             "Reference must include registry (e.g., 'registry.example.com/repo:tag')",
           )
@@ -186,8 +186,8 @@ data class Reference(val registry: String, val repository: String, val reference
 
       val repoAndRef = artifact.substringAfter("/", "")
       if (repoAndRef.isEmpty()) {
-        return OCIResult.err(
-          OCIError.InvalidRepository(
+        return KociResult.err(
+          KociError.InvalidRepository(
             "",
             "Reference must include repository after registry (e.g., 'registry.example.com/repo:tag')",
           )

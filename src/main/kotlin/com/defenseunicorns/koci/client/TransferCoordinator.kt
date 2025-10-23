@@ -7,8 +7,8 @@ package com.defenseunicorns.koci.client
 
 import co.touchlab.kermit.Logger
 import com.defenseunicorns.koci.models.content.Descriptor
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -46,8 +46,8 @@ internal class TransferCoordinator(private val logger: Logger) {
    */
   fun transfer(
     descriptor: Descriptor,
-    transfer: suspend () -> Flow<OCIResult<Int>>,
-  ): Flow<OCIResult<Int>> = flow {
+    transfer: suspend () -> Flow<KociResult<Int>>,
+  ): Flow<KociResult<Int>> = flow {
     // Check if already transferring or claim the transfer
     val (state, shouldTransfer) =
       mutex.withLock {
@@ -67,8 +67,8 @@ internal class TransferCoordinator(private val logger: Logger) {
 
           transfer().collect { result ->
             when (result) {
-              is OCIResult.Ok -> emit(result)
-              is OCIResult.Err -> {
+              is KociResult.Ok -> emit(result)
+              is KociResult.Err -> {
                 hasError = true
                 emit(result)
               }
@@ -97,7 +97,7 @@ internal class TransferCoordinator(private val logger: Logger) {
         // Check the result
         if (!state.succeeded) {
           logger.e { "Transfer failed: ${descriptor.digest}" }
-          emit(OCIResult.err(OCIError.TransferFailed(descriptor)))
+          emit(KociResult.err(KociError.TransferFailed(descriptor)))
         }
       }
     } finally {

@@ -12,8 +12,8 @@ import io.ktor.http.HttpStatusCode
  * Exception types for OCI operations that should fail-fast.
  *
  * These exceptions are used in infrastructure/middleware layers (like Auth) where throwing is
- * appropriate. For domain-level errors that should be handled explicitly, use [OCIError] and
- * [OCIResult] instead.
+ * appropriate. For domain-level errors that should be handled explicitly, use [KociError] and
+ * [KociResult] instead.
  */
 sealed class OCIException(message: String, cause: Throwable? = null) : Exception(message, cause) {
 

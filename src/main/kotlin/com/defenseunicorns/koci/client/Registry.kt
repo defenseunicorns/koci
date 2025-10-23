@@ -13,8 +13,8 @@ import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
 import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.content.Platform
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -90,15 +90,15 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support">OCI
    *   Distribution Spec: API Version Check</a>
    */
-  suspend fun ping(): OCIResult<Boolean> {
+  suspend fun ping(): KociResult<Boolean> {
     return try {
       val response = client.get(router.base())
       if (!response.status.isSuccess()) {
         return parseHTTPError(response)
       }
-      OCIResult.ok(true)
+      KociResult.ok(true)
     } catch (e: Exception) {
-      OCIResult.err(OCIError.IOError("Network error: ${e.message}", e))
+      KociResult.err(KociError.IOError("Network error: ${e.message}", e))
     }
   }
 
@@ -187,7 +187,7 @@ internal constructor(
    * @param n Number of repositories to return per page in the catalog request
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun list(n: Int = 1000): Flow<OCIResult<TagsResponse>> =
+  fun list(n: Int = 1000): Flow<KociResult<TagsResponse>> =
     extensions
       .catalog(n)
       .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }

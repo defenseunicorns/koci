@@ -5,8 +5,8 @@
 
 package com.defenseunicorns.koci.models.content
 
-import com.defenseunicorns.koci.models.errors.OCIError
-import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.errors.KociError
+import com.defenseunicorns.koci.models.errors.KociResult
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -141,12 +141,12 @@ data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
      * @param content The digest string to validate (e.g., "sha256:abc123...")
      * @return OCIResult.Ok if valid, OCIResult.Err with specific error if invalid
      */
-    fun validate(content: String): OCIResult<Boolean> {
+    fun validate(content: String): KociResult<Boolean> {
       val algo = content.substringBefore(":", "")
 
       if (algo.isEmpty()) {
-        return OCIResult.err(
-          OCIError.InvalidDigest(
+        return KociResult.err(
+          KociError.InvalidDigest(
             content,
             "Digest must be in format 'algorithm:hex' (e.g., 'sha256:abc123...')",
           )
@@ -165,27 +165,27 @@ data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
 
           when {
             hex.length != expectedLength -> {
-              OCIResult.err(
-                OCIError.InvalidDigest(
+              KociResult.err(
+                KociError.InvalidDigest(
                   content,
                   "$algo digest must have exactly $expectedLength hex characters, got ${hex.length}",
                 )
               )
             }
             !hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } -> {
-              OCIResult.err(
-                OCIError.InvalidDigest(
+              KociResult.err(
+                KociError.InvalidDigest(
                   content,
                   "Digest hex value must contain only hexadecimal characters (0-9, a-f, A-F)",
                 )
               )
             }
-            else -> OCIResult.ok(true)
+            else -> KociResult.ok(true)
           }
         }
         else ->
-          OCIResult.err(
-            OCIError.InvalidDigest(
+          KociResult.err(
+            KociError.InvalidDigest(
               content,
               "Algorithm '$algo' is not supported. Must be one of: sha256, sha512",
             )

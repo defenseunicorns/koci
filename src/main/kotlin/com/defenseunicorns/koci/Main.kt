@@ -10,6 +10,7 @@ import com.defenseunicorns.koci.client.Registry
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
+@Suppress("detekt")
 fun main() {
   val layout = Layout.create(rootPath = "/Users/landon/projects/koci/testing").getOrNull()!!
   val registry = Registry.create(registryUrl = "https://192.168.3.240:5000")

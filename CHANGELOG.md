@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 (2025-10-23)
+
+## What's Changed
+* chore: gitignore updates by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/138
+* chore: added spotless linting by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/139
+* chore: detekt updates by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/140
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.4.2...v0.4.3
+
 ## 0.4.2 (2025-08-28)
 
 ## What's Changed

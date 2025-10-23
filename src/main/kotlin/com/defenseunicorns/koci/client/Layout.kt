@@ -304,37 +304,28 @@ private constructor(
           val path = blob(descriptor)
           val md = descriptor.digest.algorithm.hasher()
           
-          // If resuming a download, start calculating the SHA from the data on disk
-          //
-          // it is up to the caller to properly resume the stream at the proper location,
+          // If resuming a download, hash the existing file data first
+          // It is up to the caller to properly resume the stream at the proper location,
           // otherwise a DigestMismatch will occur
           if (fileSystem.exists(path)) {
-            fileSystem.source(path).use { source ->
-              val hashingSource =
-                when (descriptor.digest.algorithm) {
-                  RegisteredAlgorithm.SHA256 -> sha256(source)
-                  RegisteredAlgorithm.SHA512 -> sha512(source)
-                }
-              hashingSource.buffer().readAll(blackholeSink())
-              md.update(hashingSource.hash.toByteArray())
+            fileSystem.source(path).buffer().use { source ->
+              val buffer = ByteArray(BUFFER_SIZE)
+              var bytesRead: Int
+              while (source.read(buffer).also { bytesRead = it } != -1) {
+                md.update(buffer, 0, bytesRead)
+              }
             }
           }
 
-          // Use HashingSink to hash while writing
-          val baseSink = fileSystem.appendingSink(path).buffer()
-          val hashingSink =
-            when (descriptor.digest.algorithm) {
-              RegisteredAlgorithm.SHA256 -> sha256Sink(baseSink)
-              RegisteredAlgorithm.SHA512 -> sha512Sink(baseSink)
-            }
-          
-          hashingSink.buffer().use { sink ->
+          // Stream new data, hashing as we write
+          fileSystem.appendingSink(path).buffer().use { sink ->
             stream.source().buffer().use { source ->
-              val buffer = okio.Buffer()
-              var bytesRead: Long
-              while (source.read(buffer, 4 * 1024).also { bytesRead = it } != -1L) {
-                sink.write(buffer, bytesRead)
-                send(bytesRead.toInt())
+              val buffer = ByteArray(BUFFER_SIZE)
+              var bytesRead: Int
+              while (source.read(buffer).also { bytesRead = it } != -1) {
+                md.update(buffer, 0, bytesRead)
+                sink.write(buffer, 0, bytesRead)
+                send(bytesRead)
               }
             }
           }
@@ -346,8 +337,6 @@ private constructor(
             return@channelFlow
           }
 
-          // Combine existing file hash with new data hash
-          md.update(hashingSink.hash.toByteArray())
           val digest = Digest(descriptor.digest.algorithm, md.digest())
 
           if (digest != descriptor.digest) {
@@ -530,6 +519,7 @@ private constructor(
   }
 
   companion object {
+    private const val BUFFER_SIZE = 32 * 1024
     /** LAYOUT_VERSION is the version of the OCI Image Layout */
     const val LAYOUT_VERSION = "1.0.0"
 

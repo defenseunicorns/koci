@@ -65,7 +65,7 @@ internal class TransferCoordinator(private val logger: Logger) {
 
     try {
       if (shouldTransfer) {
-        logger.d { "Transferring $descriptor" }
+        logger.d { "Transferring: ${descriptor.digest}" }
         // We're the one transferring - execute the transfer
         try {
           var hasError = false
@@ -82,14 +82,14 @@ internal class TransferCoordinator(private val logger: Logger) {
 
           // Mark transfer complete
           mutex.withLock {
-            logger.d { "Transfer complete for $descriptor" }
+            logger.d { "Transfer complete: ${descriptor.digest}" }
             state.succeeded = !hasError
             state.completion.complete(Unit)
           }
         } catch (e: Exception) {
           // Mark transfer failed
           mutex.withLock {
-            logger.e { "Transfer failed for $descriptor: ${e.message}" }
+            logger.e(e) { "Transfer failed: ${descriptor.digest}" }
             state.succeeded = false
             state.completion.complete(Unit)
           }
@@ -97,12 +97,12 @@ internal class TransferCoordinator(private val logger: Logger) {
         }
       } else {
         // Someone else is transferring (or already finished) - wait if needed
-        logger.d { "Waiting for transfer of $descriptor to complete" }
+        logger.d { "Waiting for transfer to complete: ${descriptor.digest}" }
         state.completion.await()
 
         // Check the result
         if (!state.succeeded) {
-          logger.e { "Transfer failed for $descriptor" }
+          logger.e { "Transfer failed: ${descriptor.digest}" }
           emit(OCIResult.err(OCIError.TransferFailed(descriptor)))
         }
       }
@@ -111,7 +111,7 @@ internal class TransferCoordinator(private val logger: Logger) {
       mutex.withLock {
         val count = state.refCount.decrementAndGet()
         if (count <= 0) {
-          logger.d { "Removing $descriptor from progress tracking" }
+          logger.d { "Removing from progress tracking: ${descriptor.digest}" }
           inProgress.remove(key, state)
         }
       }

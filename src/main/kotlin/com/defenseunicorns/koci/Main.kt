@@ -18,7 +18,6 @@ fun main() {
   runBlocking {
     registry.list().first().getOrNull()?.let {
       launch { registry.pull(it.name, it.tags.first(), layout).collect { q -> println(q) } }
-//      launch { registry.pull(it.name, it.tags.first(), layout).collect { q -> println(q) } }
     }
   }
 }

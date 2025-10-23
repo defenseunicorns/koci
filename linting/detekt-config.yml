@@ -1,0 +1,225 @@
+config:
+  validation: true
+processors:
+  active: true
+  exclude:
+    - DetektProgressListener
+console-reports:
+  active: true
+comments:
+  active: true
+  AbsentOrWrongFileLicense:
+    active: false
+    licenseTemplateFile: license.template
+    licenseTemplateIsRegex: false
+  CommentOverPrivateFunction:
+    active: false
+  CommentOverPrivateProperty:
+    active: false
+  DeprecatedBlockTag:
+    active: false
+  EndOfSentenceFormat:
+    active: false
+    endOfSentenceFormat: ([.?!][ \t\n\r\f<])|([.?!:]$)
+  KDocReferencesNonPublicProperty:
+    active: false
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+  OutdatedDocumentation:
+    active: false
+    matchTypeParameters: true
+    matchDeclarationsOrder: true
+    allowParamOnConstructorProperties: false
+  UndocumentedPublicClass:
+    active: false
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+    searchInNestedClass: true
+    searchInInnerClass: true
+    searchInInnerObject: true
+    searchInInnerInterface: true
+    searchInProtectedClass: false
+  UndocumentedPublicFunction:
+    active: false
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+    searchProtectedFunction: false
+  UndocumentedPublicProperty:
+    active: false
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+    searchProtectedProperty: false
+complexity:
+  active: true
+  NamedArguments:
+    active: true
+  TooManyFunctions:
+    active: false
+coroutines:
+  active: true
+  GlobalCoroutineUsage:
+    active: true
+  SuspendFunSwallowedCancellation:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+exceptions:
+  active: true
+  ErrorUsageWithThrowable:
+    active: true
+  InstanceOfCheckForException:
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+  NotImplementedDeclaration:
+    active: true
+  ObjectExtendsThrowable:
+    active: true
+  ThrowingExceptionsWithoutMessageOrCause:
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+  TooGenericExceptionCaught:
+    active: false
+  TooGenericExceptionThrown:
+    active: false
+naming:
+  active: true
+  BooleanPropertyNaming:
+    active: true
+    allowedPattern: ^(is|has|are)
+  FunctionNaming:
+    active: false
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+  FunctionParameterNaming:
+    active: true
+    parameterPattern: '[a-z][A-Za-z0-9]*'
+  LambdaParameterNaming:
+    active: true
+  NonBooleanPropertyPrefixedWithIs:
+    active: true
+performance:
+  CouldBeSequence:
+    active: true
+    allowedOperations: 3
+  ForEachOnRange:
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+  SpreadOperator:
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+potential-bugs:
+  active: true
+  PropertyUsedBeforeDeclaration:
+    active: true
+  UnsafeCallOnNullableType:
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+style:
+  active: true
+  ForbiddenComment:
+    active: false
+  MaxLineLength:
+    active: false
+    maxLineLength: 120
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: false
+    excludeRawStrings: true
+  NewLineAtEndOfFile:
+    active: false
+  RangeUntilInsteadOfRangeTo:
+    active: true
+  ReturnCount:
+    active: false
+    max: 2
+    excludedFunctions:
+      - equals
+    excludeLabeled: false
+    excludeReturnFromLambda: true
+    excludeGuardClauses: false
+  SpacingAfterPackageDeclaration:
+    active: true
+  UnusedPrivateProperty:
+    active: false
+    allowedNames: _|ignored|expected|serialVersionUID
+  WildcardImport:
+    active: true
+    excludeImports:
+      - java.util.*
+  MandatoryBracesLoops:
+    active: true

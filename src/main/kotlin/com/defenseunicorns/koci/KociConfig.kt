@@ -10,12 +10,13 @@ import co.touchlab.kermit.Severity
 class KociConfig
 private constructor(
   val logLevel: Severity,
+  val rootPath: String,
   val blobsPath: String,
   val stagingPath: String,
   val strictChecking: Boolean,
 ) {
 
-  class KociConfigBuilder(private val rootPath: String) {
+  class KociConfigBuilder(val rootPath: String) {
     var logLevel: Severity = Severity.Debug
     var blobsPath: String? = null
     var stagingPath: String? = null
@@ -58,10 +59,11 @@ private constructor(
 
     fun build(): KociConfig {
       return KociConfig(
-        logLevel,
-        blobsPath ?: "$rootPath/$IMAGE_BLOBS_DIR",
-        stagingPath ?: "$rootPath/$STAGING_DIR",
-        strictChecking,
+        logLevel = logLevel,
+        rootPath = rootPath,
+        blobsPath = blobsPath ?: "$rootPath/$IMAGE_BLOBS_DIR",
+        stagingPath = stagingPath ?: "$rootPath/$STAGING_DIR",
+        strictChecking = strictChecking,
       )
     }
   }

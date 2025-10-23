@@ -5,11 +5,11 @@
 
 package com.defenseunicorns.koci.client
 
-import co.touchlab.kermit.Logger
+import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Reference
-import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
+import com.defenseunicorns.koci.models.annotationRefName
 import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.content.Index
@@ -17,7 +17,6 @@ import com.defenseunicorns.koci.models.content.LayoutMarker
 import com.defenseunicorns.koci.models.content.Manifest
 import com.defenseunicorns.koci.models.content.Platform
 import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
-import com.defenseunicorns.koci.models.annotationRefName
 import com.defenseunicorns.koci.models.errors.OCIError
 import com.defenseunicorns.koci.models.errors.OCIException
 import com.defenseunicorns.koci.models.errors.OCIResult
@@ -57,9 +56,11 @@ import okio.buffer
 @Suppress("detekt:TooManyFunctions")
 class Layout
 private constructor(
-  internal val index: Index,
+  private val index: Index,
   private val root: String,
   private val blobsPath: String,
+  private val stagingPath: String,
+  private val strictChecking: Boolean,
 ) {
   internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
   private val fileSystem = FileSystem.SYSTEM
@@ -503,63 +504,34 @@ private constructor(
     }
   }
 
-  /**
-   * Builder for creating a Layout with fine-grained control over initialization.
-   *
-   * Example usage:
-   * ```
-   * val layout = Layout.builder("/path/to/layout")
-   *   .loadExistingIndex(true)
-   *   .createLayoutFile(true)
-   *   .blobsDirectory("/mnt/fast-storage/blobs")  // Optional: custom blob storage
-   *   .tempDirectory("/mnt/scratch/tmp")          // Optional: custom staging area
-   *   .build()
-   * ```
-   */
-  class LayoutBuilder internal constructor(private val indexPath: String) {
-    private var blobsDirectory: String? = null
-    private var logLevel: LogLevel = LogLevel.INFO
+  companion object {
+    /** LAYOUT_VERSION is the version of the OCI Image Layout */
+    const val LAYOUT_VERSION = "1.0.0"
+
+    /** IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image Layout */
+    const val IMAGE_LAYOUT_FILE = "oci-layout"
 
     /**
-     * Sets whether to load an existing index.json file if present.
-     *
-     * @param load If true, loads existing index. If false, starts with empty index. Default: true
+     * IMAGE_INDEX_FILE is the file name of the entry point for references and descriptors in an OCI
+     * Image Layout
      */
-    fun loadExistingIndex(load: Boolean) = apply { this.loadExistingIndex = load }
-
-    /**
-     * Sets an initial index to use instead of loading from disk.
-     *
-     * @param index The index to use. If set, overrides loadExistingIndex behavior.
-     */
-    fun withIndex(index: Index) = apply { this.initialIndex = index }
-
-    /**
-     * Sets whether to create the oci-layout file if missing.
-     *
-     * @param create If true, creates the layout marker file. Default: true
-     */
-    fun createLayoutFile(create: Boolean) = apply { this.createLayoutFile = create }
-
-    /**
-     * Sets a custom directory for blob storage.
-     *
-     * @param directory Absolute path to the blob directory. If null, defaults to `$root/blobs`.
-     *   The directory will be created if it doesn't exist.
-     */
-    fun blobsDirectory(directory: String?) = apply { this.blobsDirectory = directory }
+    const val IMAGE_INDEX_FILE = "index.json"
 
     /**
      * Builds the Layout with the configured options.
      *
      * @return OCIResult containing the Layout or an error
      */
-    fun build(): OCIResult<Layout> {
-      Logger.i {"yo"}
+    fun create(
+      rootPath: String,
+      blobsPath: String,
+      stagingPath: String,
+      strictChecking: Boolean,
+    ): OCIResult<Layout> {
       val fs = FileSystem.SYSTEM
-      val rootDir = indexPath.toPath()
-      val indexLocation = "$indexPath/$IMAGE_INDEX_FILE".toPath()
-      val layoutFileLocation = "$indexPath/$IMAGE_LAYOUT_FILE".toPath()
+      val rootDir = rootPath.toPath()
+      val indexLocation = "$rootPath/$IMAGE_INDEX_FILE".toPath()
+      val layoutFileLocation = "$rootPath/$IMAGE_LAYOUT_FILE".toPath()
 
       // Handle root directory creation
       if (!fs.exists(rootDir)) {
@@ -570,12 +542,14 @@ private constructor(
         }
       } else {
         if (!fs.metadata(rootDir).isDirectory) {
-          return OCIResult.err(OCIError.InvalidLayout(indexPath, "Path exists but is not a directory"))
+          return OCIResult.err(
+            OCIError.InvalidLayout(rootPath, "Path exists but is not a directory")
+          )
         }
       }
 
       // Handle oci-layout file
-      if (createLayoutFile && !fs.exists(layoutFileLocation)) {
+      if (!fs.exists(layoutFileLocation)) {
         try {
           fs.write(layoutFileLocation) {
             writeUtf8(Json.encodeToString(LayoutMarker(LAYOUT_VERSION)))
@@ -589,10 +563,7 @@ private constructor(
       val index =
         try {
           when {
-            // Compiler is not smart casting this, but it is not null
-            initialIndex != null -> initialIndex!!
-            loadExistingIndex && fs.exists(indexLocation) ->
-              fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
+            fs.exists(indexLocation) -> fs.read(indexLocation) { Json.decodeFromString(readUtf8()) }
             else -> Index()
           }
         } catch (e: Exception) {
@@ -600,7 +571,6 @@ private constructor(
         }
 
       // Create blob storage directories
-      val blobsPath = blobsDirectory ?: "$indexPath/$IMAGE_BLOBS_DIR"
       try {
         listOf("sha256", "sha512").forEach { algorithm ->
           fs.createDirectories("$blobsPath/$algorithm".toPath())
@@ -610,44 +580,21 @@ private constructor(
       }
 
       // Create directory for staging operations
-      val stagingPath = stagingImportDirectory ?: "$indexPath/staging"
       try {
         fs.createDirectories(stagingPath.toPath())
       } catch (e: Exception) {
         return OCIResult.err(OCIError.IOError("Failed to create temp directory: ${e.message}", e))
       }
 
-      return OCIResult.ok(Layout(index, indexPath, blobsPath))
+      return OCIResult.ok(
+        Layout(
+          index = index,
+          root = rootPath,
+          blobsPath = blobsPath,
+          stagingPath = stagingPath,
+          strictChecking = strictChecking,
+        )
+      )
     }
-  }
-
-  companion object {
-    /** LAYOUT_VERSION is the version of the OCI Image Layout */
-    const val LAYOUT_VERSION = "1.0.0"
-
-    /** IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image Layout */
-    const val IMAGE_LAYOUT_FILE = "oci-layout"
-
-    /**
-     * IMAGE_INDEX_FILE is the file name of the entry point for references and descriptors in an OCI
-     * Image Layout
-     */
-    const val IMAGE_INDEX_FILE = "index.json"
-    /**
-     * Creates a new Layout or opens an existing one at the specified path.
-     *
-     * If the directory doesn't exist, it will be created along with the necessary structure for an
-     * OCI Image Layout. If it exists, the existing layout will be loaded.
-     *
-     * @param root The root directory path for the layout
-     */
-    fun create(root: String): OCIResult<Layout> = builder(root).build()
-
-    /**
-     * Returns a builder for creating a Layout with a custom configuration.
-     *
-     * @param root The root directory path for the layout
-     */
-    fun builder(root: String): LayoutBuilder = LayoutBuilder(root)
   }
 }

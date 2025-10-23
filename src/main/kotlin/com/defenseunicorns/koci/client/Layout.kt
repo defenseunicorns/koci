@@ -5,6 +5,9 @@
 
 package com.defenseunicorns.koci.client
 
+import co.touchlab.kermit.Logger
+import com.defenseunicorns.koci.KociLogLevel
+import com.defenseunicorns.koci.createKociLogger
 import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
@@ -35,7 +38,6 @@ import okio.HashingSource.Companion.sha512
 import okio.IOException
 import okio.Path
 import okio.Path.Companion.toPath
-import okio.blackholeSink
 import okio.buffer
 import okio.source
 
@@ -63,6 +65,7 @@ private constructor(
   private val blobsPath: String,
   private val stagingPath: String,
   private val strictChecking: Boolean,
+  private val logger: Logger,
 ) {
   internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
   private val fileSystem = FileSystem.SYSTEM
@@ -531,11 +534,12 @@ private constructor(
      *
      * @return OCIResult containing the Layout or an error
      */
-    fun create(
+    internal fun create(
       rootPath: String,
       blobsPath: String,
       stagingPath: String,
       strictChecking: Boolean,
+      logLevel: KociLogLevel,
     ): OCIResult<Layout> {
       val fs = FileSystem.SYSTEM
       val rootDir = rootPath.toPath()
@@ -602,6 +606,7 @@ private constructor(
           blobsPath = blobsPath,
           stagingPath = stagingPath,
           strictChecking = strictChecking,
+          logger = createKociLogger(logLevel),
         )
       )
     }

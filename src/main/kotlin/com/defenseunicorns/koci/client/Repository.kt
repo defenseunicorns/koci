@@ -101,7 +101,7 @@ class Repository(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
-  private val coordinator: DownloadCoordinator = DownloadCoordinator(),
+  private val coordinator: TransferCoordinator = TransferCoordinator(),
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()

@@ -30,24 +30,9 @@ import kotlinx.coroutines.sync.withLock
  * @param T The type of progress value emitted (e.g., Int for bytes downloaded, Long for bytes
  *   uploaded)
  */
-internal class TransferCoordinator(
-  private val logger: Logger
-) {
-  private val inProgress = ConcurrentHashMap<Descriptor, TransferState>()
+internal class TransferCoordinator(private val logger: Logger) {
+  private val inProgress = ConcurrentHashMap<TransferKey, TransferState>()
   private val mutex = Mutex()
-
-  /**
-   * Represents the state of an in-progress transfer.
-   *
-   * @property completion Deferred that completes when transfer finishes (success or failure)
-   * @property succeeded Whether the transfer succeeded (true) or failed (false)
-   * @property claimed Whether someone has claimed this transfer (prevents duplicate downloads)
-   */
-  private data class TransferState(
-    val completion: CompletableDeferred<Unit> = CompletableDeferred(),
-    var succeeded: Boolean = false,
-    var claimed: Boolean = false,
-  )
 
   /**
    * Executes a transfer, coordinating with other concurrent transfers.
@@ -60,16 +45,17 @@ internal class TransferCoordinator(
    * @return Flow emitting progress updates or errors
    */
   fun transfer(
+    direction: TransferType,
     descriptor: Descriptor,
     transfer: suspend () -> Flow<OCIResult<Int>>,
   ): Flow<OCIResult<Int>> = flow {
     // Check if already transferring or claim the transfer
     val (state, shouldTransfer) =
       mutex.withLock {
-        val state = inProgress.getOrPut(descriptor) { TransferState() }
+        val state = inProgress.getOrPut(TransferKey(descriptor, direction)) { TransferState() }
         val shouldTransfer = !state.claimed && !state.completion.isCompleted
         if (shouldTransfer) {
-          state.claimed = true  // Claim it so others wait
+          state.claimed = true // Claim it so others wait
         }
         state to shouldTransfer
       }
@@ -110,7 +96,7 @@ internal class TransferCoordinator(
         delay(1000)
         mutex.withLock {
           logger.d { "Removing $descriptor from progress tracking" }
-          inProgress.remove(descriptor, state)
+          inProgress.remove(TransferKey(descriptor, direction), state)
         }
       }
     } else {
@@ -132,8 +118,8 @@ internal class TransferCoordinator(
    * @param descriptor The descriptor to check
    * @return true if transfer is in progress, false otherwise
    */
-  fun isTransferring(descriptor: Descriptor): Boolean {
-    return inProgress[descriptor]?.completion?.isCompleted == false
+  fun isTransferring(descriptor: Descriptor, transferType: TransferType): Boolean {
+    return inProgress[TransferKey(descriptor, transferType)]?.completion?.isCompleted == false
   }
 
   /**
@@ -143,5 +129,32 @@ internal class TransferCoordinator(
    */
   fun activeTransfers(): Int {
     return inProgress.count { !it.value.completion.isCompleted }
+  }
+
+  /**
+   * Represents the state of an in-progress transfer.
+   *
+   * @property completion Deferred that completes when transfer finishes (success or failure)
+   * @property succeeded Whether the transfer succeeded (true) or failed (false)
+   * @property claimed Whether someone has claimed this transfer (prevents duplicate downloads)
+   */
+  private data class TransferState(
+    val completion: CompletableDeferred<Unit> = CompletableDeferred(),
+    var succeeded: Boolean = false,
+    var claimed: Boolean = false,
+  )
+
+  /**
+   * Key used to identify a transfer in progress.
+   *
+   * @property descriptor The descriptor being transferred
+   * @property type The type of transfer
+   */
+  private data class TransferKey(val descriptor: Descriptor, val type: TransferType)
+
+  /** The type of transfer (download or upload). */
+  enum class TransferType {
+    Download,
+    Upload,
   }
 }

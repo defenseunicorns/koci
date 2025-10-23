@@ -1,4 +1,4 @@
-import io.gitlab.arturbosch.detekt.Detekt
+import dev.detekt.gradle.Detekt
 import java.net.URI
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
@@ -32,6 +32,8 @@ dependencies {
   implementation(libs.ktor.serialization.kotlinx.json)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.kotlinx.coroutines.core)
+
+  detektPlugins(libs.detekt.library.rules)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
@@ -79,15 +81,15 @@ spotless {
 }
 
 detekt {
-  toolVersion = libs.versions.detekt.get()
-  config.setFrom("$rootDir/detekt.yml")
+  buildUponDefaultConfig = true
+  config.setFrom("$rootDir/linting/detekt-config.yml")
+  baseline = file("$rootDir/linting/detekt-baseline.xml")
 }
 
 tasks.withType<Detekt> {
   reports {
     html.required.set(true)
-    xml.required.set(false)
-    txt.required.set(false)
+    sarif.required.set(true)
   }
 }
 

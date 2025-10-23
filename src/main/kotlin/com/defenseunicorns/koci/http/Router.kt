@@ -12,7 +12,7 @@ import java.net.URI
 /**
  * Constructs API endpoints for an OCI spec compliant registry.
  *
- * This class handles URL construction for all registry operations including:
+ * This class handles Url construction for all registry operations including:
  * - Repository listing and tag management
  * - Blob and manifest operations
  * - Upload session management
@@ -20,22 +20,22 @@ import java.net.URI
  *
  * All methods return fully constructed [Url] objects ready for use with HTTP clients.
  */
-class Router(registryURL: String) {
+class Router(registryUrl: String) {
 
-  private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments("v2/")
+  private val base: URLBuilder = URLBuilder().takeFrom(registryUrl).appendPathSegments("v2/")
 
-  /** Returns the base URL for the registry API (v2 endpoint). */
+  /** Returns the base Url for the registry API (v2 endpoint). */
   fun base(): Url {
     return base.build()
   }
 
-  /** Returns the URL for listing all repositories in the registry. */
+  /** Returns the Url for listing all repositories in the registry. */
   fun catalog(): Url {
     return base.clone().appendPathSegments("_catalog").build()
   }
 
   /**
-   * Returns the URL for listing repositories with pagination.
+   * Returns the Url for listing repositories with pagination.
    *
    * @param n Number of repositories to return
    * @param lastRepo Optional repository name to resume listing from
@@ -45,7 +45,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for listing all tags in a repository.
+   * Returns the Url for listing all tags in a repository.
    *
    * @param repository Repository name
    */
@@ -54,7 +54,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for accessing a manifest by reference (tag or digest).
+   * Returns the Url for accessing a manifest by reference (tag or digest).
    *
    * @param repository Repository name
    * @param ref Tag or digest reference
@@ -64,7 +64,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for accessing a manifest by descriptor.
+   * Returns the Url for accessing a manifest by descriptor.
    *
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
@@ -74,7 +74,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for accessing a blob by descriptor.
+   * Returns the Url for accessing a blob by descriptor.
    *
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
@@ -87,7 +87,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for initiating a blob upload session.
+   * Returns the Url for initiating a blob upload session.
    *
    * @param repository Repository name
    */
@@ -97,7 +97,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for mounting a blob from another repository.
+   * Returns the Url for mounting a blob from another repository.
    *
    * @param repository Target repository to mount the blob to
    * @param sourceRepository Source repository where the blob exists
@@ -118,10 +118,10 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Parses a Location header value into a complete URL.
+   * Parses a Location header value into a complete Url.
    *
    * Handles both absolute and relative URLs according to RFC 7231 section 7.1.2. For relative URLs,
-   * resolves them against the registry base URL.
+   * resolves them against the registry base Url.
    *
    * @param locationHeader Location header value from HTTP response
    * @see <a href="https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.2">RFC 7231:
@@ -137,7 +137,7 @@ class Router(registryURL: String) {
   }
 
   /**
-   * Adds pagination parameters to a URL as specified in the OCI spec.
+   * Adds pagination parameters to a Url as specified in the OCI spec.
    *
    * @param n Number of results to return
    * @param last Optional token indicating where to resume listing

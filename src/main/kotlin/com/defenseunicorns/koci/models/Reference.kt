@@ -25,7 +25,7 @@ data class Reference(val registry: String, val repository: String, val reference
   /**
    * Creates a Reference from a [Url] registry and string repository and reference.
    *
-   * Extracts the host and optional port from the URL to form the registry component.
+   * Extracts the host and optional port from the Url to form the registry component.
    */
   constructor(
     registry: Url,
@@ -211,19 +211,5 @@ data class Reference(val registry: String, val repository: String, val reference
       val reference = Reference(reg, repo, ref)
       return reference.validate().map { reference }
     }
-
-    /**
-     * Regex pattern for validating tags according to OCI spec. Tags must start with a word
-     * character followed by up to 127 word, dot, or hyphen characters.
-     */
-    val tagRegex = Regex("^\\w[\\w.-]{0,127}")
-
-    /**
-     * Regex pattern for validating repository names according to OCI spec. Repository names must
-     * follow a specific pattern with lowercase alphanumeric characters, separators, and optional
-     * path components.
-     */
-    val repositoryRegex =
-      Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
   }
 }

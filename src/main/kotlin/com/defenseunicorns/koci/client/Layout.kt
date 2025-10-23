@@ -539,7 +539,7 @@ private constructor(
       blobsPath: String,
       stagingPath: String,
       strictChecking: Boolean,
-      logLevel: KociLogLevel,
+      logLevel: KociLogLevel = KociLogLevel.DEBUG,
     ): OCIResult<Layout> {
       val fs = FileSystem.SYSTEM
       val rootDir = rootPath.toPath()

@@ -131,7 +131,7 @@ class RouteTest {
     assertEquals(
       expectedUrl,
       actualUrl,
-      "The URL for blob mounting should be constructed correctly",
+      "The Url for blob mounting should be constructed correctly",
     )
   }
 }

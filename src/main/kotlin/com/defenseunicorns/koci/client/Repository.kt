@@ -11,6 +11,7 @@ import com.defenseunicorns.koci.auth.ACTION_PUSH
 import com.defenseunicorns.koci.auth.appendScopes
 import com.defenseunicorns.koci.auth.scopeRepository
 import com.defenseunicorns.koci.http.Router
+import com.defenseunicorns.koci.http.parseHTTPError
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Reference
@@ -23,6 +24,7 @@ import com.defenseunicorns.koci.models.content.UploadStatus
 import com.defenseunicorns.koci.models.content.Versioned
 import com.defenseunicorns.koci.models.errors.OCIError
 import com.defenseunicorns.koci.models.errors.OCIResult
+import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.accept
@@ -62,46 +64,22 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 
 /**
- * Extracts upload status from HTTP response headers for resumable uploads.
- *
- * Parses Location and Range headers to determine upload state and handles the optional
- * OCI-Chunk-Min-Length header.
- *
- * @return [UploadStatus] with location URL, byte offset, and minimum chunk size
- * @throws IllegalStateException if required headers are missing or malformed
- * @see <a
- *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
- *   Distribution Spec: Resuming an Upload</a>
- */
-fun Headers.toUploadStatus(): UploadStatus {
-  val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
-  val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
-  val re = Regex("^([0-9]+)-([0-9]+)\$")
-  val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) { "invalid Range header" }
-
-  // this header MAY not exist
-  val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
-
-  return UploadStatus(location, offset.toLong(), minChunk)
-}
-
-/**
  * OCI spec compliant repository client.
  *
  * Supports all required operations including pulling/pushing blobs and manifests, content
  * verification, resumable uploads, cross-repository mounting, and tag management.
  *
  * @property client HTTP client for registry communication
- * @property router URL routing for registry endpoints
+ * @property router Url routing for registry endpoints
  * @property name Repository name as retrieved from a reference (e.g., "[host]/[name]:[tag]")
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
 @Suppress("detekt:TooManyFunctions")
-class Repository(
+class Repository
+internal constructor(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
-  private val coordinator: TransferCoordinator = TransferCoordinator(),
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
@@ -145,8 +123,8 @@ class Repository(
    *
    * @param tag Tag to resolve
    * @param platformResolver Optional function to select specific platform from index manifest
-   * @throws com.defenseunicorns.koci.models.errors.OCIException.PlatformNotFound if platformResolver
-   *   provided but no matching platform found
+   * @throws com.defenseunicorns.koci.models.errors.OCIException.PlatformNotFound if
+   *   platformResolver provided but no matching platform found
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
    *   Distribution Spec: Pulling Manifests</a>
@@ -224,7 +202,7 @@ class Repository(
           OCIResult.err(
             OCIError.UnsupportedManifest(
               response.contentType()?.toString() ?: "unknown",
-              "Unsupported content type for manifest"
+              "Unsupported content type for manifest",
             )
           )
       }
@@ -366,7 +344,9 @@ class Repository(
   suspend fun tags(): OCIResult<TagsResponse> {
     return try {
       val response =
-        client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
+        client.get(router.tags(name)) {
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        }
       if (!response.status.isSuccess()) {
         return parseHTTPError(response)
       }
@@ -382,8 +362,8 @@ class Repository(
    * Resolves tag to descriptor, then pulls manifest and all referenced blobs. For multi-platform
    * images, uses platformResolver to select specific platform.
    *
-   * Emits progress updates as OCIResult<Int> where the value is percentage complete (0-100).
-   * Errors are emitted as OCIResult.Err and the flow completes.
+   * Emits progress updates as OCIResult<Int> where the value is percentage complete (0-100). Errors
+   * are emitted as OCIResult.Err and the flow completes.
    *
    * @param tag Tag to pull
    * @param store Layout to store content in
@@ -439,8 +419,8 @@ class Repository(
    * Handles different content types appropriately (manifests, indices, blobs). For manifests and
    * indices, pulls all referenced content recursively.
    *
-   * Emits progress updates as OCIResult<Int> where the value is percentage complete (0-100).
-   * Errors are emitted as OCIResult.Err and the flow completes.
+   * Emits progress updates as OCIResult<Int> where the value is percentage complete (0-100). Errors
+   * are emitted as OCIResult.Err and the flow completes.
    *
    * @param descriptor Content descriptor to pull
    * @param store Layout to store content in
@@ -524,7 +504,8 @@ class Repository(
                     val curr = acc.addAndGet(result.value)
                     emit((curr.toDouble() * 100 / total).roundToInt())
                   }
-                  is OCIResult.Err -> throw IllegalStateException("Layer download failed: ${result.error}")
+                  is OCIResult.Err ->
+                    throw IllegalStateException("Layer download failed: ${result.error}")
                 }
               }
             }
@@ -538,7 +519,8 @@ class Repository(
                     val curr = acc.addAndGet(result.value)
                     emit((curr.toDouble() * 100 / total).roundToInt())
                   }
-                  is OCIResult.Err -> throw IllegalStateException("Manifest download failed: ${result.error}")
+                  is OCIResult.Err ->
+                    throw IllegalStateException("Manifest download failed: ${result.error}")
                 }
               }
             }
@@ -594,35 +576,12 @@ class Repository(
   }
 
   /**
-   * Downloads blob and stores it in layout, with support for resumable downloads when registry
-   * supports range requests.
-   *
-   * Uses the download coordinator to prevent duplicate downloads when multiple operations request
-   * the same descriptor concurrently.
-   *
-   * Emits progress updates as OCIResult<Int> where the value is bytes downloaded.
-   * Errors are emitted as OCIResult.Err and the flow completes.
-   *
-   * @param descriptor Blob descriptor to copy
-   * @param store Layout to store blob in
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI
-   *   Distribution Spec: Pulling Blobs</a>
-   *
-   * Note: For complete images or manifests, use [pull] methods instead.
-   */
-  private suspend fun copy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = 
-    coordinator.download(descriptor) {
-      actualCopy(descriptor, store)
-    }
-
-  /**
    * Performs the actual download operation.
    *
-   * This is called by the coordinator when this is the first request for a descriptor.
-   * Other concurrent requests for the same descriptor will wait for this to complete.
+   * This is called by the coordinator when this is the first request for a descriptor. Other
+   * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualCopy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
+  private fun copy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
     val existsResult = store.exists(descriptor)
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return
@@ -684,7 +643,9 @@ class Repository(
           }
 
           // Add range header if resuming
-          resumeFrom?.let { start -> headers.append("Range", "bytes=$start-${descriptor.size - 1}") }
+          resumeFrom?.let { start ->
+            headers.append("Range", "bytes=$start-${descriptor.size - 1}")
+          }
         }
         .execute { response ->
           if (!response.status.isSuccess()) {
@@ -693,7 +654,7 @@ class Repository(
           }
 
           response.body<InputStream>().use { stream ->
-            store.push(descriptor, stream).collect { prog -> emit(OCIResult.ok(prog)) }
+            store.push(descriptor, stream).collect { prog -> emit(prog) }
           }
         }
     } catch (e: Exception) {
@@ -771,8 +732,8 @@ class Repository(
    * resuming interrupted uploads from the last successful byte offset. Verifies content integrity
    * through digest validation.
    *
-   * Emits progress updates as OCIResult<Long> where the value is bytes uploaded.
-   * Errors are emitted as OCIResult.Err and the flow completes.
+   * Emits progress updates as OCIResult<Long> where the value is bytes uploaded. Errors are emitted
+   * as OCIResult.Err and the flow completes.
    *
    * @param stream Input stream containing blob data
    * @param expected Descriptor with expected size and digest
@@ -781,111 +742,110 @@ class Repository(
    *   Distribution Spec: Pushing Blobs</a>
    */
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  fun push(stream: InputStream, expected: Descriptor): Flow<OCIResult<Long>> =
-    flow {
-      try {
-        if (exists(expected).getOrNull() == true) {
-          emit(OCIResult.ok(expected.size))
-          withContext(Dispatchers.IO) { stream.close() }
-          return@flow
+  fun push(stream: InputStream, expected: Descriptor): Flow<OCIResult<Long>> = flow {
+    try {
+      if (exists(expected).getOrNull() == true) {
+        emit(OCIResult.ok(expected.size))
+        withContext(Dispatchers.IO) { stream.close() }
+        return@flow
+      }
+
+      val start =
+        when (val result = startOrResumeUpload(expected)) {
+          is OCIResult.Ok -> result.value.also { uploading[expected] = it }
+          is OCIResult.Err -> {
+            emit(OCIResult.err(result.error))
+            return@flow
+          }
         }
 
-        val start =
-          when (val result = startOrResumeUpload(expected)) {
-            is OCIResult.Ok -> result.value.also { uploading[expected] = it }
-            is OCIResult.Err -> {
-              emit(OCIResult.err(result.error))
-              return@flow
+      if (start.minChunkSize == 0L) {
+        start.minChunkSize = 5 * 1024 * 1024
+      }
+
+      when (val bytesLeft = expected.size - start.offset) {
+        in 1..start.minChunkSize -> {
+          val response =
+            client.put(start.location) {
+              url { encodedParameters.append("digest", expected.digest.toString()) }
+              headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
+              setBody(stream)
+              attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
             }
+
+          if (response.status != HttpStatusCode.Created) {
+            emit(parseHTTPError(response))
+            return@flow
           }
 
-        if (start.minChunkSize == 0L) {
-          start.minChunkSize = 5 * 1024 * 1024
+          emit(OCIResult.ok(bytesLeft))
         }
 
-        when (val bytesLeft = expected.size - start.offset) {
-          in 1..start.minChunkSize -> {
-            val response =
-              client.put(start.location) {
-                url { encodedParameters.append("digest", expected.digest.toString()) }
-                headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
-                setBody(stream)
-                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+        else -> {
+          var offset = start.offset
+          stream.use { s ->
+            if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
+
+            while (currentCoroutineContext().isActive) {
+              val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
+
+              if (chunk.isEmpty()) {
+                break
               }
 
-            if (response.status != HttpStatusCode.Created) {
-              emit(parseHTTPError(response))
-              return@flow
-            }
-
-            emit(OCIResult.ok(bytesLeft))
-          }
-
-          else -> {
-            var offset = start.offset
-            stream.use { s ->
-              if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
-
-              while (currentCoroutineContext().isActive) {
-                val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
-
-                if (chunk.isEmpty()) {
-                  break
-                }
-
-                val endRange = offset + chunk.size - 1
-                val currentLocation =
-                  uploading[expected]?.location
-                    ?: run {
-                      emit(OCIResult.err(OCIError.Generic("Upload location unexpectedly null")))
-                      return@flow
-                    }
-
-                val response =
-                  client.patch(router.parseUploadLocation(currentLocation)) {
-                    setBody(chunk)
-                    headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+              val endRange = offset + chunk.size - 1
+              val currentLocation =
+                uploading[expected]?.location
+                  ?: run {
+                    emit(OCIResult.err(OCIError.Generic("Upload location unexpectedly null")))
+                    return@flow
                   }
 
-                if (response.status != HttpStatusCode.Accepted) {
-                  emit(parseHTTPError(response))
-                  return@flow
+              val response =
+                client.patch(router.parseUploadLocation(currentLocation)) {
+                  setBody(chunk)
+                  headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
+                  attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 }
 
-                val status = response.headers.toUploadStatus()
-                uploading[expected] = status
-                offset = status.offset + 1
-
-                emit(OCIResult.ok(offset))
-              }
-            }
-
-            val final =
-              uploading[expected]?.location
-                ?: run {
-                  emit(OCIResult.err(OCIError.Generic("Upload location unexpectedly null")))
-                  return@flow
-                }
-
-            val finalResponse =
-              client.put(final) {
-                url { encodedParameters.append("digest", expected.digest.toString()) }
-                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+              if (response.status != HttpStatusCode.Accepted) {
+                emit(parseHTTPError(response))
+                return@flow
               }
 
-            if (finalResponse.status != HttpStatusCode.Created) {
-              emit(parseHTTPError(finalResponse))
-              return@flow
+              val status = response.headers.toUploadStatus()
+              uploading[expected] = status
+              offset = status.offset + 1
+
+              emit(OCIResult.ok(offset))
             }
           }
-        }
 
-        uploading.remove(expected)
-      } catch (e: Exception) {
-        emit(OCIResult.err(OCIError.IOError("Failed to push blob: ${e.message}", e)))
+          val final =
+            uploading[expected]?.location
+              ?: run {
+                emit(OCIResult.err(OCIError.Generic("Upload location unexpectedly null")))
+                return@flow
+              }
+
+          val finalResponse =
+            client.put(final) {
+              url { encodedParameters.append("digest", expected.digest.toString()) }
+              attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+            }
+
+          if (finalResponse.status != HttpStatusCode.Created) {
+            emit(parseHTTPError(finalResponse))
+            return@flow
+          }
+        }
       }
+
+      uploading.remove(expected)
+    } catch (e: Exception) {
+      emit(OCIResult.err(OCIError.IOError("Failed to push blob: ${e.message}", e)))
     }
+  }
 
   /**
    * Tags a manifest or index in the repository.
@@ -902,7 +862,7 @@ class Repository(
    */
   suspend fun tag(content: Versioned, ref: String): OCIResult<Descriptor> {
     // Validate tag format
-    if (TagRegex.matchEntire(ref) == null) {
+    if (tagRegex.matchEntire(ref) == null) {
       return OCIResult.err(OCIError.Generic("Invalid tag format: $ref"))
     }
 
@@ -1007,5 +967,29 @@ class Repository(
     } catch (e: Exception) {
       OCIResult.err(OCIError.IOError("Failed to mount blob: ${e.message}", e))
     }
+  }
+
+  /**
+   * Extracts upload status from HTTP response headers for resumable uploads.
+   *
+   * Parses Location and Range headers to determine upload state and handles the optional
+   * OCI-Chunk-Min-Length header.
+   *
+   * @return [UploadStatus] with location Url, byte offset, and minimum chunk size
+   * @throws IllegalStateException if required headers are missing or malformed
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
+   *   Distribution Spec: Resuming an Upload</a>
+   */
+  fun Headers.toUploadStatus(): UploadStatus {
+    val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
+    val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
+    val re = Regex("^([0-9]+)-([0-9]+)\$")
+    val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) { "invalid Range header" }
+
+    // this header MAY not exist
+    val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
+
+    return UploadStatus(location, offset.toLong(), minChunk)
   }
 }

@@ -26,7 +26,7 @@ sealed class OCIException(message: String, cause: Throwable? = null) : Exception
   class UnexpectedStatus(expected: HttpStatusCode, response: HttpResponse) :
     OCIException(
       "Expected status $expected but got ${response.status}. " +
-        "URL: ${response.call.request.url}"
+        "Url: ${response.call.request.url}"
     )
 
   /**
@@ -37,6 +37,6 @@ sealed class OCIException(message: String, cause: Throwable? = null) : Exception
   class EmptyTokenReturned(response: HttpResponse) :
     OCIException(
       "Authentication endpoint returned an empty token. " +
-        "URL: ${response.call.request.url}"
+        "Url: ${response.call.request.url}"
     )
 }

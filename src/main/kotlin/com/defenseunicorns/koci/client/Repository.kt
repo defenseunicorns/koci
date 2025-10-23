@@ -14,7 +14,6 @@ import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.Reference
-import com.defenseunicorns.koci.models.TagRegex
 import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.content.Index
@@ -58,7 +57,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -845,8 +843,6 @@ class Repository(
                 offset = status.offset + 1
 
                 emit(OCIResult.ok(offset))
-
-                yield()
               }
             }
 

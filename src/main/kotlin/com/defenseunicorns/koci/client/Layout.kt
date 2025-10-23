@@ -27,17 +27,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
+import okio.ByteString
 import okio.FileSystem
+import okio.HashingSink.Companion.sha256 as sha256Sink
+import okio.HashingSink.Companion.sha512 as sha512Sink
+import okio.HashingSource
 import okio.HashingSource.Companion.sha256
 import okio.HashingSource.Companion.sha512
 import okio.IOException
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.blackholeSink
 import okio.buffer
+import okio.source
 
 /**
  * Implements an OCI Image Layout for storing and managing container images locally.
@@ -71,8 +76,8 @@ private constructor(
    * Checks if a blob exists in the layout and verifies its integrity.
    *
    * Performs size verification and optionally digest verification based on strictChecking setting.
-   * When strictChecking is enabled, reads and hashes the entire blob to verify integrity.
-   * When disabled, only checks file existence and size for better performance.
+   * When strictChecking is enabled, reads and hashes the entire blob to verify integrity. When
+   * disabled, only checks file existence and size for better performance.
    *
    * @param descriptor The descriptor of the blob to check
    * @return Ok(true) if blob exists and is valid, Ok(false) if not found, or Err with the specific
@@ -298,30 +303,39 @@ private constructor(
         if (!ok) {
           val path = blob(descriptor)
           val md = descriptor.digest.algorithm.hasher()
+          
           // If resuming a download, start calculating the SHA from the data on disk
           //
           // it is up to the caller to properly resume the stream at the proper location,
           // otherwise a DigestMismatch will occur
           if (fileSystem.exists(path)) {
-            fileSystem.source(path).buffer().use { source ->
-              val buffer = ByteArray(32 * 1024)
-              var bytesRead: Int
-              while (source.read(buffer).also { bytesRead = it } != -1) {
-                md.update(buffer, 0, bytesRead)
-                // Not emitting bytes read from existing file
-              }
+            fileSystem.source(path).use { source ->
+              val hashingSource =
+                when (descriptor.digest.algorithm) {
+                  RegisteredAlgorithm.SHA256 -> sha256(source)
+                  RegisteredAlgorithm.SHA512 -> sha512(source)
+                }
+              hashingSource.buffer().readAll(blackholeSink())
+              md.update(hashingSource.hash.toByteArray())
             }
           }
 
-          val buffer = ByteArray(4 * 1024)
-          var bytesRead: Int
-          fileSystem.appendingSink(path).buffer().use { sink ->
-            while (stream.read(buffer).also { bytesRead = it } != -1) {
-              md.update(buffer, 0, bytesRead)
-              sink.write(buffer, 0, bytesRead)
-
-              send(bytesRead)
-              yield()
+          // Use HashingSink to hash while writing
+          val baseSink = fileSystem.appendingSink(path).buffer()
+          val hashingSink =
+            when (descriptor.digest.algorithm) {
+              RegisteredAlgorithm.SHA256 -> sha256Sink(baseSink)
+              RegisteredAlgorithm.SHA512 -> sha512Sink(baseSink)
+            }
+          
+          hashingSink.buffer().use { sink ->
+            stream.source().buffer().use { source ->
+              val buffer = okio.Buffer()
+              var bytesRead: Long
+              while (source.read(buffer, 4 * 1024).also { bytesRead = it } != -1L) {
+                sink.write(buffer, bytesRead)
+                send(bytesRead.toInt())
+              }
             }
           }
 
@@ -332,6 +346,8 @@ private constructor(
             return@channelFlow
           }
 
+          // Combine existing file hash with new data hash
+          md.update(hashingSink.hash.toByteArray())
           val digest = Digest(descriptor.digest.algorithm, md.digest())
 
           if (digest != descriptor.digest) {
@@ -367,7 +383,7 @@ private constructor(
    *
    * @param predicate Function that returns true for the desired descriptor
    */
-  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): OCIResult<Descriptor> {
+  fun resolve(predicate: (Descriptor) -> Boolean): OCIResult<Descriptor> {
     val descriptor = index.manifests.firstOrNull { predicate(it) }
     return if (descriptor != null) {
       OCIResult.ok(descriptor)
@@ -385,7 +401,7 @@ private constructor(
    * @param reference The reference to resolve
    * @param platformResolver Optional function to select a specific platform
    */
-  suspend fun resolve(
+  fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
   ): OCIResult<Descriptor> {

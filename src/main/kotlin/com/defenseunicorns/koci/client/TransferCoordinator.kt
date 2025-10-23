@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
  *   uploaded)
  */
 internal class TransferCoordinator(private val logger: Logger) {
-  private val inProgress = ConcurrentHashMap<TransferKey, TransferState>()
+  private val inProgress = ConcurrentHashMap<Descriptor, TransferState>()
   private val mutex = Mutex()
 
   /**
@@ -45,17 +45,13 @@ internal class TransferCoordinator(private val logger: Logger) {
    * @return Flow emitting progress updates or errors
    */
   fun transfer(
-    direction: TransferType,
     descriptor: Descriptor,
     transfer: suspend () -> Flow<OCIResult<Int>>,
   ): Flow<OCIResult<Int>> = flow {
-    val key = TransferKey(descriptor, direction)
-    
     // Check if already transferring or claim the transfer
     val (state, shouldTransfer) =
       mutex.withLock {
-        val state = inProgress.getOrPut(key) { TransferState() }
-        state.refCount.incrementAndGet()
+        val state = inProgress.getOrPut(descriptor) { TransferState() }
         val shouldTransfer = !state.claimed && !state.completion.isCompleted
         if (shouldTransfer) {
           state.claimed = true // Claim it so others wait
@@ -65,7 +61,6 @@ internal class TransferCoordinator(private val logger: Logger) {
 
     try {
       if (shouldTransfer) {
-        logger.d { "Transferring: ${descriptor.digest}" }
         // We're the one transferring - execute the transfer
         try {
           var hasError = false
@@ -82,7 +77,6 @@ internal class TransferCoordinator(private val logger: Logger) {
 
           // Mark transfer complete
           mutex.withLock {
-            logger.d { "Transfer complete: ${descriptor.digest}" }
             state.succeeded = !hasError
             state.completion.complete(Unit)
           }
@@ -108,12 +102,15 @@ internal class TransferCoordinator(private val logger: Logger) {
       }
     } finally {
       // Decrement refcount and clean up if no one else is waiting
-      mutex.withLock {
-        val count = state.refCount.decrementAndGet()
-        if (count <= 0) {
-          logger.d { "Removing from progress tracking: ${descriptor.digest}" }
-          inProgress.remove(key, state)
+      val shouldRemove =
+        mutex.withLock {
+          val count = state.refCount.decrementAndGet()
+          count <= 0
         }
+
+      if (shouldRemove) {
+        logger.d { "Removing from progress tracking: ${descriptor.digest}" }
+        inProgress.remove(descriptor, state)
       }
     }
   }
@@ -124,8 +121,8 @@ internal class TransferCoordinator(private val logger: Logger) {
    * @param descriptor The descriptor to check
    * @return true if transfer is in progress, false otherwise
    */
-  fun isTransferring(descriptor: Descriptor, transferType: TransferType): Boolean {
-    return inProgress[TransferKey(descriptor, transferType)]?.completion?.isCompleted == false
+  fun isTransferring(descriptor: Descriptor): Boolean {
+    return inProgress[descriptor]?.completion?.isCompleted == false
   }
 
   /**
@@ -151,18 +148,4 @@ internal class TransferCoordinator(private val logger: Logger) {
     var claimed: Boolean = false,
     val refCount: AtomicInteger = AtomicInteger(0),
   )
-
-  /**
-   * Key used to identify a transfer in progress.
-   *
-   * @property descriptor The descriptor being transferred
-   * @property type The type of transfer
-   */
-  private data class TransferKey(val descriptor: Descriptor, val type: TransferType)
-
-  /** The type of transfer (download or upload). */
-  enum class TransferType {
-    Download,
-    Upload,
-  }
 }

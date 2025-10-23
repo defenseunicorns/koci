@@ -391,46 +391,48 @@ internal constructor(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Flow<OCIResult<Int>> = flow {
-    logger.d { "Pulling $name:$tag" }
-    val desc =
-      when (val result = resolve(tag, platformResolver)) {
-        is OCIResult.Ok -> result.value
-        is OCIResult.Err -> {
-          emit(OCIResult.err(result.error))
+  ): Flow<OCIResult<Int>> =
+    flow {
+        logger.d { "Pulling $name:$tag" }
+        val desc =
+          when (val result = resolve(tag, platformResolver)) {
+            is OCIResult.Ok -> result.value
+            is OCIResult.Err -> {
+              emit(OCIResult.err(result.error))
+              return@flow
+            }
+          }
+
+        pull(desc, store).collect { progressResult ->
+          when (progressResult) {
+            is OCIResult.Ok -> emit(progressResult)
+            is OCIResult.Err -> {
+              emit(progressResult)
+              return@collect
+            }
+          }
+        }
+
+        // After successful pull, tag the content
+        val ref = Reference(registry = router.base(), repository = name, reference = tag)
+        val ok = store.exists(desc).getOrNull() ?: false
+        if (!ok) {
+          logger.e { "Incomplete pull for $name:$tag: content not found after download" }
+          emit(OCIResult.err(OCIError.Generic("Incomplete pull: content not found after download")))
           return@flow
         }
-      }
 
-    pull(desc, store).collect { progressResult ->
-      when (progressResult) {
-        is OCIResult.Ok -> emit(progressResult)
-        is OCIResult.Err -> {
-          emit(progressResult)
-          return@collect
+        logger.d { "Successfully pulled $name:$tag" }
+
+        when (val result = store.tag(desc, ref)) {
+          is OCIResult.Err -> {
+            emit(OCIResult.err(result.error))
+            return@flow
+          }
+          is OCIResult.Ok -> emit(OCIResult.ok(100))
         }
       }
-    }
-
-    // After successful pull, tag the content
-    val ref = Reference(registry = router.base(), repository = name, reference = tag)
-    val ok = store.exists(desc).getOrNull() ?: false
-    if (!ok) {
-      logger.e { "Incomplete pull for $name:$tag: content not found after download" }
-      emit(OCIResult.err(OCIError.Generic("Incomplete pull: content not found after download")))
-      return@flow
-    }
-    
-    logger.d { "Successfully pulled $name:$tag" }
-
-    when (val result = store.tag(desc, ref)) {
-      is OCIResult.Err -> {
-        emit(OCIResult.err(result.error))
-        return@flow
-      }
-      is OCIResult.Ok -> emit(OCIResult.ok(100))
-    }
-  }.distinctUntilChanged()
+      .distinctUntilChanged()
 
   /**
    * Pulls content by descriptor and stores it in the provided layout.
@@ -601,12 +603,7 @@ internal constructor(
    * Uses the transfer coordinator to prevent duplicate downloads of the same descriptor.
    */
   private suspend fun download(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> =
-    transferCoordinator.transfer(
-      direction = TransferCoordinator.TransferType.Download,
-      descriptor = descriptor,
-    ) {
-      actualDownload(descriptor, store)
-    }
+    transferCoordinator.transfer(descriptor = descriptor) { actualDownload(descriptor, store) }
 
   /**
    * Performs the actual download operation.

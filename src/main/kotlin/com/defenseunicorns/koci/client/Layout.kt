@@ -287,12 +287,25 @@ private constructor(
   }
 
   /**
-   * Returns the path to a blob file based on its descriptor.
+   * Returns the path to a blob file in the verified blobs directory.
    *
    * @param descriptor The descriptor of the blob
    */
   private fun blob(descriptor: Descriptor): Path {
     return "$blobsPath/${descriptor.digest.algorithm}/${descriptor.digest.hex}".toPath()
+  }
+
+  /**
+   * Returns the path to a staging file for incomplete/unverified content.
+   *
+   * Staging files are written during transfers and only moved to the blobs directory after full
+   * verification (size and digest). This ensures the blobs directory only contains verified
+   * content.
+   *
+   * @param descriptor The descriptor of the content being staged
+   */
+  private fun staging(descriptor: Descriptor): Path {
+    return "$stagingPath/${descriptor.digest.algorithm}/${descriptor.digest.hex}".toPath()
   }
 
   /**
@@ -308,12 +321,7 @@ private constructor(
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
   fun push(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
-    transferCoordinator.transfer(
-      direction = TransferCoordinator.TransferType.Upload,
-      descriptor = descriptor,
-    ) {
-      actualPush(descriptor, stream)
-    }
+    transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
   /**
    * Performs the actual push operation to disk.
@@ -328,15 +336,19 @@ private constructor(
       val ok = exists(descriptor).getOrNull() ?: false
 
       if (!ok) {
-        val path = blob(descriptor)
+        val stagingPath = staging(descriptor)
+        val finalPath = blob(descriptor)
         val md = descriptor.digest.algorithm.hasher()
 
-        // If resuming a download, hash the existing file data first
+        // Ensure staging directory exists
+        fileSystem.createDirectories(stagingPath.parent!!)
+
+        // If resuming a download, hash the existing staged file data first
         // It is up to the caller to properly resume the stream at the proper location,
         // otherwise a DigestMismatch will occur
-        if (fileSystem.exists(path)) {
+        if (fileSystem.exists(stagingPath)) {
           logger.d { "Resuming push for ${descriptor.digest}" }
-          fileSystem.source(path).buffer().use { source ->
+          fileSystem.source(stagingPath).buffer().use { source ->
             val buffer = ByteArray(BUFFER_SIZE)
             var bytesRead: Int
             while (source.read(buffer).also { bytesRead = it } != -1) {
@@ -345,8 +357,8 @@ private constructor(
           }
         }
 
-        // Stream new data, hashing as we write
-        fileSystem.appendingSink(path).buffer().use { sink ->
+        // Stream new data to staging, hashing as we write
+        fileSystem.appendingSink(stagingPath).buffer().use { sink ->
           stream.source().buffer().use { source ->
             val buffer = ByteArray(BUFFER_SIZE)
             var bytesRead: Int
@@ -358,23 +370,57 @@ private constructor(
           }
         }
 
-        val length = fileSystem.metadata(path).size ?: 0L
+        // Verify size
+        val length = fileSystem.metadata(stagingPath).size ?: 0L
         if (length != descriptor.size) {
           logger.e {
             "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
           }
-          fileSystem.delete(path)
+          fileSystem.delete(stagingPath)
           emit(OCIResult.err(OCIError.SizeMismatch(descriptor, length)))
           return@flow
         }
 
+        // Verify digest
         val digest = Digest(descriptor.digest.algorithm, md.digest())
 
         if (digest != descriptor.digest) {
           logger.e { "Digest mismatch pushing ${descriptor.digest}: computed $digest" }
-          fileSystem.delete(path)
+          fileSystem.delete(stagingPath)
           emit(OCIResult.err(OCIError.DigestMismatch(descriptor, digest)))
           return@flow
+        }
+
+        // Verification successful - move to final location
+        // We can't use atomicMove since staging and blobs may be on different filesystems
+        fileSystem.createDirectories(finalPath.parent!!)
+
+        logger.d { "Finalization move: $stagingPath -> $finalPath" }
+        try {
+          // Try atomic move first (works if same filesystem)
+          fileSystem.atomicMove(stagingPath, finalPath)
+        } catch (_: IOException) {
+          // Fall back to copy-then-delete for cross-filesystem moves
+          logger.d { "Atomic move failed, using copy: ${descriptor.digest}" }
+          fileSystem.copy(stagingPath, finalPath)
+          fileSystem.delete(stagingPath)
+        }
+
+        // Verify the final file (uses strict checking if enabled)
+        when (val verifyResult = exists(descriptor)) {
+          is OCIResult.Ok -> {
+            if (!verifyResult.value) {
+              logger.e { "Final verification failed: ${descriptor.digest} not found after move" }
+              emit(OCIResult.err(OCIError.Generic("File not found after finalization move")))
+              return@flow
+            }
+          }
+          is OCIResult.Err -> {
+            logger.e { "Final verification failed for ${descriptor.digest}" }
+            fileSystem.delete(finalPath)
+            emit(verifyResult)
+            return@flow
+          }
         }
 
         logger.d { "Successfully downloaded ${descriptor.digest}" }
@@ -492,22 +538,60 @@ private constructor(
    *
    * @return List of all manifest descriptors in the layout's index
    */
-  fun catalog(): List<Descriptor> {
-    return index.manifests.toList()
+  fun catalog(): List<Descriptor> = index.manifests.toList()
+
+  /**
+   * Cleans up incomplete files in the staging directory.
+   *
+   * Removes all files from staging that were left behind from interrupted transfers. This is safe
+   * to call at any time as staging files are temporary and will be re-downloaded if needed.
+   *
+   * @return Ok with number of files cleaned up, or Err if cleanup fails
+   */
+  private fun cleanStaging(): OCIResult<Int> {
+    return try {
+      var cleaned = 0
+      listOf("sha256", "sha512").forEach { algorithm ->
+        val dir = "$stagingPath/$algorithm".toPath()
+        if (fileSystem.exists(dir) && fileSystem.metadata(dir).isDirectory) {
+          fileSystem.list(dir).forEach { path ->
+            if (!fileSystem.metadata(path).isDirectory) {
+              runCatching {
+                fileSystem.delete(path)
+                cleaned++
+                logger.d { "Cleaned staging file: ${path.name}" }
+              }
+            }
+          }
+        }
+      }
+      logger.d { "Cleaned $cleaned staging files" }
+      OCIResult.ok(cleaned)
+    } catch (e: Exception) {
+      logger.e(e) { "Failed to clean staging directory" }
+      OCIResult.err(OCIError.IOError("Failed to clean staging: ${e.message}", e))
+    }
   }
 
   /**
-   * Prunes all layers on disk that are not referenced by any manifest or index in the Layout's
-   * index.
+   * Performs garbage collection on unreferenced blobs.
    *
-   * This is a "stop the world" style function and MUST NOT run during any other operations. It
-   * should be used to clean up zombie layers that might be left on disk if a remove operation is
-   * interrupted.
+   * Removes blobs from disk that are not referenced by any manifest in the index. This helps
+   * reclaim disk space from orphaned content. Returns list of digests that were removed.
+   *
+   * Also cleans up any incomplete files in the staging directory.
+   *
+   * @return Ok with list of removed digests, or Err if GC fails or transfers are in progress
+   * @throws OCIException.Generic if downloads are in progress - GC should not run while
+   *   interrupted.
    */
   fun gc(): OCIResult<List<Digest>> {
     if (transferCoordinator.activeTransfers() > 0) {
       return OCIResult.err(OCIError.Generic("Cannot run GC: downloads are in progress"))
     }
+
+    // Clean up staging first
+    cleanStaging()
 
     return try {
 
@@ -639,7 +723,7 @@ private constructor(
 
       logger.d { "Layout created" }
 
-      return OCIResult.ok(
+      val layout =
         Layout(
           index = index,
           rootPath = rootPath,
@@ -650,7 +734,8 @@ private constructor(
           transferCoordinator =
             TransferCoordinator(createKociLogger(logLevel, "LayoutTransferCoordinator")),
         )
-      )
+
+      return OCIResult.ok(layout)
     }
   }
 }

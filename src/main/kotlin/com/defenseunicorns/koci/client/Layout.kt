@@ -24,17 +24,12 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
-import okio.ByteString
 import okio.FileSystem
-import okio.HashingSink.Companion.sha256 as sha256Sink
-import okio.HashingSink.Companion.sha512 as sha512Sink
-import okio.HashingSource
 import okio.HashingSource.Companion.sha256
 import okio.HashingSource.Companion.sha512
 import okio.IOException
@@ -280,84 +275,83 @@ private constructor(
   }
 
   /**
-   * Pushes content to the layout from a byte channel.
+   * Pushes content to the layout from an input stream.
    *
    * Writes the content to disk, verifying its size and digest match the descriptor. Supports
    * resumable uploads by calculating the digest of existing content plus new content.
    *
    * @param descriptor The descriptor of the content being pushed
-   * @param stream The byte channel containing the content
-   * @return Flow emitting the number of bytes written in each chunk
-   * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
-   * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
+   * @param stream The input stream containing the content
+   * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
-    val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
+  fun push(descriptor: Descriptor, stream: InputStream): Flow<OCIResult<Int>> =
+    kotlinx.coroutines.flow.flow {
+      val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
-    refCount.incrementAndGet()
+      refCount.incrementAndGet()
 
-    try {
-      mu.withLock {
-        val ok = exists(descriptor).getOrNull() ?: false
+      try {
+        mu.withLock {
+          val ok = exists(descriptor).getOrNull() ?: false
 
-        if (!ok) {
-          val path = blob(descriptor)
-          val md = descriptor.digest.algorithm.hasher()
-          
-          // If resuming a download, hash the existing file data first
-          // It is up to the caller to properly resume the stream at the proper location,
-          // otherwise a DigestMismatch will occur
-          if (fileSystem.exists(path)) {
-            fileSystem.source(path).buffer().use { source ->
-              val buffer = ByteArray(BUFFER_SIZE)
-              var bytesRead: Int
-              while (source.read(buffer).also { bytesRead = it } != -1) {
-                md.update(buffer, 0, bytesRead)
+          if (!ok) {
+            val path = blob(descriptor)
+            val md = descriptor.digest.algorithm.hasher()
+
+            // If resuming a download, hash the existing file data first
+            // It is up to the caller to properly resume the stream at the proper location,
+            // otherwise a DigestMismatch will occur
+            if (fileSystem.exists(path)) {
+              fileSystem.source(path).buffer().use { source ->
+                val buffer = ByteArray(BUFFER_SIZE)
+                var bytesRead: Int
+                while (source.read(buffer).also { bytesRead = it } != -1) {
+                  md.update(buffer, 0, bytesRead)
+                }
               }
             }
-          }
 
-          // Stream new data, hashing as we write
-          fileSystem.appendingSink(path).buffer().use { sink ->
-            stream.source().buffer().use { source ->
-              val buffer = ByteArray(BUFFER_SIZE)
-              var bytesRead: Int
-              while (source.read(buffer).also { bytesRead = it } != -1) {
-                md.update(buffer, 0, bytesRead)
-                sink.write(buffer, 0, bytesRead)
-                send(bytesRead)
+            // Stream new data, hashing as we write
+            fileSystem.appendingSink(path).buffer().use { sink ->
+              stream.source().buffer().use { source ->
+                val buffer = ByteArray(BUFFER_SIZE)
+                var bytesRead: Int
+                while (source.read(buffer).also { bytesRead = it } != -1) {
+                  md.update(buffer, 0, bytesRead)
+                  sink.write(buffer, 0, bytesRead)
+                  emit(OCIResult.ok(bytesRead))
+                }
               }
             }
-          }
 
-          val length = fileSystem.metadata(path).size ?: 0L
-          if (length != descriptor.size) {
-            fileSystem.delete(path)
-            close(IllegalStateException("Size mismatch: expected ${descriptor.size}, got $length"))
-            return@channelFlow
-          }
+            val length = fileSystem.metadata(path).size ?: 0L
+            if (length != descriptor.size) {
+              fileSystem.delete(path)
+              emit(OCIResult.err(OCIError.SizeMismatch(descriptor, length)))
+              return@flow
+            }
 
-          val digest = Digest(descriptor.digest.algorithm, md.digest())
+            val digest = Digest(descriptor.digest.algorithm, md.digest())
 
-          if (digest != descriptor.digest) {
-            fileSystem.delete(path)
-            close(
-              IllegalStateException("Digest mismatch: expected ${descriptor.digest}, got $digest")
-            )
-            return@channelFlow
+            if (digest != descriptor.digest) {
+              fileSystem.delete(path)
+              emit(OCIResult.err(OCIError.DigestMismatch(descriptor, digest)))
+              return@flow
+            }
           }
         }
-      }
-    } finally {
-      val pair = pushing[descriptor]
-      if (pair != null) {
-        val count = pair.second.decrementAndGet()
-        if (count <= 0) {
-          pushing.remove(descriptor, pair)
+      } catch (e: Exception) {
+        emit(OCIResult.err(OCIError.IOError("Failed to push descriptor: ${e.message}", e)))
+      } finally {
+        val pair = pushing[descriptor]
+        if (pair != null) {
+          val count = pair.second.decrementAndGet()
+          if (count <= 0) {
+            pushing.remove(descriptor, pair)
+          }
         }
       }
     }
-  }
 
   /**
    * Retrieves content from the layout as an input stream.

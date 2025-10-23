@@ -16,6 +16,7 @@ plugins {
   alias(libs.plugins.detekt)
   alias(libs.plugins.maven.publish)
   alias(libs.plugins.spotless)
+  alias(libs.plugins.jmh)
 }
 
 buildscript { dependencies { classpath(libs.kotlinx.serialization.json) } }
@@ -82,7 +83,10 @@ spotless {
   }
 }
 
-detekt {buildUponDefaultConfig = true config.setFrom("$rootDir/linting/detekt-config.yml") baseline = file("$rootDir/linting/detekt-baseline.xml")
+detekt {
+  buildUponDefaultConfig = true
+  config.setFrom("$rootDir/linting/detekt-config.yml")
+  baseline = file("$rootDir/linting/detekt-baseline.xml")
 }
 
 tasks.withType<Detekt> {
@@ -156,4 +160,12 @@ publishing {
 tasks.register<Test>("allTests") {
   systemProperty("TESTS_WITH_EXTERNAL_SERVICES", "true")
   useJUnitPlatform()
+}
+
+jmh {
+  iterations = 3 // Number of measurement iterations
+  warmupIterations = 2 // Number of warmup iterations
+  fork = 1 // Number of forks
+  benchmarkMode = listOf("thrpt") // Throughput mode
+  timeUnit = "s" // Time unit for results
 }

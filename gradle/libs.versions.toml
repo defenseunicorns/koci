@@ -12,6 +12,8 @@ detekt = "2.0.0-alpha.1"
 mavenPublish = "0.34.0"
 spotless = "8.0.0"
 kermit = "2.0.8"
+jmh = "1.37"
+jmhPlugin = "0.7.2"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }
@@ -24,6 +26,8 @@ ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktorCli
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorSerializationKotlinxJson" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
+jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
+jmh-generator-annprocess = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt" }
@@ -32,3 +36,4 @@ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+jmh = { id = "me.champeau.jmh", version.ref = "jmhPlugin" }

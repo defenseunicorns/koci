@@ -11,9 +11,9 @@ import io.ktor.http.HttpStatusCode
 /**
  * Exception types for OCI operations that should fail-fast.
  *
- * These exceptions are used in infrastructure/middleware layers (like Auth) where throwing
- * is appropriate. For domain-level errors that should be handled explicitly, use [OCIError]
- * and [OCIResult] instead.
+ * These exceptions are used in infrastructure/middleware layers (like Auth) where throwing is
+ * appropriate. For domain-level errors that should be handled explicitly, use [OCIError] and
+ * [OCIResult] instead.
  */
 sealed class OCIException(message: String, cause: Throwable? = null) : Exception(message, cause) {
 
@@ -25,8 +25,7 @@ sealed class OCIException(message: String, cause: Throwable? = null) : Exception
    */
   class UnexpectedStatus(expected: HttpStatusCode, response: HttpResponse) :
     OCIException(
-      "Expected status $expected but got ${response.status}. " +
-        "Url: ${response.call.request.url}"
+      "Expected status $expected but got ${response.status}. " + "Url: ${response.call.request.url}"
     )
 
   /**
@@ -36,7 +35,6 @@ sealed class OCIException(message: String, cause: Throwable? = null) : Exception
    */
   class EmptyTokenReturned(response: HttpResponse) :
     OCIException(
-      "Authentication endpoint returned an empty token. " +
-        "Url: ${response.call.request.url}"
+      "Authentication endpoint returned an empty token. " + "Url: ${response.call.request.url}"
     )
 }

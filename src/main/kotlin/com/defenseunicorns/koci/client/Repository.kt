@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci.client
 
+import co.touchlab.kermit.Logger
 import com.defenseunicorns.koci.auth.ACTION_DELETE
 import com.defenseunicorns.koci.auth.ACTION_PULL
 import com.defenseunicorns.koci.auth.ACTION_PUSH
@@ -80,6 +81,7 @@ internal constructor(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
+  private val logger: Logger,
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
@@ -991,5 +993,14 @@ internal constructor(
     val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
 
     return UploadStatus(location, offset.toLong(), minChunk)
+  }
+
+  companion object {
+    internal fun create(
+      router: Router,
+      client: HttpClient,
+      repositoryName: String,
+      logger: Logger,
+    ) = Repository(client = client, router = router, name = repositoryName, logger = logger)
   }
 }

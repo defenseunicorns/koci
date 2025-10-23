@@ -8,8 +8,8 @@ package com.defenseunicorns.koci
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.models.ANNOTATION_TITLE
 import com.defenseunicorns.koci.models.Descriptor
-import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.models.content.Digest
 import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals

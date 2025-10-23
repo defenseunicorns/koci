@@ -5,9 +5,13 @@
 
 package com.defenseunicorns.koci.client
 
+import co.touchlab.kermit.Logger
+import com.defenseunicorns.koci.KociLogLevel
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
+import com.defenseunicorns.koci.createKociLogger
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
+import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.content.Platform
 import com.defenseunicorns.koci.models.errors.OCIError
 import com.defenseunicorns.koci.models.errors.OCIResult
@@ -18,6 +22,7 @@ import io.ktor.client.plugins.pluginOrNull
 import io.ktor.client.request.get
 import io.ktor.http.headers
 import io.ktor.http.isSuccess
+import java.io.InputStream
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +48,12 @@ import kotlinx.serialization.Serializable
  * val repository = registry.repo("myorg/myrepo")
  * ```
  */
-class Registry(registryUrl: String, var client: HttpClient = HttpClient(CIO)) {
+class Registry
+internal constructor(
+  registryUrl: String,
+  private val logger: Logger,
+  private var client: HttpClient = HttpClient(CIO),
+) {
   val router = Router(registryUrl)
   val extensions = RegistryExtensions(client, router)
 
@@ -99,7 +109,7 @@ class Registry(registryUrl: String, var client: HttpClient = HttpClient(CIO)) {
    *
    * @param name Repository name (e.g., "library/ubuntu")
    */
-  fun repo(name: String) = Repository(client, router, name)
+  fun repo(name: String) = Repository.create(router, client, name, logger)
 
   /**
    * Lists all tags in a repository.
@@ -116,9 +126,9 @@ class Registry(registryUrl: String, var client: HttpClient = HttpClient(CIO)) {
   /**
    * Resolves a tag to a content descriptor.
    *
-   * Performs a HEAD or GET request to the /v2/{name}/manifests/{reference} endpoint as specified
-   * in the OCI spec. For multi-platform images, the platformResolver can be used to select a
-   * specific platform.
+   * Performs a HEAD or GET request to the /v2/{name}/manifests/{reference} endpoint as specified in
+   * the OCI spec. For multi-platform images, the platformResolver can be used to select a specific
+   * platform.
    *
    * @param repository Repository name
    * @param tag Tag to resolve
@@ -131,6 +141,20 @@ class Registry(registryUrl: String, var client: HttpClient = HttpClient(CIO)) {
     tag: String,
     platformResolver: ((Platform) -> Boolean)? = null,
   ) = repo(repository).resolve(tag, platformResolver)
+
+  /**
+   * Pushes a blob to the repository.
+   *
+   * Uploads blob content with support for resumable uploads. Verifies content integrity through
+   * digest validation.
+   *
+   * @param repository Repository name
+   * @param stream Input stream containing blob data
+   * @param expected Descriptor with expected size and digest
+   * @return Flow emitting progress updates as bytes uploaded
+   */
+  fun push(repository: String, stream: InputStream, expected: Descriptor) =
+    repo(repository).push(stream, expected)
 
   /**
    * Pulls content by tag and stores it in the provided layout.
@@ -167,6 +191,11 @@ class Registry(registryUrl: String, var client: HttpClient = HttpClient(CIO)) {
       .catalog(n)
       .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
       .map { repo -> tags(repo) }
+
+  companion object {
+    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG) =
+      Registry(registryUrl = registryUrl, logger = createKociLogger(logLevel))
+  }
 }
 
 /**

@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci.models.content
 
 import kotlinx.serialization.Serializable
@@ -9,5 +14,4 @@ import kotlinx.serialization.Serializable
  *
  * @property repositories List of repository names in the registry
  */
-@Serializable
-data class CatalogResponse(val repositories: List<String>)
+@Serializable data class CatalogResponse(val repositories: List<String>)

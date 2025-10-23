@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci.models.content
 
 import kotlinx.serialization.Serializable
@@ -6,5 +11,4 @@ import kotlinx.serialization.Serializable
  * LayoutMarker is the structure in the "oci-layout" file, found in the root of an OCI Layout
  * directory
  */
-@Serializable
-data class LayoutMarker(val imageLayoutVersion: String)
+@Serializable data class LayoutMarker(val imageLayoutVersion: String)

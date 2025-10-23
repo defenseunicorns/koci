@@ -8,7 +8,8 @@ package com.defenseunicorns.koci.models
 import com.defenseunicorns.koci.models.content.Digest
 import com.defenseunicorns.koci.models.errors.OCIError
 import com.defenseunicorns.koci.models.errors.OCIResult
-import io.ktor.http.*
+import io.ktor.http.Url
+import io.ktor.http.hostWithPort
 import java.net.URI
 
 /**

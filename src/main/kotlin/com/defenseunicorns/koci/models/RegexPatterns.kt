@@ -19,7 +19,5 @@ val tagRegex = Regex("^\\w[\\w.-]{0,127}")
 val repositoryRegex =
   Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
 
-/**
- * Regex pattern for parsing link headers as specified in the OCI spec.
- */
+/** Regex pattern for parsing link headers as specified in the OCI spec. */
 val linkHeaderRegex = Regex("<(.+)>;\\s+rel=\"next\"")

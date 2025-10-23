@@ -5,7 +5,6 @@
 
 package com.defenseunicorns.koci.models.errors
 
-import com.defenseunicorns.koci.models.Descriptor
 import com.defenseunicorns.koci.models.content.Descriptor
 import com.defenseunicorns.koci.models.content.Digest
 

@@ -10,40 +10,37 @@ import co.touchlab.kermit.NoTagFormatter
 import co.touchlab.kermit.loggerConfigInit
 import co.touchlab.kermit.platformLogWriter
 import com.defenseunicorns.koci.client.Layout
-import com.defenseunicorns.koci.models.errors.OCIResult
 
-class Koci {
-
-  private val logger: Logger
-  private var layout: OCIResult<Layout>
-
-  private constructor(config: KociConfig) {
-    logger =
-      Logger(
-        config =
-          loggerConfigInit(
-            platformLogWriter(messageStringFormatter = NoTagFormatter),
-            minSeverity = config.logLevel,
-          ),
-        tag = TAG,
-      )
-    layout = Layout.create(
-      rootPath = config.rootPath,
-      blobsPath = config.blobsPath,
-      stagingPath = config.stagingPath,
-      strictChecking = config.strictChecking,
+class Koci(config: KociConfig) {
+  private val logger: Logger =
+    Logger(
+      config =
+        loggerConfigInit(
+          platformLogWriter(messageStringFormatter = NoTagFormatter),
+          minSeverity = config.logLevelToSeverity(),
+        ),
+      tag = "Koci",
     )
-  }
 
-  companion object {
-    private const val TAG = "Koci"
+  private var layout: Layout? = null
 
-    /**
-     * Creates a new [Koci] instance with the given [config].
-     *
-     * @param config the configuration for the [Koci] instance
-     * @return a new [Koci] instance
-     */
-    fun create(config: KociConfig): Koci = Koci()
+  init {
+    when (config.localLayoutConfig.enabled) {
+      true -> {
+        val layoutCreation =
+          Layout.create(
+            rootPath = config.localLayoutConfig.rootPath,
+            blobsPath = config.localLayoutConfig.blobsPath,
+            stagingPath = config.localLayoutConfig.stagingPath,
+            strictChecking = config.localLayoutConfig.strictChecking,
+          )
+
+        layoutCreation.fold(
+          onErr = { logger.e { "Failed to create local layout: $it" } },
+          onOk = { layout = it },
+        )
+      }
+      false -> logger.d { "Local layout disabled, skipping creation" }
+    }
   }
 }

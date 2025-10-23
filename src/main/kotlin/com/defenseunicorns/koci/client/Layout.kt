@@ -180,7 +180,7 @@ private constructor(
         val path = blob(descriptor)
 
         if (!fileSystem.exists(path)) {
-          return OCIResult.ok(false) // TODO: File was not removed since it does not exist
+          return OCIResult.ok(false)
         }
 
         return when (descriptor.mediaType) {

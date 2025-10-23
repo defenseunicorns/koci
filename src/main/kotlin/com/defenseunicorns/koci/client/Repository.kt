@@ -101,6 +101,7 @@ class Repository(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
+  private val coordinator: DownloadCoordinator = DownloadCoordinator(),
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
@@ -596,6 +597,9 @@ class Repository(
    * Downloads blob and stores it in layout, with support for resumable downloads when registry
    * supports range requests.
    *
+   * Uses the download coordinator to prevent duplicate downloads when multiple operations request
+   * the same descriptor concurrently.
+   *
    * Emits progress updates as OCIResult<Int> where the value is bytes downloaded.
    * Errors are emitted as OCIResult.Err and the flow completes.
    *
@@ -607,7 +611,18 @@ class Repository(
    *
    * Note: For complete images or manifests, use [pull] methods instead.
    */
-  private fun copy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
+  private suspend fun copy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = 
+    coordinator.download(descriptor) {
+      actualCopy(descriptor, store)
+    }
+
+  /**
+   * Performs the actual download operation.
+   *
+   * This is called by the coordinator when this is the first request for a descriptor.
+   * Other concurrent requests for the same descriptor will wait for this to complete.
+   */
+  private fun actualCopy(descriptor: Descriptor, store: Layout): Flow<OCIResult<Int>> = flow {
     val existsResult = store.exists(descriptor)
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return

@@ -232,6 +232,16 @@ sealed interface OCIError {
   data class InvalidDigest(val digest: String, val reason: String) : OCIError
 
   /**
+   * A transfer (download/upload) failed in another concurrent operation.
+   *
+   * When multiple operations attempt to transfer the same descriptor, only one executes the
+   * transfer. If that transfer fails, other waiting operations receive this error.
+   *
+   * @param descriptor The descriptor that failed to transfer
+   */
+  data class TransferFailed(val descriptor: Descriptor) : OCIError
+
+  /**
    * A generic error for cases not covered by specific error types.
    *
    * @param message Description of the error

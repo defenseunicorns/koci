@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models.content
+package com.defenseunicorns.koci.api.models
 
 /**
  * Common interface for versioned OCI content types.

@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.client
+package com.defenseunicorns.koci.api.client
 
-import co.touchlab.kermit.Logger
+import com.defenseunicorns.koci.KociLogger
+import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.auth.ACTION_DELETE
 import com.defenseunicorns.koci.auth.ACTION_PULL
 import com.defenseunicorns.koci.auth.ACTION_PUSH
@@ -15,16 +16,23 @@ import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-import com.defenseunicorns.koci.models.Reference
-import com.defenseunicorns.koci.models.content.Descriptor
-import com.defenseunicorns.koci.models.content.Digest
-import com.defenseunicorns.koci.models.content.Index
-import com.defenseunicorns.koci.models.content.Manifest
-import com.defenseunicorns.koci.models.content.Platform
-import com.defenseunicorns.koci.models.content.UploadStatus
-import com.defenseunicorns.koci.models.content.Versioned
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.models.Reference
+import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Digest
+import com.defenseunicorns.koci.api.models.Index
+import com.defenseunicorns.koci.api.models.Manifest
+import com.defenseunicorns.koci.api.models.Platform
+import com.defenseunicorns.koci.api.models.UploadStatus
+import com.defenseunicorns.koci.api.models.Versioned
+import com.defenseunicorns.koci.api.KociError
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.errors.DescriptorNotFound
+import com.defenseunicorns.koci.api.errors.DigestMismatch
+import com.defenseunicorns.koci.api.errors.Generic
+import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.api.errors.SizeMismatch
+import com.defenseunicorns.koci.api.errors.UnsupportedManifest
+import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -82,7 +90,7 @@ internal constructor(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
-  private val logger: Logger,
+  private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
 ) {
   /** Tracks in-progress blob uploads for resumable operations. */
@@ -100,7 +108,7 @@ internal constructor(
    */
   suspend fun exists(descriptor: Descriptor): KociResult<Boolean> {
     return try {
-      logger.d { "Checking existence of ${descriptor.digest}" }
+      logger.d ( "Checking existence of ${descriptor.digest}" )
       val endpoint =
         when (descriptor.mediaType) {
           MANIFEST_MEDIA_TYPE,
@@ -111,14 +119,14 @@ internal constructor(
       val response =
         client.head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
       if (!response.status.isSuccess()) {
-        logger.d { "Descriptor does not exist: ${descriptor.digest}" }
+        logger.d("Descriptor does not exist: ${descriptor.digest}")
         return parseHTTPError(response)
       }
-      logger.d { "Descriptor exists: ${descriptor.digest}" }
+      logger.d("Descriptor exists: ${descriptor.digest}")
       KociResult.ok(true)
     } catch (e: Exception) {
-      logger.e(e) { "Failed to check existence: ${descriptor.digest}" }
-      KociResult.err(KociError.IOError("Failed to check existence: ${e.message}", e))
+      logger.e("Failed to check existence: ${descriptor.digest}" , e)
+      KociResult.err(IOError("Failed to check existence: ${e.message}", e))
     }
   }
 
@@ -131,7 +139,7 @@ internal constructor(
    *
    * @param tag Tag to resolve
    * @param platformResolver Optional function to select specific platform from index manifest
-   * @throws com.defenseunicorns.koci.models.errors.OCIException.PlatformNotFound if
+   * @throws com.defenseunicorns.koci.api.OCIException.PlatformNotFound if
    *   platformResolver provided but no matching platform found
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
@@ -143,7 +151,7 @@ internal constructor(
     platformResolver: ((Platform) -> Boolean)? = null,
   ): KociResult<Descriptor> {
     return try {
-      logger.d { "Resolving tag: $name:$tag" }
+      logger.d("Resolving tag: $name:$tag")
       val endpoint = router.manifest(name, tag)
       val response =
         client.head(endpoint) {
@@ -182,13 +190,13 @@ internal constructor(
                 }
 
               if (descriptor == null) {
-                logger.e { "No matching platform found in index for $name:$tag" }
+                logger.e("No matching platform found in index for $name:$tag")
                 return@execute KociResult.err(
-                  KociError.DescriptorNotFound("No matching platform found in index")
+                  DescriptorNotFound("No matching platform found in index")
                 )
               }
 
-              logger.d { "Resolved $name:$tag to ${descriptor.digest}" }
+              logger.d("Resolved $name:$tag to ${descriptor.digest}")
               KociResult.ok(descriptor)
             }
         }
@@ -205,15 +213,15 @@ internal constructor(
                   mediaType = MANIFEST_MEDIA_TYPE,
                   stream = res.body() as InputStream,
                 )
-              logger.d { "Resolved $name:$tag to ${descriptor.digest}" }
+              logger.d("Resolved $name:$tag to ${descriptor.digest}")
               KociResult.ok(descriptor)
             }
         }
 
         else -> {
-          logger.e { "Unsupported content type for $name:$tag: ${response.contentType()}" }
+          logger.e("Unsupported content type for $name:$tag: ${response.contentType()}")
           KociResult.err(
-            KociError.UnsupportedManifest(
+            UnsupportedManifest(
               response.contentType()?.toString() ?: "unknown",
               "Unsupported content type for manifest",
             )
@@ -221,8 +229,8 @@ internal constructor(
         }
       }
     } catch (e: Exception) {
-      logger.e(e) { "Failed to resolve tag: $name:$tag" }
-      KociResult.err(KociError.IOError("Failed to resolve tag: ${e.message}", e))
+      logger.e("Failed to resolve tag: $name:$tag", e)
+      KociResult.err(IOError("Failed to resolve tag: ${e.message}", e))
     }
   }
 
@@ -260,7 +268,7 @@ internal constructor(
       }
       KociResult.ok(true)
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to remove content: ${e.message}", e))
+      KociResult.err(IOError("Failed to remove content: ${e.message}", e))
     }
   }
 
@@ -311,13 +319,13 @@ internal constructor(
   suspend fun manifest(descriptor: Descriptor): KociResult<Manifest> {
     if (descriptor.mediaType != MANIFEST_MEDIA_TYPE) {
       return KociResult.err(
-        KociError.UnsupportedManifest(descriptor.mediaType, "Expected manifest media type")
+        UnsupportedManifest(descriptor.mediaType, "Expected manifest media type")
       )
     }
     return try {
       KociResult.ok(fetch(descriptor, Json::decodeFromStream))
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to fetch manifest: ${e.message}", e))
+      KociResult.err(IOError("Failed to fetch manifest: ${e.message}", e))
     }
   }
 
@@ -337,13 +345,13 @@ internal constructor(
   suspend fun index(descriptor: Descriptor): KociResult<Index> {
     if (descriptor.mediaType != INDEX_MEDIA_TYPE) {
       return KociResult.err(
-        KociError.UnsupportedManifest(descriptor.mediaType, "Expected index media type")
+        UnsupportedManifest(descriptor.mediaType, "Expected index media type")
       )
     }
     return try {
       KociResult.ok(fetch(descriptor, Json::decodeFromStream))
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to fetch index: ${e.message}", e))
+      KociResult.err(IOError("Failed to fetch index: ${e.message}", e))
     }
   }
 
@@ -367,7 +375,7 @@ internal constructor(
       }
       KociResult.ok(Json.decodeFromString(response.body()))
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to fetch tags: ${e.message}", e))
+      KociResult.err(IOError("Failed to fetch tags: ${e.message}", e))
     }
   }
 
@@ -391,9 +399,9 @@ internal constructor(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Flow<KociResult<Int>> =
+  ): Flow<KociResult<Double>> =
     flow {
-        logger.d { "Pulling $name:$tag" }
+        logger.d("Pulling $name:$tag")
         val desc =
           when (val result = resolve(tag, platformResolver)) {
             is KociResult.Ok -> result.value
@@ -417,19 +425,19 @@ internal constructor(
         val ref = Reference(registry = router.base(), repository = name, reference = tag)
         val ok = store.exists(desc).getOrNull() ?: false
         if (!ok) {
-          logger.e { "Incomplete pull for $name:$tag: content not found after download" }
-          emit(KociResult.err(KociError.Generic("Incomplete pull: content not found after download")))
+          logger.e("Incomplete pull for $name:$tag: content not found after download")
+          emit(KociResult.err(Generic("Incomplete pull: content not found after download")))
           return@flow
         }
 
-        logger.d { "Successfully pulled $name:$tag" }
+        logger.d("Successfully pulled $name:$tag")
 
         when (val result = store.tag(desc, ref)) {
           is KociResult.Err -> {
             emit(KociResult.err(result.error))
             return@flow
           }
-          is KociResult.Ok -> emit(KociResult.ok(100))
+          is KociResult.Ok -> emit(KociResult.ok(FINISHED_AMOUNT))
         }
       }
       .distinctUntilChanged()
@@ -447,12 +455,12 @@ internal constructor(
    * @param store Layout to store content in
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun pull(descriptor: Descriptor, store: Layout): Flow<KociResult<Int>> = flow {
-    logger.d { "Pulling descriptor: ${descriptor.digest}" }
+  fun pull(descriptor: Descriptor, store: Layout): Flow<KociResult<Double>> = flow {
+    logger.d("Pulling descriptor: ${descriptor.digest}")
     when (descriptor.mediaType) {
       INDEX_MEDIA_TYPE -> {
         if (store.exists(descriptor).getOrNull() == true) {
-          emit(KociResult.ok(100))
+          emit(KociResult.ok(FINISHED_AMOUNT))
           return@flow
         }
 
@@ -473,7 +481,7 @@ internal constructor(
               is KociResult.Ok -> {
                 val currentManifestContribution = progressResult.value.toDouble() / 100.0
                 val overallProgress =
-                  ((completedPulls + currentManifestContribution) / total * 100).roundToInt()
+                  ((completedPulls + currentManifestContribution) / total * 100)
                 emit(KociResult.ok(overallProgress))
               }
               is KociResult.Err -> {
@@ -493,12 +501,12 @@ internal constructor(
             is KociResult.Ok -> {} // Ignore intermediate progress for index
           }
         }
-        emit(KociResult.ok(100))
+        emit(KociResult.ok(FINISHED_AMOUNT))
       }
 
       MANIFEST_MEDIA_TYPE -> {
         if (store.exists(descriptor).getOrNull() == true) {
-          emit(KociResult.ok(100))
+          emit(KociResult.ok(FINISHED_AMOUNT))
           return@flow
         }
 
@@ -539,7 +547,7 @@ internal constructor(
                 when (result) {
                   is KociResult.Ok -> {
                     val curr = acc.addAndGet(result.value)
-                    emit((curr.toDouble() * 100 / total).roundToInt())
+                    emit((curr.toDouble() * 100 / total.toDouble()))
                   }
                   is KociResult.Err ->
                     throw IllegalStateException("Manifest download failed: ${result.error}")
@@ -602,7 +610,7 @@ internal constructor(
    *
    * Uses the transfer coordinator to prevent duplicate downloads of the same descriptor.
    */
-  private suspend fun download(descriptor: Descriptor, store: Layout): Flow<KociResult<Int>> =
+  private suspend fun download(descriptor: Descriptor, store: Layout): Flow<KociResult<Double>> =
     transferCoordinator.transfer(descriptor = descriptor) { actualDownload(descriptor, store) }
 
   /**
@@ -611,14 +619,15 @@ internal constructor(
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualDownload(descriptor: Descriptor, store: Layout): Flow<KociResult<Int>> = flow {
-    logger.d { "Downloading descriptor: ${descriptor.digest}" }
+  private fun actualDownload(descriptor: Descriptor, store: Layout): Flow<KociResult<Double>> = flow {
+    // TODO: Return percentage not bytes
+    logger.d("Downloading descriptor: ${descriptor.digest}")
     val existsResult = store.exists(descriptor)
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return
     if (existsResult.getOrNull() == true) {
-      logger.d { "Descriptor already exists: ${descriptor.digest}" }
-      emit(KociResult.ok(descriptor.size.toInt()))
+      logger.d("Descriptor already exists: ${descriptor.digest}")
+      emit(KociResult.ok(100.0))
       return@flow
     }
 
@@ -633,10 +642,12 @@ internal constructor(
     // Handle partial downloads if exists check revealed size/digest mismatch
     val resumeFrom =
       when (val error = existsResult.errorOrNull()) {
-        is KociError.SizeMismatch -> {
+        is SizeMismatch -> {
           if (supportsRange(descriptor)) {
             // Resume from where we left off
-            emit(KociResult.ok(error.actual.toInt()))
+            // TODO: Fix this
+//            emit(KociResult.ok(error.actual))
+            emit(KociResult.ok(0.0))
             error.actual
           } else {
             // Can't resume, remove partial download
@@ -650,7 +661,7 @@ internal constructor(
           }
         }
 
-        is KociError.DigestMismatch -> {
+        is DigestMismatch -> {
           // Digest mismatch, remove and start over
           when (val removeResult = store.remove(descriptor)) {
             is KociResult.Err -> {
@@ -690,8 +701,8 @@ internal constructor(
           }
         }
     } catch (e: Exception) {
-      logger.e(e) { "Failed to copy blob: ${descriptor.digest}" }
-      emit(KociResult.err(KociError.IOError("Failed to download blob: ${e.message}", e)))
+      logger.e("Failed to copy blob: ${descriptor.digest}", e)
+      emit(KociResult.err(IOError("Failed to download blob: ${e.message}", e)))
     }
   }
 
@@ -721,7 +732,7 @@ internal constructor(
           }
           KociResult.ok(response.headers.toUploadStatus())
         } catch (e: Exception) {
-          KociResult.err(KociError.IOError("Failed to start upload: ${e.message}", e))
+          KociResult.err(IOError("Failed to start upload: ${e.message}", e))
         }
       }
 
@@ -749,7 +760,7 @@ internal constructor(
               else -> parseHTTPError(response)
             }
           } catch (e: Exception) {
-            KociResult.err(KociError.IOError("Failed to resume upload: ${e.message}", e))
+            KociResult.err(IOError("Failed to resume upload: ${e.message}", e))
           }
         } else {
           KociResult.ok(prev)
@@ -777,9 +788,9 @@ internal constructor(
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   fun push(stream: InputStream, expected: Descriptor): Flow<KociResult<Long>> = flow {
     try {
-      logger.d { "Pushing blob: ${expected.digest}" }
+      logger.d("Pushing blob: ${expected.digest}")
       if (exists(expected).getOrNull() == true) {
-        logger.d { "Blob already exists: ${expected.digest}" }
+        logger.d("Blob already exists: ${expected.digest}")
         emit(KociResult.ok(expected.size))
         withContext(Dispatchers.IO) { stream.close() }
         return@flow
@@ -795,7 +806,7 @@ internal constructor(
         }
 
       if (start.minChunkSize == 0L) {
-        start.minChunkSize = 5 * 1024 * 1024
+        start.minChunkSize = MIN_CHUNK_SIZE
       }
 
       when (val bytesLeft = expected.size - start.offset) {
@@ -832,7 +843,7 @@ internal constructor(
               val currentLocation =
                 uploading[expected]?.location
                   ?: run {
-                    emit(KociResult.err(KociError.Generic("Upload location unexpectedly null")))
+                    emit(KociResult.err(Generic("Upload location unexpectedly null")))
                     return@flow
                   }
 
@@ -859,7 +870,7 @@ internal constructor(
           val final =
             uploading[expected]?.location
               ?: run {
-                emit(KociResult.err(KociError.Generic("Upload location unexpectedly null")))
+                emit(KociResult.err(Generic("Upload location unexpectedly null")))
                 return@flow
               }
 
@@ -877,10 +888,10 @@ internal constructor(
       }
 
       uploading.remove(expected)
-      logger.d { "Successfully pushed blob: ${expected.digest}" }
+      logger.d("Successfully pushed blob: ${expected.digest}")
     } catch (e: Exception) {
-      logger.e(e) { "Failed to push blob: ${expected.digest}" }
-      emit(KociResult.err(KociError.IOError("Failed to push blob: ${e.message}", e)))
+      logger.e("Failed to push blob: ${expected.digest}",e)
+      emit(KociResult.err(IOError("Failed to push blob: ${e.message}", e)))
     }
   }
 
@@ -900,7 +911,7 @@ internal constructor(
   suspend fun tag(content: Versioned, ref: String): KociResult<Descriptor> {
     // Validate tag format
     if (tagRegex.matchEntire(ref) == null) {
-      return KociResult.err(KociError.Generic("Invalid tag format: $ref"))
+      return KociResult.err(Generic("Invalid tag format: $ref"))
     }
 
     return try {
@@ -933,12 +944,12 @@ internal constructor(
       // get digest from Location header
       val location =
         response.headers[HttpHeaders.Location]
-          ?: return KociResult.err(KociError.Generic("Missing Location header in response"))
+          ?: return KociResult.err(Generic("Missing Location header in response"))
       val dg = Url(location).segments.last()
 
       KociResult.ok(Descriptor(ct, Digest(dg), txt.length.toLong()))
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to tag content: ${e.message}", e))
+      KociResult.err(IOError("Failed to tag content: ${e.message}", e))
     }
   }
 
@@ -958,7 +969,7 @@ internal constructor(
    */
   suspend fun mount(descriptor: Descriptor, sourceRepository: String): KociResult<Boolean> {
     if (descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE) {
-      return KociResult.err(KociError.Generic("Cannot mount manifests or indexes"))
+      return KociResult.err(Generic("Cannot mount manifests or indexes"))
     }
 
     return try {
@@ -988,7 +999,7 @@ internal constructor(
           val locationHeader =
             response.headers[HttpHeaders.Location]
               ?: return KociResult.err(
-                KociError.Generic("Registry did not provide a Location header in mount response")
+                Generic("Registry did not provide a Location header in mount response")
               )
           KociResult.ok(true)
         }
@@ -1002,7 +1013,7 @@ internal constructor(
         else -> parseHTTPError(response)
       }
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to mount blob: ${e.message}", e))
+      KociResult.err(IOError("Failed to mount blob: ${e.message}", e))
     }
   }
 
@@ -1031,11 +1042,14 @@ internal constructor(
   }
 
   companion object {
+    private const val FINISHED_AMOUNT = 100.0
+    private const val MIN_CHUNK_SIZE = 5L * 1024L * 1024L
+    
     internal fun create(
       router: Router,
       client: HttpClient,
       repositoryName: String,
-      logger: Logger,
+      logger: KociLogger,
       transferCoordinator: TransferCoordinator,
     ) =
       Repository(

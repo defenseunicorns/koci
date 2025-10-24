@@ -223,3 +223,8 @@ style:
       - java.util.*
   MandatoryBracesLoops:
     active: true
+libraries:
+  active: true
+  LibraryEntitiesShouldNotBePublic:
+    active: true
+    excludes: ["**/api/**"]

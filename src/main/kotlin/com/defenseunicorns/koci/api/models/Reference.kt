@@ -1,13 +1,10 @@
-/*
- * Copyright 2024-2025 Defense Unicorns
- * SPDX-License-Identifier: Apache-2.0
- */
+package com.defenseunicorns.koci.api.models
 
-package com.defenseunicorns.koci.models
-
-import com.defenseunicorns.koci.models.content.Digest
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.errors.InvalidRegistry
+import com.defenseunicorns.koci.api.errors.InvalidRepository
+import com.defenseunicorns.koci.models.repositoryRegex
+import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.http.Url
 import io.ktor.http.hostWithPort
 import java.net.URI
@@ -22,16 +19,16 @@ import java.net.URI
  *
  * References are used to uniquely identify and locate artifacts in OCI-compliant registries.
  */
-data class Reference(val registry: String, val repository: String, val reference: String) {
+class Reference(val registry: String, val repository: String, val reference: String) {
   /**
-   * Creates a Reference from a [Url] registry and string repository and reference.
+   * Creates a Reference from a [io.ktor.http.Url] registry and string repository and reference.
    *
    * Extracts the host and optional port from the Url to form the registry component.
    */
   constructor(
-    registry: Url,
-    repository: String,
-    reference: String,
+      registry: Url,
+      repository: String,
+      reference: String,
   ) : this(
     registry =
       registry.let { uri ->
@@ -45,7 +42,7 @@ data class Reference(val registry: String, val repository: String, val reference
   )
 
   /**
-   * Converts the reference string to a [com.defenseunicorns.koci.models.content.Digest] object.
+   * Converts the reference string to a [Digest] object.
    *
    * @throws IllegalArgumentException if the reference is not a valid digest
    */
@@ -66,14 +63,14 @@ data class Reference(val registry: String, val repository: String, val reference
   fun validate(): KociResult<Boolean> {
     // Validate registry
     if (registry.isBlank()) {
-      return KociResult.err(KociError.InvalidRegistry(registry, "Registry cannot be empty"))
+      return KociResult.Companion.err(InvalidRegistry(registry, "Registry cannot be empty"))
     }
 
     val uri =
       try {
-        URI("koci://$registry")
+          URI("koci://$registry")
       } catch (e: Exception) {
-        return KociResult.err(KociError.InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
+        return KociResult.Companion.err(InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
       }
 
     val hostWithPort =
@@ -83,32 +80,32 @@ data class Reference(val registry: String, val repository: String, val reference
       }
 
     if (hostWithPort != registry) {
-      return KociResult.err(
-        KociError.InvalidRegistry(
-          registry,
-          "Registry must be a valid hostname with optional port (e.g., 'registry.example.com:5000')",
-        )
+      return KociResult.Companion.err(
+          InvalidRegistry(
+              registry,
+              "Registry must be a valid hostname with optional port (e.g., 'registry.example.com:5000')",
+          )
       )
     }
 
     // Validate repository
     if (repositoryRegex.matchEntire(repository) == null) {
-      return KociResult.err(
-        KociError.InvalidRepository(
-          repository,
-          "Repository must contain only lowercase alphanumeric characters, separators (._-), and optional path components separated by /",
-        )
+      return KociResult.Companion.err(
+          InvalidRepository(
+              repository,
+              "Repository must contain only lowercase alphanumeric characters, separators (._-), and optional path components separated by /",
+          )
       )
     }
 
     // Validate reference (tag or digest)
     if (reference.isBlank()) {
-      return KociResult.ok(true)
+      return KociResult.Companion.ok(true)
     }
 
     // Check if it's a valid tag
     if (tagRegex.matchEntire(reference) != null) {
-      return KociResult.ok(true)
+      return KociResult.Companion.ok(true)
     }
 
     // Check if it's a valid digest
@@ -123,6 +120,21 @@ data class Reference(val registry: String, val repository: String, val reference
   /** Checks if this reference is not empty (at least one component is non-empty). */
   fun isNotEmpty(): Boolean {
     return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
+  }
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is Reference) return false
+    if (registry != other.registry) return false
+    if (repository != other.repository) return false
+    return reference == other.reference
+  }
+
+  override fun hashCode(): Int {
+    var result = registry.hashCode()
+    result = 31 * result + repository.hashCode()
+    result = 31 * result + reference.hashCode()
+    return result
   }
 
   /**
@@ -171,26 +183,26 @@ data class Reference(val registry: String, val repository: String, val reference
      */
     fun parse(artifact: String): KociResult<Reference> {
       if (artifact.isBlank()) {
-        return KociResult.err(KociError.InvalidRegistry("", "Reference string cannot be empty"))
+        return KociResult.Companion.err(InvalidRegistry("", "Reference string cannot be empty"))
       }
 
       val reg = artifact.substringBefore("/", "")
       if (reg.isEmpty()) {
-        return KociResult.err(
-          KociError.InvalidRegistry(
-            "",
-            "Reference must include registry (e.g., 'registry.example.com/repo:tag')",
-          )
+        return KociResult.Companion.err(
+            InvalidRegistry(
+                "",
+                "Reference must include registry (e.g., 'registry.example.com/repo:tag')",
+            )
         )
       }
 
       val repoAndRef = artifact.substringAfter("/", "")
       if (repoAndRef.isEmpty()) {
-        return KociResult.err(
-          KociError.InvalidRepository(
-            "",
-            "Reference must include repository after registry (e.g., 'registry.example.com/repo:tag')",
-          )
+        return KociResult.Companion.err(
+            InvalidRepository(
+                "",
+                "Reference must include repository after registry (e.g., 'registry.example.com/repo:tag')",
+            )
         )
       }
 

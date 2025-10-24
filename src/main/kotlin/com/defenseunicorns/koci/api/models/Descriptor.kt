@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models.content
+package com.defenseunicorns.koci.api.models
 
 import com.defenseunicorns.koci.models.Annotations
 import io.ktor.http.ContentType
@@ -17,7 +17,7 @@ import kotlinx.serialization.Serializable
  * JSON.
  */
 @Serializable
-data class Descriptor(
+class Descriptor(
   /** mediaType is the media type of the object this schema refers to. */
   val mediaType: String,
   /** digest is the digest of the targeted content. */
@@ -41,7 +41,33 @@ data class Descriptor(
    */
   val platform: Platform? = null,
 ) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is Descriptor) return false
+    if (mediaType != other.mediaType) return false
+    if (digest != other.digest) return false
+    if (size != other.size) return false
+    if (urls != other.urls) return false
+    if (annotations != other.annotations) return false
+    return data == other.data
+  }
+
+  override fun hashCode(): Int {
+    var result = mediaType.hashCode()
+    result = 31 * result + digest.hashCode()
+    result = 31 * result + size.hashCode()
+    result = 31 * result + (urls?.hashCode() ?: 0)
+    result = 31 * result + (annotations?.hashCode() ?: 0)
+    result = 31 * result + (data?.hashCode() ?: 0)
+    return result
+  }
+
+  override fun toString(): String =
+    "Descriptor(mediaType='$mediaType', digest=$digest, size=$size, urls=$urls, annotations=$annotations, data=$data)"
+
   companion object {
+    private const val BUFFER_SIZE = 1024
+
     /**
      * fromInputStream returns a [Descriptor], given the content and media type.
      *
@@ -54,7 +80,7 @@ data class Descriptor(
     ): Descriptor {
       val md = algorithm.hasher()
       var size = 0L
-      val buffer = ByteArray(1024)
+      val buffer = ByteArray(BUFFER_SIZE)
       stream.use { s ->
         var bytesRead: Int
         while (s.read(buffer).also { bytesRead = it } != -1) {

@@ -3,18 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.client
+package com.defenseunicorns.koci.api.client
 
-import co.touchlab.kermit.Logger
-import com.defenseunicorns.koci.KociLogLevel
+import com.defenseunicorns.koci.KociLogger
+import com.defenseunicorns.koci.TransferCoordinator
+import com.defenseunicorns.koci.api.KociError
+import com.defenseunicorns.koci.api.KociLogLevel
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
-import com.defenseunicorns.koci.createKociLogger
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
-import com.defenseunicorns.koci.models.content.Descriptor
-import com.defenseunicorns.koci.models.content.Platform
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Platform
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.Serializable
 
 /**
  * Main entry point for interacting with OCI spec compliant registries.
@@ -51,7 +51,7 @@ import kotlinx.serialization.Serializable
 class Registry
 internal constructor(
   registryUrl: String,
-  private val logger: Logger,
+  private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
   private var client: HttpClient = HttpClient(CIO),
 ) {
@@ -138,10 +138,10 @@ internal constructor(
    *   Distribution Spec: Existing Manifests</a>
    */
   suspend fun resolve(
-    repository: String,
+    repository: Repository,
     tag: String,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ) = repo(repository).resolve(tag, platformResolver)
+  ) = repository.resolve(tag, platformResolver)
 
   /**
    * Pushes a blob to the repository.
@@ -154,8 +154,8 @@ internal constructor(
    * @param expected Descriptor with expected size and digest
    * @return Flow emitting progress updates as bytes uploaded
    */
-  fun push(repository: String, stream: InputStream, expected: Descriptor) =
-    repo(repository).push(stream, expected)
+  fun push(repository: Repository, stream: InputStream, expected: Descriptor) =
+    repository.push(stream, expected)
 
   /**
    * Pulls content by tag and stores it in the provided layout.
@@ -169,11 +169,11 @@ internal constructor(
    * @param platformResolver Optional function to select platform from index manifest
    */
   fun pull(
-    repository: String,
+    repository: Repository,
     tag: String,
     storage: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ) = repo(repository).pull(tag, storage, platformResolver)
+  ) = repository.pull(tag, storage, platformResolver)
 
   /**
    * Lists all repositories with their tags.
@@ -196,31 +196,13 @@ internal constructor(
   companion object {
     fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG): Registry {
 
+      val logger = KociLogger(logLevel)
+
       return Registry(
         registryUrl = registryUrl,
-        transferCoordinator =
-          TransferCoordinator(createKociLogger(logLevel, "RegistryTransferCoordinator")),
-        logger = createKociLogger(logLevel, "Registry"),
+        transferCoordinator = TransferCoordinator(logger),
+        logger = logger,
       )
     }
   }
 }
-
-/**
- * Response structure for repository catalog requests.
- *
- * Contains a list of repository names available in the registry.
- *
- * @property repositories List of repository names in the registry
- */
-@Serializable data class CatalogResponse(val repositories: List<String>)
-
-/**
- * Response structure for repository tags list requests.
- *
- * Contains the repository name and its associated tags.
- *
- * @property name Repository name
- * @property tags List of tags associated with the repository, may be null if no tags exist
- */
-@Serializable data class TagsResponse(val name: String, val tags: List<String>)

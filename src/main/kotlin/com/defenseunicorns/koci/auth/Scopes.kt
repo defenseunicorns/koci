@@ -19,16 +19,16 @@ import java.util.TreeSet
  */
 
 /** ACTION_PULL represents generic read access for resources of the repository type. */
-const val ACTION_PULL = "pull"
+internal const val ACTION_PULL = "pull"
 
 /** ACTION_PUSH represents generic write access for resources of the repository type. */
-const val ACTION_PUSH = "push"
+internal const val ACTION_PUSH = "push"
 
 /** ACTION_DELETE represents the delete permission for resources of the repository type. */
-const val ACTION_DELETE = "delete"
+internal const val ACTION_DELETE = "delete"
 
 /** SCOPE_REGISTRY_CATALOG is the scope for registry catalog access. */
-const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
+internal const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
 
 /**
  * Creates a repository scope string for authentication.
@@ -40,7 +40,7 @@ const val SCOPE_REGISTRY_CATALOG = "registry:catalog:*"
  * @param actions One or more actions (pull, push, delete, etc.)
  * @return Formatted scope string
  */
-fun scopeRepository(repo: String, vararg actions: String): String {
+internal fun scopeRepository(repo: String, vararg actions: String): String {
   val cleaned = cleanActions(actions.toList())
 
   return listOf("repository", repo, cleaned.joinToString(",")).joinToString(":")
@@ -55,7 +55,7 @@ fun scopeRepository(repo: String, vararg actions: String): String {
  * @param actions List of action strings to clean
  * @return Cleaned list of actions
  */
-fun cleanActions(actions: List<String>): List<String> {
+internal fun cleanActions(actions: List<String>): List<String> {
   val cleaned = actions.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
   if (cleaned.contains("*")) {
@@ -80,7 +80,7 @@ fun cleanActions(actions: List<String>): List<String> {
   "detekt:ReturnCount",
   "detekt:LoopWithTooManyJumpStatements",
 )
-fun cleanScopes(scopes: List<String>): List<String> {
+internal fun cleanScopes(scopes: List<String>): List<String> {
   // fast paths
   if (scopes.isEmpty()) return emptyList()
   if (scopes.size == 1) {
@@ -140,7 +140,7 @@ fun cleanScopes(scopes: List<String>): List<String> {
 internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
 
 /** Attribute key for storing client ID in Ktor request attributes. */
-val clientIDKey = AttributeKey<String>("ociClientIDKey")
+internal val clientIDKey = AttributeKey<String>("ociClientIDKey")
 
 /** Default client ID used for authentication if none is provided. */
 internal const val DEFAULT_CLIENT_ID = "koci"

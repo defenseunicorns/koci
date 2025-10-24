@@ -1,9 +1,4 @@
-/*
- * Copyright 2024-2025 Defense Unicorns
- * SPDX-License-Identifier: Apache-2.0
- */
-
-package com.defenseunicorns.koci.models.errors
+package com.defenseunicorns.koci.api
 
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode

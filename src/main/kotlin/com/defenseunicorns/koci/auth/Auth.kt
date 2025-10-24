@@ -5,7 +5,8 @@
 
 package com.defenseunicorns.koci.auth
 
-import com.defenseunicorns.koci.models.errors.OCIException
+import com.defenseunicorns.koci.api.OCIException
+import com.defenseunicorns.koci.api.models.Credentials
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.api.Send
@@ -28,47 +29,6 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-
-/** Credential contains authentication credentials used to access remote registries. */
-data class Credential(
-  /** Username is the name of the user for the remote registry. */
-  val username: String,
-  /** Password is the secret associated with the username. */
-  val password: String,
-  /**
-   * RefreshToken is a bearer token to be sent to the authorization service for fetching access
-   * tokens.
-   *
-   * A refresh token is often referred as an identity token.
-   *
-   * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
-   */
-  val refreshToken: String,
-  /**
-   * AccessToken is a bearer token to be sent to the registry.
-   *
-   * An access token is often referred as a registry token.
-   *
-   * [Reference](https://docs.docker.com/registry/spec/auth/token/)
-   */
-  val accessToken: String,
-) {
-  /** Returns `true` if all properties are empty. */
-  fun isEmpty(): Boolean {
-    return username.isEmpty() &&
-      password.isEmpty() &&
-      refreshToken.isEmpty() &&
-      accessToken.isEmpty()
-  }
-
-  /** Returns `true` if any property is not empty. */
-  fun isNotEmpty(): Boolean {
-    return username.isNotEmpty() ||
-      password.isNotEmpty() ||
-      refreshToken.isNotEmpty() ||
-      accessToken.isNotEmpty()
-  }
-}
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -106,10 +66,26 @@ private suspend fun HttpClient.fetchDistributionToken(
   // "Token Response Fields", the token is either in `token` or
   // `access_token`. If both present, they are identical.
   @Serializable
-  data class TokenResponse(
+  class TokenResponse(
     val token: String,
     @SerialName("access_token") val accessToken: String? = null,
-  )
+  ) {
+    override fun equals(other: Any?): Boolean {
+      if (this === other) return true
+      if (other !is TokenResponse) return false
+      if (token != other.token) return false
+      return accessToken == other.accessToken
+    }
+
+    override fun hashCode(): Int {
+      var result = token.hashCode()
+      result = 31 * result + (accessToken?.hashCode() ?: 0)
+      return result
+    }
+
+    override fun toString(): String =
+      "TokenResponse(token='$token', accessToken=$accessToken)"
+  }
 
   val json = Json { ignoreUnknownKeys = true }
   val tokenResponse: TokenResponse = json.decodeFromString(res.body())
@@ -133,7 +109,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
   realm: String,
   service: String,
   scopes: List<String>,
-  cred: Credential,
+  cred: Credentials,
 ): String {
   val res =
     post(realm) {
@@ -172,7 +148,19 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  @Serializable data class TokenResponse(@SerialName("access_token") val accessToken: String)
+  @Serializable class TokenResponse(@SerialName("access_token") val accessToken: String) {
+    override fun equals(other: Any?): Boolean {
+      if (this === other) return true
+      if (other !is TokenResponse) return false
+      return accessToken == other.accessToken
+    }
+
+    override fun hashCode(): Int {
+      return accessToken.hashCode()
+    }
+
+    override fun toString(): String = "TokenResponse(accessToken='$accessToken')"
+  }
 
   val json = Json { ignoreUnknownKeys = true }
   val tokenResponse: TokenResponse = json.decodeFromString(res.body())
@@ -194,7 +182,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
  * @property forceAttemptOAuth2 Forces OAuth2 authentication flow even when refresh token is empty
  */
 class OCIAuthPluginConfig {
-  var cred: Credential = Credential("", "", "", "")
+  var cred: Credentials = Credentials("", "", "", "")
 
   // TODO: figure out what this is for and if we need it
   var forceAttemptOAuth2 = false

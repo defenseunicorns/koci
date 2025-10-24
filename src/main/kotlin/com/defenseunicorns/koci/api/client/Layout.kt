@@ -3,30 +3,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.client
+package com.defenseunicorns.koci.api.client
 
-import co.touchlab.kermit.Logger
-import com.defenseunicorns.koci.KociLogLevel
-import com.defenseunicorns.koci.createKociLogger
+import com.defenseunicorns.koci.KociLogger
+import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-import com.defenseunicorns.koci.models.Reference
+import com.defenseunicorns.koci.api.models.Reference
 import com.defenseunicorns.koci.models.annotationRefName
-import com.defenseunicorns.koci.models.content.Descriptor
-import com.defenseunicorns.koci.models.content.Digest
-import com.defenseunicorns.koci.models.content.Index
-import com.defenseunicorns.koci.models.content.LayoutMarker
-import com.defenseunicorns.koci.models.content.Manifest
-import com.defenseunicorns.koci.models.content.Platform
-import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.OCIException
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Digest
+import com.defenseunicorns.koci.api.models.Index
+import com.defenseunicorns.koci.api.models.LayoutMarker
+import com.defenseunicorns.koci.api.models.Manifest
+import com.defenseunicorns.koci.api.models.Platform
+import com.defenseunicorns.koci.api.models.RegisteredAlgorithm
+import com.defenseunicorns.koci.api.KociError
+import com.defenseunicorns.koci.api.KociLogLevel
+import com.defenseunicorns.koci.api.OCIException
+import com.defenseunicorns.koci.api.KociResult
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -38,6 +39,7 @@ import okio.HashingSource.Companion.sha512
 import okio.IOException
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.blackholeSink
 import okio.buffer
 import okio.source
 
@@ -66,7 +68,7 @@ private constructor(
   private val blobsPath: String,
   private val stagingPath: String,
   private val strictChecking: Boolean,
-  private val logger: Logger,
+  private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
 ) {
   private val fileSystem = FileSystem.SYSTEM
@@ -87,15 +89,13 @@ private constructor(
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
-      logger.d { "Blob does not exist: ${descriptor.digest}" }
+      logger.d("Blob does not exist: ${descriptor.digest}")
       return KociResult.ok(false)
     }
 
     val length = fileSystem.metadata(path).size ?: 0L
     if (length != descriptor.size) {
-      logger.e {
-        "Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length"
-      }
+      logger.e("Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length")
       return KociResult.err(KociError.SizeMismatch(descriptor, length))
     }
 
@@ -112,7 +112,7 @@ private constructor(
               RegisteredAlgorithm.SHA256 -> sha256(source)
               RegisteredAlgorithm.SHA512 -> sha512(source)
             }
-          hashingSource.buffer().readAll(okio.blackholeSink())
+          hashingSource.buffer().readAll(blackholeSink())
           Digest(descriptor.digest.algorithm, hashingSource.hash.toByteArray())
         }
       } catch (e: Exception) {
@@ -120,11 +120,11 @@ private constructor(
       }
 
     if (digest != descriptor.digest) {
-      logger.e { "Digest mismatch for ${descriptor.digest}: computed $digest" }
+      logger.e("Digest mismatch for ${descriptor.digest}: computed $digest")
       return KociResult.err(KociError.DigestMismatch(descriptor, digest))
     }
 
-    logger.d { "Blob exists and verified: ${descriptor.digest}" }
+    logger.d("Blob exists and verified: ${descriptor.digest}")
     return KociResult.ok(true)
   }
 
@@ -176,7 +176,7 @@ private constructor(
    * @param reference The reference to remove
    */
   suspend fun remove(reference: Reference): KociResult<Boolean> {
-    logger.d { "Removing reference: $reference" }
+    logger.d("Removing reference: $reference")
     return resolve(reference).flatMap { descriptor -> remove(descriptor) }
   }
 
@@ -193,7 +193,7 @@ private constructor(
   @OptIn(ExperimentalSerializationApi::class)
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   suspend fun remove(descriptor: Descriptor): KociResult<Boolean> {
-    logger.d { "Removing descriptor: ${descriptor.digest}" }
+    logger.d("Removing descriptor: ${descriptor.digest}")
     val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
@@ -203,7 +203,7 @@ private constructor(
         val path = blob(descriptor)
 
         if (!fileSystem.exists(path)) {
-          logger.d { "Descriptor not found, nothing to remove: ${descriptor.digest}" }
+          logger.d("Descriptor not found, nothing to remove: ${descriptor.digest}")
           return KociResult.ok(false)
         }
 
@@ -220,7 +220,7 @@ private constructor(
             }
 
             fileSystem.delete(path)
-            logger.d { "Removed index: ${descriptor.digest}" }
+            logger.d("Removed index: ${descriptor.digest}")
 
             KociResult.ok(true)
           }
@@ -249,20 +249,20 @@ private constructor(
             }
 
             fileSystem.delete(path)
-            logger.d { "Removed manifest: ${descriptor.digest}" }
+            logger.d("Removed manifest: ${descriptor.digest}")
 
             KociResult.ok(true)
           }
 
           else -> {
             fileSystem.delete(path)
-            logger.d { "Removed blob: ${descriptor.digest}" }
+            logger.d("Removed blob: ${descriptor.digest}")
             KociResult.ok(true)
           }
         }
       }
     } catch (e: Exception) {
-      logger.e(e) { "Failed to remove descriptor: ${descriptor.digest}" }
+      logger.e("Failed to remove descriptor: ${descriptor.digest}", e)
       KociResult.err(KociError.IOError("Failed to remove descriptor: ${e.message}", e))
     } finally {
       val pair = removing[descriptor]
@@ -320,7 +320,7 @@ private constructor(
    * @param stream The input stream containing the content
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Int>> =
+  fun push(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Double>> =
     transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
   /**
@@ -329,9 +329,9 @@ private constructor(
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Int>> =
-    kotlinx.coroutines.flow.flow {
-      logger.d { "Pushing to disk: ${descriptor.digest}" }
+  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Double>> =
+    flow {
+      logger.d("Pushing to disk: ${descriptor.digest}")
 
       val ok = exists(descriptor).getOrNull() ?: false
 
@@ -347,7 +347,7 @@ private constructor(
         // It is up to the caller to properly resume the stream at the proper location,
         // otherwise a DigestMismatch will occur
         if (fileSystem.exists(stagingPath)) {
-          logger.d { "Resuming push for ${descriptor.digest}" }
+          logger.d("Resuming push for ${descriptor.digest}")
           fileSystem.source(stagingPath).buffer().use { source ->
             val buffer = ByteArray(BUFFER_SIZE)
             var bytesRead: Int
@@ -365,7 +365,9 @@ private constructor(
             while (source.read(buffer).also { bytesRead = it } != -1) {
               md.update(buffer, 0, bytesRead)
               sink.write(buffer, 0, bytesRead)
-              emit(KociResult.ok(bytesRead))
+              // TODO: Fix this
+//              emit(KociResult.ok(bytesRead))
+              emit(KociResult.ok(0.0))
             }
           }
         }
@@ -373,9 +375,7 @@ private constructor(
         // Verify size
         val length = fileSystem.metadata(stagingPath).size ?: 0L
         if (length != descriptor.size) {
-          logger.e {
-            "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
-          }
+          logger.e("Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length")
           fileSystem.delete(stagingPath)
           emit(KociResult.err(KociError.SizeMismatch(descriptor, length)))
           return@flow
@@ -385,7 +385,7 @@ private constructor(
         val digest = Digest(descriptor.digest.algorithm, md.digest())
 
         if (digest != descriptor.digest) {
-          logger.e { "Digest mismatch pushing ${descriptor.digest}: computed $digest" }
+          logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
           fileSystem.delete(stagingPath)
           emit(KociResult.err(KociError.DigestMismatch(descriptor, digest)))
           return@flow
@@ -395,13 +395,13 @@ private constructor(
         // We can't use atomicMove since staging and blobs may be on different filesystems
         fileSystem.createDirectories(finalPath.parent!!)
 
-        logger.d { "Finalization move: $stagingPath -> $finalPath" }
+        logger.d("Finalization move: $stagingPath -> $finalPath")
         try {
           // Try atomic move first (works if same filesystem)
           fileSystem.atomicMove(stagingPath, finalPath)
         } catch (_: IOException) {
           // Fall back to copy-then-delete for cross-filesystem moves
-          logger.d { "Atomic move failed, using copy: ${descriptor.digest}" }
+          logger.d("Atomic move failed, using copy: ${descriptor.digest}")
           fileSystem.copy(stagingPath, finalPath)
           fileSystem.delete(stagingPath)
         }
@@ -410,20 +410,20 @@ private constructor(
         when (val verifyResult = exists(descriptor)) {
           is KociResult.Ok -> {
             if (!verifyResult.value) {
-              logger.e { "Final verification failed: ${descriptor.digest} not found after move" }
+              logger.e("Final verification failed: ${descriptor.digest} not found after move")
               emit(KociResult.err(KociError.Generic("File not found after finalization move")))
               return@flow
             }
           }
           is KociResult.Err -> {
-            logger.e { "Final verification failed for ${descriptor.digest}" }
+            logger.e("Final verification failed for ${descriptor.digest}")
             fileSystem.delete(finalPath)
             emit(verifyResult)
             return@flow
           }
         }
 
-        logger.d { "Successfully downloaded ${descriptor.digest}" }
+        logger.d("Successfully downloaded ${descriptor.digest}")
       }
     }
 
@@ -559,16 +559,16 @@ private constructor(
               runCatching {
                 fileSystem.delete(path)
                 cleaned++
-                logger.d { "Cleaned staging file: ${path.name}" }
+                logger.d("Cleaned staging file: ${path.name}")
               }
             }
           }
         }
       }
-      logger.d { "Cleaned $cleaned staging files" }
+      logger.d("Cleaned $cleaned staging files")
       KociResult.ok(cleaned)
     } catch (e: Exception) {
-      logger.e(e) { "Failed to clean staging directory" }
+      logger.e("Failed to clean staging directory", e)
       KociResult.err(KociError.IOError("Failed to clean staging: ${e.message}", e))
     }
   }
@@ -650,7 +650,7 @@ private constructor(
       strictChecking: Boolean = true,
       logLevel: KociLogLevel = KociLogLevel.DEBUG,
     ): KociResult<Layout> {
-      val logger = createKociLogger(logLevel, "Layout")
+      val logger = KociLogger(logLevel)
 
       val fs = FileSystem.SYSTEM
       val rootDir = rootPath.toPath()
@@ -721,7 +721,7 @@ private constructor(
         return KociResult.err(KociError.IOError("Failed to create temp directory: ${e.message}", e))
       }
 
-      logger.d { "Layout created" }
+      logger.d("Layout created")
 
       val layout =
         Layout(
@@ -732,7 +732,7 @@ private constructor(
           strictChecking = strictChecking,
           logger = logger,
           transferCoordinator =
-            TransferCoordinator(createKociLogger(logLevel, "LayoutTransferCoordinator")),
+            TransferCoordinator(logger),
         )
 
       return KociResult.ok(layout)

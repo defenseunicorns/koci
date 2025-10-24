@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.models.content
+package com.defenseunicorns.koci.api.models
 
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.KociError
+import com.defenseunicorns.koci.api.KociResult
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -62,7 +62,7 @@ enum class RegisteredAlgorithm(private val n: String) {
  * integrity.
  */
 @Serializable(with = DigestSerializer::class)
-data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
+class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
   /**
    * Creates a Digest from a string in the format "algorithm:hex".
    *
@@ -100,11 +100,15 @@ data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
 
     when (algorithm) {
       RegisteredAlgorithm.SHA256 -> {
-        require(hex.length == 64) { "$algorithm algorithm specified but hex length is not 64" }
+        require(hex.length == SHA_256_BYTES) {
+          "$algorithm algorithm specified but hex length is not $SHA_256_BYTES"
+        }
       }
 
       RegisteredAlgorithm.SHA512 -> {
-        require(hex.length == 128) { "$algorithm algorithm specified but hex length is not 128" }
+        require(hex.length == SHA_512_BYTES) {
+          "$algorithm algorithm specified but hex length is not $SHA_512_BYTES"
+        }
       }
     }
   }
@@ -135,6 +139,9 @@ data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
   }
 
   companion object {
+    private const val SHA_256_BYTES = 64
+    private const val SHA_512_BYTES = 128
+
     /**
      * Validates a digest string without constructing a Digest object.
      *
@@ -159,8 +166,8 @@ data class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
           val hex = content.substringAfter(":")
           val expectedLength =
             when (algo == "sha256") {
-              true -> 64
-              false -> 128
+              true -> SHA_256_BYTES
+              false -> SHA_512_BYTES
             }
 
           when {

@@ -5,7 +5,7 @@
 
 package com.defenseunicorns.koci.http
 
-import com.defenseunicorns.koci.models.content.Descriptor
+import com.defenseunicorns.koci.api.models.Descriptor
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
@@ -25,7 +25,7 @@ import java.net.URI
  *
  * All methods return fully constructed [Url] objects ready for use with HTTP clients.
  */
-class Router(registryUrl: String) {
+internal class Router(registryUrl: String) {
 
   private val base: URLBuilder = URLBuilder().takeFrom(registryUrl).appendPathSegments("v2/")
 

@@ -5,8 +5,8 @@
 
 package com.defenseunicorns.koci
 
-import com.defenseunicorns.koci.client.Layout
-import com.defenseunicorns.koci.client.Registry
+import com.defenseunicorns.koci.api.client.Layout
+import com.defenseunicorns.koci.api.client.Registry
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.async

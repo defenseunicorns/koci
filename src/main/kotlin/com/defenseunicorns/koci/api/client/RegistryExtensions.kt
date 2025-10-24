@@ -3,14 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.client
+package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.auth.appendScopes
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
-import com.defenseunicorns.koci.models.errors.KociError
-import com.defenseunicorns.koci.models.errors.KociResult
+import com.defenseunicorns.koci.api.KociError
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.models.CatalogResponse
 import com.defenseunicorns.koci.models.linkHeaderRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -76,7 +77,7 @@ class RegistryExtensions(private val client: HttpClient, private val router: Rou
       val response = client.get(endpoint) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
 
       if (!response.status.isSuccess()) {
-        throw IllegalStateException("HTTP ${response.status.value}: ${response.status.description}")
+        error("HTTP ${response.status.value}: ${response.status.description}")
       }
 
       // If the header is not present, the client can assume that all results have been received.
@@ -88,12 +89,12 @@ class RegistryExtensions(private val client: HttpClient, private val router: Rou
           // https://datatracker.ietf.org/doc/html/rfc5988#section-5
           val next =
             linkHeaderRegex.find(linkHeader)?.groupValues?.get(1)
-              ?: throw IllegalStateException("$linkHeader does not satisfy $linkHeaderRegex")
+              ?: error("$linkHeader does not satisfy $linkHeaderRegex")
 
           val url = Url(next)
           val nextN =
             url.parameters["n"]?.toInt()
-              ?: throw IllegalStateException("$linkHeader does not contain an 'n' parameter")
+              ?: error("$linkHeader does not contain an 'n' parameter")
           router.catalog(nextN, url.parameters["last"])
         }
 

@@ -6,13 +6,9 @@
 package com.defenseunicorns.koci.models
 
 /**
- * Annotations is a simple map of strings.
- *
  * [Pre-defined annotations
  * keys](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys)
  */
-typealias Annotations = Map<String, String>
-
 const val ANNOTATION_CREATED = "org.opencontainers.image.created"
 const val ANNOTATION_AUTHORS = "org.opencontainers.image.authors"
 const val ANNOTATION_URL = "org.opencontainers.image.url"
@@ -28,44 +24,44 @@ const val ANNOTATION_DESCRIPTION = "org.opencontainers.image.description"
 const val ANNOTATION_BASE_DIGEST = "org.opencontainers.image.base.digest"
 const val ANNOTATION_BASE_NAME = "org.opencontainers.image.base.name"
 
-val Annotations.annotationCreated: String?
+val Map<String, String>.annotationCreated: String?
   get() = this[ANNOTATION_CREATED]
 
-val Annotations.annotationAuthors: String?
+val Map<String, String>.annotationAuthors: String?
   get() = this[ANNOTATION_AUTHORS]
 
-val Annotations.annotationURL: String?
+val Map<String, String>.annotationURL: String?
   get() = this[ANNOTATION_URL]
 
-val Annotations.annotationDocumentation: String?
+val Map<String, String>.annotationDocumentation: String?
   get() = this[ANNOTATION_DOCUMENTATION]
 
-val Annotations.annotationSource: String?
+val Map<String, String>.annotationSource: String?
   get() = this[ANNOTATION_SOURCE]
 
-val Annotations.annotationVersion: String?
+val Map<String, String>.annotationVersion: String?
   get() = this[ANNOTATION_VERSION]
 
-val Annotations.annotationRevision: String?
+val Map<String, String>.annotationRevision: String?
   get() = this[ANNOTATION_REVISION]
 
-val Annotations.annotationVendor: String?
+val Map<String, String>.annotationVendor: String?
   get() = this[ANNOTATION_VENDOR]
 
-val Annotations.annotationLicenses: String?
+val Map<String, String>.annotationLicenses: String?
   get() = this[ANNOTATION_LICENSES]
 
-val Annotations.annotationRefName: String?
+val Map<String, String>.annotationRefName: String?
   get() = this[ANNOTATION_REF_NAME]
 
-val Annotations.annotationTitle: String?
+val Map<String, String>.annotationTitle: String?
   get() = this[ANNOTATION_TITLE]
 
-val Annotations.annotationDescription: String?
+val Map<String, String>.annotationDescription: String?
   get() = this[ANNOTATION_DESCRIPTION]
 
-val Annotations.annotationBaseDigest: String?
+val Map<String, String>.annotationBaseDigest: String?
   get() = this[ANNOTATION_BASE_DIGEST]
 
-val Annotations.annotationBaseName: String?
+val Map<String, String>.annotationBaseName: String?
   get() = this[ANNOTATION_BASE_NAME]

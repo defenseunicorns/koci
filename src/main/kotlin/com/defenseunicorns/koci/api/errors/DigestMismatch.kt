@@ -9,7 +9,7 @@ import com.defenseunicorns.koci.api.models.Digest
    * @param expected The descriptor with the expected digest
    * @param actual The actual digest of the content
    */
-  class DigestMismatch(val expected: Descriptor, val actual: Digest) : KociError {
+  class DigestMismatch(val expected: Descriptor, val actual: Digest?) : KociError {
     override fun equals(other: Any?): Boolean {
       if (this === other) return true
       if (other !is DigestMismatch) return false

@@ -7,16 +7,15 @@ package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
-import com.defenseunicorns.koci.api.KociError
 import com.defenseunicorns.koci.api.KociLogLevel
 import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Platform
 import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
-import com.defenseunicorns.koci.api.models.Descriptor
-import com.defenseunicorns.koci.api.models.Platform
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -56,7 +55,7 @@ internal constructor(
   private val transferCoordinator: TransferCoordinator,
   private var client: HttpClient = HttpClient(CIO),
 ) {
-  val router = Router(registryUrl)
+  private val router = Router(registryUrl)
   val extensions = RegistryExtensions(client, router)
 
   init {

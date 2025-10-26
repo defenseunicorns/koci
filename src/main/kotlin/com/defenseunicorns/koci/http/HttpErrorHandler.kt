@@ -24,14 +24,14 @@ import io.ktor.http.contentType
  * @param response The HTTP response with an error status code
  * @return OCIResult.Err containing the parsed error
  */
-internal suspend fun <T> parseHTTPError(response: HttpResponse): KociResult<T> {
+internal suspend fun <T> parseHTTPError(response: HttpResponse): T {
   // Try to parse OCI-compliant error response
   if (response.contentType() == ContentType.Application.Json) {
     try {
       val ociFailureResponse: OciFailureResponse = response.body()
       ociFailureResponse.status = response.status
-      return KociResult.err(FromResponse(ociFailureResponse))
-    } catch (_: NoTransformationFoundException) {
+      return ociFailureResponse
+    } catch (_: Exception) {
       // Fall through to generic error
     }
   }

@@ -5,8 +5,6 @@
 
 package com.defenseunicorns.koci.api.models
 
-import com.defenseunicorns.koci.api.KociResult
-import com.defenseunicorns.koci.api.errors.InvalidDigest
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -50,9 +48,7 @@ enum class RegisteredAlgorithm(private val n: String) {
 @Serializable(with = DigestSerializer::class)
 class Digest internal constructor(val algorithm: RegisteredAlgorithm, val hex: String) {
 
-  /**
-   * Used for deserialization.
-   */
+  /** Used for deserialization. */
   internal constructor(
     content: String
   ) : this(
@@ -95,41 +91,26 @@ class Digest internal constructor(val algorithm: RegisteredAlgorithm, val hex: S
     private const val SHA_256_LENGTH = 64
     private const val SHA_512_LENGTH = 128
 
-    fun create(algorithm: RegisteredAlgorithm, hex: String): KociResult<Digest> {
-      return validateHex(algorithm, hex).map { Digest(algorithm, hex) }
+    fun create(algorithm: RegisteredAlgorithm, hex: String): Digest? {
+      return Digest(algorithm, hex).takeIf { validateHex(algorithm, hex) }
     }
 
-    fun create(algorithm: RegisteredAlgorithm, hex: ByteArray): KociResult<Digest> {
+    fun create(algorithm: RegisteredAlgorithm, hex: ByteArray): Digest? {
       val stringHex = hex.joinToString("") { "%02x".format(it) }
-      return validateHex(algorithm, stringHex).map { Digest(algorithm, stringHex) }
+      return create(algorithm, stringHex)
     }
 
-    fun validateHex(algorithm: RegisteredAlgorithm, hex: String): KociResult<Boolean> {
-      val expectedLength = when (algorithm) {
-        RegisteredAlgorithm.SHA256 -> SHA_256_LENGTH
-        RegisteredAlgorithm.SHA512 -> SHA_512_LENGTH
-      }
+    fun validateHex(algorithm: RegisteredAlgorithm, hex: String): Boolean {
+      val expectedLength =
+        when (algorithm) {
+          RegisteredAlgorithm.SHA256 -> SHA_256_LENGTH
+          RegisteredAlgorithm.SHA512 -> SHA_512_LENGTH
+        }
 
       return when {
-        hex.length != expectedLength -> {
-          KociResult.err(
-            InvalidDigest(
-              hex,
-              "$algorithm digest must have exactly $expectedLength hex characters, got ${hex.length}",
-            ),
-          )
-        }
-
-        !hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } -> {
-          KociResult.err(
-            InvalidDigest(
-              hex,
-              "Digest hex value must contain only hexadecimal characters (0-9, a-f, A-F)",
-            ),
-          )
-        }
-
-        else -> KociResult.ok(true)
+        hex.length != expectedLength -> false
+        !hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } -> false
+        else -> true
       }
     }
 
@@ -139,28 +120,14 @@ class Digest internal constructor(val algorithm: RegisteredAlgorithm, val hex: S
      * @param content The digest string to validate (e.g., "sha256:abc123...")
      * @return OCIResult.Ok if valid, OCIResult.Err with specific error if invalid
      */
-    fun validate(content: String): KociResult<Boolean> {
+    fun validate(content: String): Boolean {
       val algo = content.substringBefore(":", "")
 
       if (algo.isEmpty()) {
-        return KociResult.err(
-          InvalidDigest(
-            content,
-            "Digest must be in format 'algorithm:hex' (e.g., 'sha256:abc123...')",
-          ),
-        )
+        return false
       }
 
-      return try {
-        validateHex(RegisteredAlgorithm.valueOf(algo), content.substringAfter(":"))
-      } catch (_: Exception) {
-        KociResult.err(
-          InvalidDigest(
-            content,
-            "Algorithm '$algo' is not supported. Must be one of: sha256, sha512",
-          ),
-        )
-      }
+      return validateHex(RegisteredAlgorithm.valueOf(algo), content.substringAfter(":"))
     }
   }
 }

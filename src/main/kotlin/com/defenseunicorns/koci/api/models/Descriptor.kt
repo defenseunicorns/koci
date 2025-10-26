@@ -42,6 +42,25 @@ class Descriptor(
    */
   val platform: Platform? = null,
 ) {
+
+  fun copy(
+    mediaType: String = this.mediaType,
+    digest: Digest = this.digest,
+    size: Long = this.size,
+    urls: List<String>? = this.urls,
+    annotations: Annotations? = this.annotations,
+    data: String? = this.data,
+    platform: Platform? = this.platform,
+  ) = Descriptor(
+    mediaType = mediaType,
+    digest = digest,
+    size = size,
+    urls = urls,
+    annotations = annotations,
+    data = data,
+    platform = platform,
+  )
+
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (other !is Descriptor) return false

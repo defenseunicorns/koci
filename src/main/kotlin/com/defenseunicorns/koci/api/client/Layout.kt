@@ -7,22 +7,29 @@ package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
-import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
-import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
-import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-import com.defenseunicorns.koci.api.models.Reference
-import com.defenseunicorns.koci.models.annotationRefName
+import com.defenseunicorns.koci.api.KociLogLevel
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.OCIException
+import com.defenseunicorns.koci.api.errors.DescriptorNotFound
+import com.defenseunicorns.koci.api.errors.DigestMismatch
+import com.defenseunicorns.koci.api.errors.Generic
+import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.api.errors.InvalidLayout
+import com.defenseunicorns.koci.api.errors.SizeMismatch
+import com.defenseunicorns.koci.api.errors.UnableToRemove
+import com.defenseunicorns.koci.api.errors.UnsupportedManifest
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Digest
 import com.defenseunicorns.koci.api.models.Index
 import com.defenseunicorns.koci.api.models.LayoutMarker
 import com.defenseunicorns.koci.api.models.Manifest
 import com.defenseunicorns.koci.api.models.Platform
+import com.defenseunicorns.koci.api.models.Reference
 import com.defenseunicorns.koci.api.models.RegisteredAlgorithm
-import com.defenseunicorns.koci.api.KociError
-import com.defenseunicorns.koci.api.KociLogLevel
-import com.defenseunicorns.koci.api.OCIException
-import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
+import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
+import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.models.annotationRefName
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -84,23 +91,23 @@ private constructor(
    * @return Ok(true) if blob exists and is valid, Ok(false) if not found, or Err with the specific
    *   error
    */
-  fun exists(descriptor: Descriptor): KociResult<Boolean> {
+  fun exists(descriptor: Descriptor): Boolean {
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
       logger.d("Blob does not exist: ${descriptor.digest}")
-      return KociResult.ok(false)
+      return false
     }
 
     val length = fileSystem.metadata(path).size ?: 0L
     if (length != descriptor.size) {
       logger.e("Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length")
-      return KociResult.err(KociError.SizeMismatch(descriptor, length))
+      return false
     }
 
     // Skip expensive digest verification when strictChecking is disabled
     if (!strictChecking) {
-      return KociResult.ok(true)
+      return true
     }
 
     val digest =
@@ -112,19 +119,20 @@ private constructor(
               RegisteredAlgorithm.SHA512 -> sha512(source)
             }
           hashingSource.buffer().readAll(blackholeSink())
-          Digest(descriptor.digest.algorithm, hashingSource.hash.toByteArray())
+          Digest.create(descriptor.digest.algorithm, hashingSource.hash.toByteArray())
         }
       } catch (e: Exception) {
-        return KociResult.err(KociError.IOError("Failed to read blob: ${e.message}", e))
+        logger.e("Failed to read blob", e)
+        return false
       }
 
     if (digest != descriptor.digest) {
       logger.e("Digest mismatch for ${descriptor.digest}: computed $digest")
-      return KociResult.err(KociError.DigestMismatch(descriptor, digest))
+      return false
     }
 
     logger.d("Blob exists and verified: ${descriptor.digest}")
-    return KociResult.ok(true)
+    return true
   }
 
   /**
@@ -234,7 +242,7 @@ private constructor(
 
             if (allOtherLayers.contains(descriptor)) {
               return KociResult.err(
-                KociError.UnableToRemove(descriptor, "manifest is referenced by another artifact")
+                UnableToRemove(descriptor, "manifest is referenced by another artifact")
               )
             }
 
@@ -261,7 +269,7 @@ private constructor(
       }
     } catch (e: Exception) {
       logger.e("Failed to remove descriptor: ${descriptor.digest}", e)
-      KociResult.err(KociError.IOError("Failed to remove descriptor: ${e.message}", e))
+      KociResult.err(IOError("Failed to remove descriptor: ${e.message}", e))
     } finally {
       val pair = removing[descriptor]
       if (pair != null) {
@@ -331,7 +339,7 @@ private constructor(
     flow {
       logger.d("Pushing to disk: ${descriptor.digest}")
 
-      val ok = exists(descriptor).getOrNull() ?: false
+      val ok = exists(descriptor)
 
       if (!ok) {
         val stagingPath = staging(descriptor)
@@ -364,7 +372,7 @@ private constructor(
               md.update(buffer, 0, bytesRead)
               sink.write(buffer, 0, bytesRead)
               // TODO: Fix this
-//              emit(KociResult.ok(bytesRead))
+              //    emit(KociResult.ok(bytesRead))
               emit(KociResult.ok(0.0))
             }
           }
@@ -373,19 +381,21 @@ private constructor(
         // Verify size
         val length = fileSystem.metadata(stagingPath).size ?: 0L
         if (length != descriptor.size) {
-          logger.e("Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length")
+          logger.e(
+            "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
+          )
           fileSystem.delete(stagingPath)
-          emit(KociResult.err(KociError.SizeMismatch(descriptor, length)))
+          emit(KociResult.err(SizeMismatch(descriptor, length)))
           return@flow
         }
 
         // Verify digest
-        val digest = Digest(descriptor.digest.algorithm, md.digest())
+        val digest = Digest.create(descriptor.digest.algorithm, md.digest())
 
         if (digest != descriptor.digest) {
           logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
           fileSystem.delete(stagingPath)
-          emit(KociResult.err(KociError.DigestMismatch(descriptor, digest)))
+          emit(KociResult.err(DigestMismatch(descriptor, digest)))
           return@flow
         }
 
@@ -405,20 +415,10 @@ private constructor(
         }
 
         // Verify the final file (uses strict checking if enabled)
-        when (val verifyResult = exists(descriptor)) {
-          is KociResult.Ok -> {
-            if (!verifyResult.value) {
-              logger.e("Final verification failed: ${descriptor.digest} not found after move")
-              emit(KociResult.err(KociError.Generic("File not found after finalization move")))
-              return@flow
-            }
-          }
-          is KociResult.Err -> {
-            logger.e("Final verification failed for ${descriptor.digest}")
-            fileSystem.delete(finalPath)
-            emit(verifyResult)
-            return@flow
-          }
+        if (!exists(descriptor)) {
+          logger.e("Final verification failed: ${descriptor.digest} not found after move")
+          emit(KociResult.err(Generic("File not found after finalization move")))
+          return@flow
         }
 
         logger.d("Successfully downloaded ${descriptor.digest}")
@@ -443,7 +443,7 @@ private constructor(
     return if (descriptor != null) {
       KociResult.ok(descriptor)
     } else {
-      KociResult.err(KociError.DescriptorNotFound("No descriptor matched the predicate"))
+      KociResult.err(DescriptorNotFound("No descriptor matched the predicate"))
     }
   }
 
@@ -461,16 +461,15 @@ private constructor(
     platformResolver: ((Platform) -> Boolean)? = null,
   ): KociResult<Descriptor> {
     return resolve { desc ->
-        val refMatches = desc.annotations?.annotationRefName == reference.toString()
-        val platformMatches =
-          if (platformResolver != null && desc.platform != null) {
-            platformResolver(desc.platform)
-          } else {
-            true
-          }
-        refMatches && platformMatches
-      }
-      .mapErr { KociError.DescriptorNotFound("Reference not found: $reference") }
+      val refMatches = desc.annotations?.annotationRefName == reference.toString()
+      val platformMatches =
+        if (platformResolver != null && desc.platform != null) {
+          platformResolver(desc.platform)
+        } else {
+          true
+        }
+      refMatches && platformMatches
+    }
   }
 
   /**
@@ -488,18 +487,16 @@ private constructor(
   // TODO: unit test tagging
   fun tag(descriptor: Descriptor, reference: Reference): KociResult<Unit> {
     if (descriptor.mediaType.isEmpty()) {
-      return KociResult.err(KociError.Generic("Descriptor mediaType cannot be empty"))
+      return KociResult.err(Generic("Descriptor mediaType cannot be empty"))
     }
     if (descriptor.mediaType != MANIFEST_MEDIA_TYPE && descriptor.mediaType != INDEX_MEDIA_TYPE) {
       return KociResult.err(
-        KociError.UnsupportedManifest(
-          descriptor.mediaType,
-          "Only manifests and indexes can be tagged",
-        )
+        UnsupportedManifest(descriptor.mediaType, "Only manifests and indexes can be tagged")
       )
     }
     if (descriptor.size <= 0) {
-      return KociResult.err(KociError.Generic("Descriptor size must be greater than 0"))
+      val a = 0
+      return KociResult.err(Generic("Descriptor size must be greater than 0"))
     }
 
     return try {
@@ -527,7 +524,7 @@ private constructor(
       syncIndex()
       KociResult.ok(Unit)
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to tag descriptor: ${e.message}", e))
+      KociResult.err(IOError("Failed to tag descriptor: ${e.message}", e))
     }
   }
 
@@ -567,7 +564,7 @@ private constructor(
       KociResult.ok(cleaned)
     } catch (e: Exception) {
       logger.e("Failed to clean staging directory", e)
-      KociResult.err(KociError.IOError("Failed to clean staging: ${e.message}", e))
+      KociResult.err(IOError("Failed to clean staging: ${e.message}", e))
     }
   }
 
@@ -585,7 +582,7 @@ private constructor(
    */
   fun gc(): KociResult<List<Digest>> {
     if (transferCoordinator.activeTransfers() > 0) {
-      return KociResult.err(KociError.Generic("Cannot run GC: downloads are in progress"))
+      return KociResult.err(Generic("Cannot run GC: downloads are in progress"))
     }
 
     // Clean up staging first
@@ -618,7 +615,7 @@ private constructor(
           }
       KociResult.ok(removed)
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Failed to run GC: ${e.message}", e))
+      KociResult.err(IOError("Failed to run GC: ${e.message}", e))
     }
   }
 
@@ -661,13 +658,11 @@ private constructor(
           logger.d("Creating root directory at $rootPath")
           fs.createDirectories(rootDir)
         } catch (e: IOException) {
-          return KociResult.err(KociError.IOError("Failed to create root directory: ${e.message}", e))
+          return KociResult.err(IOError("Failed to create root directory: ${e.message}", e))
         }
       } else {
         if (!fs.metadata(rootDir).isDirectory) {
-          return KociResult.err(
-            KociError.InvalidLayout(rootPath, "Path exists but is not a directory")
-          )
+          return KociResult.err(InvalidLayout(rootPath, "Path exists but is not a directory"))
         }
       }
 
@@ -679,7 +674,7 @@ private constructor(
             writeUtf8(Json.encodeToString(LayoutMarker(LAYOUT_VERSION)))
           }
         } catch (e: Exception) {
-          return KociResult.err(KociError.IOError("Failed to write layout file: ${e.message}", e))
+          return KociResult.err(IOError("Failed to write layout file: ${e.message}", e))
         }
       }
 
@@ -698,7 +693,7 @@ private constructor(
             }
           }
         } catch (e: Exception) {
-          return KociResult.err(KociError.IOError("Failed to read index: ${e.message}", e))
+          return KociResult.err(IOError("Failed to read index: ${e.message}", e))
         }
 
       // Create blob storage directories
@@ -708,7 +703,7 @@ private constructor(
           fs.createDirectories("$blobsPath/$algorithm".toPath())
         }
       } catch (e: Exception) {
-        return KociResult.err(KociError.IOError("Failed to create blob directories: ${e.message}", e))
+        return KociResult.err(IOError("Failed to create blob directories: ${e.message}", e))
       }
 
       // Create directory for staging operations
@@ -716,7 +711,7 @@ private constructor(
         logger.d("Creating staging directory at $stagingPath")
         fs.createDirectories(stagingPath.toPath())
       } catch (e: Exception) {
-        return KociResult.err(KociError.IOError("Failed to create temp directory: ${e.message}", e))
+        return KociResult.err(IOError("Failed to create temp directory: ${e.message}", e))
       }
 
       logger.d("Layout created")
@@ -729,8 +724,7 @@ private constructor(
           stagingPath = stagingPath,
           strictChecking = strictChecking,
           logger = logger,
-          transferCoordinator =
-            TransferCoordinator(logger),
+          transferCoordinator = TransferCoordinator(logger),
         )
 
       return KociResult.ok(layout)

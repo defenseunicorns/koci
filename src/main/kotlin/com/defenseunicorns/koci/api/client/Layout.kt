@@ -10,14 +10,11 @@ import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociLogLevel
 import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.api.OCIException
-import com.defenseunicorns.koci.api.errors.DescriptorNotFound
 import com.defenseunicorns.koci.api.errors.DigestMismatch
 import com.defenseunicorns.koci.api.errors.Generic
 import com.defenseunicorns.koci.api.errors.IOError
 import com.defenseunicorns.koci.api.errors.InvalidLayout
 import com.defenseunicorns.koci.api.errors.SizeMismatch
-import com.defenseunicorns.koci.api.errors.UnableToRemove
-import com.defenseunicorns.koci.api.errors.UnsupportedManifest
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Digest
 import com.defenseunicorns.koci.api.models.Index
@@ -99,9 +96,9 @@ private constructor(
       return false
     }
 
-    val length = fileSystem.metadata(path).size ?: 0L
-    if (length != descriptor.size) {
-      logger.e("Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $length")
+    val size = size(descriptor)
+    if (size != descriptor.size) {
+      logger.e("Size mismatch for ${descriptor.digest}: expected ${descriptor.size}, got $size")
       return false
     }
 
@@ -133,6 +130,19 @@ private constructor(
 
     logger.d("Blob exists and verified: ${descriptor.digest}")
     return true
+  }
+
+  fun size(descriptor: Descriptor) : Long {
+    logger.d("Checking size: $descriptor")
+
+    val path = blob(descriptor)
+
+    if (!fileSystem.exists(path)) {
+      logger.d("Blob does not exist: ${descriptor.digest}")
+      return 0L
+    }
+
+    return fileSystem.metadata(path).size ?: 0L
   }
 
   /**
@@ -182,9 +192,11 @@ private constructor(
    *
    * @param reference The reference to remove
    */
-  suspend fun remove(reference: Reference): KociResult<Boolean> {
+  suspend fun remove(reference: Reference): Boolean {
     logger.d("Removing reference: $reference")
-    return resolve(reference).flatMap { descriptor -> remove(descriptor) }
+    val resolvedReference = resolve(reference)
+
+    return resolvedReference?.let { remove(it) } ?: false
   }
 
   /**
@@ -198,22 +210,22 @@ private constructor(
    */
   // TODO: ensure removals do not impact other images through unit tests
   @OptIn(ExperimentalSerializationApi::class)
-  suspend fun remove(descriptor: Descriptor): KociResult<Boolean> {
+  suspend fun remove(descriptor: Descriptor): Boolean {
     logger.d("Removing descriptor: ${descriptor.digest}")
     val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
 
-    return try {
+    try {
       mu.withLock {
         val path = blob(descriptor)
 
         if (!fileSystem.exists(path)) {
           logger.d("Descriptor not found, nothing to remove: ${descriptor.digest}")
-          return KociResult.ok(false)
+          return false
         }
 
-        return when (descriptor.mediaType) {
+        when (descriptor.mediaType) {
           INDEX_MEDIA_TYPE -> {
             val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
 
@@ -228,7 +240,7 @@ private constructor(
             fileSystem.delete(path)
             logger.d("Removed index: ${descriptor.digest}")
 
-            KociResult.ok(true)
+            return true
           }
 
           MANIFEST_MEDIA_TYPE -> {
@@ -241,9 +253,8 @@ private constructor(
             val allOtherLayers = expand(manifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              return KociResult.err(
-                UnableToRemove(descriptor, "manifest is referenced by another artifact")
-              )
+              logger.d("manifest is referenced by another artifact")
+              return false
             }
 
             val manifest: Manifest = fetch(descriptor).use { Json.decodeFromStream(it) }
@@ -257,19 +268,19 @@ private constructor(
             fileSystem.delete(path)
             logger.d("Removed manifest: ${descriptor.digest}")
 
-            KociResult.ok(true)
+            return true
           }
 
           else -> {
             fileSystem.delete(path)
             logger.d("Removed blob: ${descriptor.digest}")
-            KociResult.ok(true)
+            return true
           }
         }
       }
     } catch (e: Exception) {
       logger.e("Failed to remove descriptor: ${descriptor.digest}", e)
-      KociResult.err(IOError("Failed to remove descriptor: ${e.message}", e))
+      return false
     } finally {
       val pair = removing[descriptor]
       if (pair != null) {
@@ -438,13 +449,14 @@ private constructor(
    *
    * @param predicate Function that returns true for the desired descriptor
    */
-  fun resolve(predicate: (Descriptor) -> Boolean): KociResult<Descriptor> {
+  fun resolve(predicate: (Descriptor) -> Boolean): Descriptor? {
     val descriptor = index.manifests.firstOrNull { predicate(it) }
-    return if (descriptor != null) {
-      KociResult.ok(descriptor)
-    } else {
-      KociResult.err(DescriptorNotFound("No descriptor matched the predicate"))
+
+    if (descriptor == null) {
+      logger.d("No descriptor matched the predicate")
     }
+
+    return descriptor
   }
 
   /**
@@ -459,7 +471,7 @@ private constructor(
   fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): KociResult<Descriptor> {
+  ): Descriptor? {
     return resolve { desc ->
       val refMatches = desc.annotations?.annotationRefName == reference.toString()
       val platformMatches =
@@ -485,22 +497,26 @@ private constructor(
   //
   // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
-  fun tag(descriptor: Descriptor, reference: Reference): KociResult<Unit> {
+  fun tag(descriptor: Descriptor, reference: Reference): Boolean {
     if (descriptor.mediaType.isEmpty()) {
-      return KociResult.err(Generic("Descriptor mediaType cannot be empty"))
+      logger.e("Descriptor mediaType cannot be empty")
+      return false
     }
     if (descriptor.mediaType != MANIFEST_MEDIA_TYPE && descriptor.mediaType != INDEX_MEDIA_TYPE) {
-      return KociResult.err(
-        UnsupportedManifest(descriptor.mediaType, "Only manifests and indexes can be tagged")
-      )
+      logger.e("Only manifests and indexes can be tagged")
+      return false
     }
     if (descriptor.size <= 0) {
-      val a = 0
-      return KociResult.err(Generic("Descriptor size must be greater than 0"))
+      logger.e("Descriptor size must be greater than 0")
+      return false
     }
 
-    return try {
-      reference.validate()
+    try {
+      val isReferenceValid = reference.validate()
+
+      if(!isReferenceValid) {
+        return false
+      }
 
       val copy =
         descriptor.copy(
@@ -522,9 +538,10 @@ private constructor(
 
       index.manifests.add(copy)
       syncIndex()
-      KociResult.ok(Unit)
+      return true
     } catch (e: Exception) {
-      KociResult.err(IOError("Failed to tag descriptor: ${e.message}", e))
+      logger.e("Failed to tag descriptor: ${e.message}", e)
+      return false
     }
   }
 

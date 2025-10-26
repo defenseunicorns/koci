@@ -1,8 +1,10 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci.api.models
 
-import com.defenseunicorns.koci.api.KociResult
-import com.defenseunicorns.koci.api.errors.InvalidRegistry
-import com.defenseunicorns.koci.api.errors.InvalidRepository
 import com.defenseunicorns.koci.models.repositoryRegex
 import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.http.Url
@@ -26,9 +28,9 @@ class Reference(val registry: String, val repository: String, val reference: Str
    * Extracts the host and optional port from the Url to form the registry component.
    */
   constructor(
-      registry: Url,
-      repository: String,
-      reference: String,
+    registry: Url,
+    repository: String,
+    reference: String,
   ) : this(
     registry =
       registry.let { uri ->
@@ -60,17 +62,17 @@ class Reference(val registry: String, val repository: String, val reference: Str
    *
    * @return OCIResult.Ok if valid, OCIResult.Err with specific error type if invalid
    */
-  fun validate(): KociResult<Boolean> {
+  fun validate(): Boolean {
     // Validate registry
     if (registry.isBlank()) {
-      return KociResult.Companion.err(InvalidRegistry(registry, "Registry cannot be empty"))
+      return false
     }
 
     val uri =
       try {
-          URI("koci://$registry")
-      } catch (e: Exception) {
-        return KociResult.Companion.err(InvalidRegistry(registry, "Invalid URI format: ${e.message}"))
+        URI("koci://$registry")
+      } catch (_: Exception) {
+        return false
       }
 
     val hostWithPort =
@@ -80,32 +82,22 @@ class Reference(val registry: String, val repository: String, val reference: Str
       }
 
     if (hostWithPort != registry) {
-      return KociResult.Companion.err(
-          InvalidRegistry(
-              registry,
-              "Registry must be a valid hostname with optional port (e.g., 'registry.example.com:5000')",
-          )
-      )
+      return false
     }
 
     // Validate repository
     if (repositoryRegex.matchEntire(repository) == null) {
-      return KociResult.Companion.err(
-          InvalidRepository(
-              repository,
-              "Repository must contain only lowercase alphanumeric characters, separators (._-), and optional path components separated by /",
-          )
-      )
+      return false
     }
 
     // Validate reference (tag or digest)
     if (reference.isBlank()) {
-      return KociResult.ok(true)
+      return true
     }
 
     // Check if it's a valid tag
     if (tagRegex.matchEntire(reference) != null) {
-      return KociResult.ok(true)
+      return true
     }
 
     // Check if it's a valid digest
@@ -181,29 +173,19 @@ class Reference(val registry: String, val repository: String, val reference: Str
      *
      * @param artifact String representation of the artifact reference
      */
-    fun parse(artifact: String): KociResult<Reference> {
+    fun parse(artifact: String): Reference? {
       if (artifact.isBlank()) {
-        return KociResult.Companion.err(InvalidRegistry("", "Reference string cannot be empty"))
+        return null
       }
 
       val reg = artifact.substringBefore("/", "")
       if (reg.isEmpty()) {
-        return KociResult.Companion.err(
-            InvalidRegistry(
-                "",
-                "Reference must include registry (e.g., 'registry.example.com/repo:tag')",
-            )
-        )
+        return null
       }
 
       val repoAndRef = artifact.substringAfter("/", "")
       if (repoAndRef.isEmpty()) {
-        return KociResult.Companion.err(
-            InvalidRepository(
-                "",
-                "Reference must include repository after registry (e.g., 'registry.example.com/repo:tag')",
-            )
-        )
+        return null
       }
 
       val (repo, ref) =
@@ -222,7 +204,10 @@ class Reference(val registry: String, val repository: String, val reference: Str
         }
 
       val reference = Reference(reg, repo, ref)
-      return reference.validate().map { reference }
+      return when (reference.validate()) {
+        true -> reference
+        false -> null
+      }
     }
   }
 }

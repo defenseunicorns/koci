@@ -8,11 +8,8 @@ package com.defenseunicorns.koci.api.client
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociResult
-import com.defenseunicorns.koci.api.errors.DescriptorNotFound
-import com.defenseunicorns.koci.api.errors.DigestMismatch
 import com.defenseunicorns.koci.api.errors.Generic
 import com.defenseunicorns.koci.api.errors.IOError
-import com.defenseunicorns.koci.api.errors.SizeMismatch
 import com.defenseunicorns.koci.api.errors.UnsupportedManifest
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Digest
@@ -62,7 +59,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flattenMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -155,10 +151,7 @@ internal constructor(
    *   Distribution Spec: Pulling Manifests</a>
    */
   @OptIn(ExperimentalSerializationApi::class)
-  suspend fun resolve(
-    tag: String,
-    platformResolver: ((Platform) -> Boolean)? = null,
-  ): KociResult<Descriptor> {
+  suspend fun resolve(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Descriptor? {
     return try {
       logger.d("Resolving tag: $name:$tag")
       val endpoint = router.manifest(name, tag)
@@ -170,7 +163,14 @@ internal constructor(
         }
 
       if (!response.status.isSuccess()) {
-        return parseHTTPError(response)
+        logger.e(
+          """
+					HTTP code: ${response.status}
+					HTTP response: ${response.bodyAsText()}
+				"""
+            .trimIndent()
+        )
+        return null
       }
 
       when (response.contentType()?.toString()) {
@@ -185,15 +185,9 @@ internal constructor(
                 when (platformResolver) {
                   null -> {
                     Descriptor.fromInputStream(
-                        mediaType = INDEX_MEDIA_TYPE,
-                        stream = res.body() as InputStream,
-                      )
-                      .fold(
-                        onErr = {
-                          return@execute KociResult.err(it)
-                        },
-                        onOk = { it },
-                      )
+                      mediaType = INDEX_MEDIA_TYPE,
+                      stream = res.body() as InputStream,
+                    )
                   }
 
                   else -> {
@@ -206,13 +200,10 @@ internal constructor(
 
               if (descriptor == null) {
                 logger.e("No matching platform found in index for $name:$tag")
-                return@execute KociResult.err(
-                  DescriptorNotFound("No matching platform found in index")
-                )
+              } else {
+                logger.d("Resolved $name:$tag to ${descriptor.digest}")
               }
-
-              logger.d("Resolved $name:$tag to ${descriptor.digest}")
-              KociResult.ok(descriptor)
+              descriptor
             }
         }
 
@@ -223,37 +214,21 @@ internal constructor(
               attributes.appendScopes(scopeRepository(name, ACTION_PULL))
             }
             .execute { res ->
-              val descriptor =
-                Descriptor.fromInputStream(
-                    mediaType = MANIFEST_MEDIA_TYPE,
-                    stream = res.body() as InputStream,
-                  )
-                  .fold(
-                    onErr = {
-                      return@execute KociResult.err(it)
-                    },
-                    onOk = {
-                      logger.d("Resolved $name:$tag to ${it.digest}")
-                      KociResult.ok(it)
-                    },
-                  )
-              descriptor
+              Descriptor.fromInputStream(
+                mediaType = MANIFEST_MEDIA_TYPE,
+                stream = res.body() as InputStream,
+              )
             }
         }
 
         else -> {
           logger.e("Unsupported content type for $name:$tag: ${response.contentType()}")
-          KociResult.err(
-            UnsupportedManifest(
-              response.contentType()?.toString() ?: "unknown",
-              "Unsupported content type for manifest",
-            )
-          )
+          null
         }
       }
     } catch (e: Exception) {
       logger.e("Failed to resolve tag: $name:$tag", e)
-      KociResult.err(IOError("Failed to resolve tag: ${e.message}", e))
+      null
     }
   }
 
@@ -420,48 +395,45 @@ internal constructor(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Flow<KociResult<Double>> =
-    flow {
-        logger.d("Pulling $name:$tag")
-        val desc =
-          when (val result = resolve(tag, platformResolver)) {
-            is KociResult.Ok -> result.value
-            is KociResult.Err -> {
-              emit(KociResult.err(result.error))
-              return@flow
-            }
-          }
+  ): Flow<KociResult<Double>> = flow {
+    logger.d("Pulling $name:$tag")
+    val desc = resolve(tag, platformResolver)
 
-        pull(desc, store).collect { progressResult ->
-          when (progressResult) {
-            is KociResult.Ok -> emit(progressResult)
-            is KociResult.Err -> {
-              emit(progressResult)
-              return@collect
-            }
-          }
-        }
+    if (desc == null) {
+      emit(KociResult.err(Generic("Descriptor was null")))
+      return@flow
+    }
 
-        // After successful pull, tag the content
-        val ref = Reference(registry = router.base(), repository = name, reference = tag)
-        val ok = store.exists(desc)
-        if (!ok) {
-          logger.e("Incomplete pull for $name:$tag: content not found after download")
-          emit(KociResult.err(Generic("Incomplete pull: content not found after download")))
-          return@flow
-        }
-
-        logger.d("Successfully pulled $name:$tag")
-
-        when (val result = store.tag(desc, ref)) {
-          is KociResult.Err -> {
-            emit(KociResult.err(result.error))
-            return@flow
-          }
-          is KociResult.Ok -> emit(KociResult.ok(FINISHED_AMOUNT))
+    pull(desc, store).collect { progressResult ->
+      when (progressResult) {
+        is KociResult.Ok -> emit(progressResult)
+        is KociResult.Err -> {
+          emit(progressResult)
+          return@collect
         }
       }
-      .distinctUntilChanged()
+    }
+
+    // After successful pull, tag the content
+    val ref = Reference(registry = router.base(), repository = name, reference = tag)
+    val ok = store.exists(desc)
+    if (!ok) {
+      logger.e("Incomplete pull for $name:$tag: content not found after download")
+      emit(KociResult.err(Generic("Incomplete pull: content not found after download")))
+      return@flow
+    }
+
+    logger.d("Successfully pulled $name:$tag")
+
+    when (store.tag(desc, ref)) {
+      false -> {
+        logger.e("Could not tag: $desc with $ref")
+        emit(KociResult.err(Generic("TODO this...")))
+        return@flow
+      }
+      true -> emit(KociResult.ok(FINISHED_AMOUNT))
+    }
+  }
 
   /**
    * Pulls content by descriptor and stores it in the provided layout.
@@ -545,7 +517,7 @@ internal constructor(
               download(layer, store).collect { result ->
                 when (result) {
                   is KociResult.Ok -> {
-//                    val curr = acc.addAndGet(result.value)
+                    // val curr = acc.addAndGet(result.value)
                     emit((curr.toDouble() * 100 / total).roundToInt())
                   }
                   is KociResult.Err ->
@@ -560,8 +532,8 @@ internal constructor(
               download(descriptor, store).collect { result ->
                 when (result) {
                   is KociResult.Ok -> {
-//                    val curr = acc.addAndGet(result.value)
-//                    emit((curr.toDouble() * 100 / total.toDouble()))
+                    //                    val curr = acc.addAndGet(result.value)
+                    //                    emit((curr.toDouble() * 100 / total.toDouble()))
                   }
                   is KociResult.Err ->
                     throw IllegalStateException("Manifest download failed: ${result.error}")
@@ -570,7 +542,7 @@ internal constructor(
             }
           }
           .collect { progress ->
-//            emit(KociResult.ok(progress))
+            //            emit(KociResult.ok(progress))
           }
       }
 
@@ -639,10 +611,9 @@ internal constructor(
     flow {
       // TODO: Return percentage not bytes
       logger.d("Downloading descriptor: ${descriptor.digest}")
-      val existsResult = store.exists(descriptor)
 
       // if the descriptor is 100% downloaded w/ size and sha matching, early return
-      if (existsResult) {
+      if (store.exists(descriptor)) {
         logger.d("Descriptor already exists: ${descriptor.digest}")
         emit(KociResult.ok(100.0))
         return@flow
@@ -656,41 +627,23 @@ internal constructor(
           else -> router.blob(name, descriptor)
         }
 
+      val resumeFrom = store.size(descriptor)
+      var resumable = false
+
       // Handle partial downloads if exists check revealed size/digest mismatch
-      val resumeFrom =
-        when (val error = existsResult) {
-          is SizeMismatch -> {
-            if (supportsRange(descriptor)) {
-              // Resume from where we left off
-              // TODO: Fix this
-              //            emit(KociResult.ok(error.actual))
-              emit(KociResult.ok(0.0))
-              error.actual
-            } else {
-              // Can't resume, remove partial download
-              when (val removeResult = store.remove(descriptor)) {
-                is KociResult.Err -> {
-                  emit(KociResult.err(removeResult.error))
-                  return@flow
-                }
-                is KociResult.Ok -> null
-              }
-            }
-          }
-
-          is DigestMismatch -> {
-            // Digest mismatch, remove and start over
-            when (val removeResult = store.remove(descriptor)) {
-              is KociResult.Err -> {
-                emit(KociResult.err(removeResult.error))
-                return@flow
-              }
-              is KociResult.Ok -> null
-            }
-          }
-
-          else -> null
+      if (descriptor.size < resumeFrom && supportsRange(descriptor)) {
+        resumable = true
+        emit(
+          KociResult.ok(
+            ((resumeFrom.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)) * 100.0
+          )
+        )
+      } else {
+        if (!store.remove(descriptor)) {
+          emit(KociResult.err(IOError("Could not remove: $descriptor")))
+          return@flow
         }
+      }
 
       try {
         client
@@ -703,8 +656,8 @@ internal constructor(
             }
 
             // Add range header if resuming
-            resumeFrom?.let { start ->
-              headers.append("Range", "bytes=$start-${descriptor.size - 1}")
+            if (resumable) {
+              headers.append("Range", "bytes=$resumeFrom-${descriptor.size - 1}")
             }
           }
           .execute { response ->

@@ -97,7 +97,7 @@ class Descriptor(
       stream: InputStream,
       mediaType: String = ContentType.Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
-    ): KociResult<Descriptor> {
+    ): Descriptor? {
       val md = algorithm.hasher()
       var size = 0L
       val buffer = ByteArray(BUFFER_SIZE)
@@ -111,7 +111,7 @@ class Descriptor(
 
       val digest = Digest.create(algorithm, md.digest())
 
-      return digest.map { digest -> Descriptor(mediaType, digest, size) }
+      return digest?.let { Descriptor(mediaType, digest, size) }
     }
   }
 }

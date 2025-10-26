@@ -8,7 +8,6 @@ package com.defenseunicorns.koci.api.client
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociLogLevel
-import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.api.errors.IOError
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Platform
@@ -28,7 +27,9 @@ import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
@@ -56,7 +57,7 @@ internal constructor(
   private var client: HttpClient = HttpClient(CIO),
 ) {
   private val router = Router(registryUrl)
-  val extensions = RegistryExtensions(client, router)
+  val extensions = RegistryExtensions(client, router, logger)
 
   init {
     val timeoutPlugin = client.pluginOrNull(HttpTimeout)
@@ -90,15 +91,16 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support">OCI
    *   Distribution Spec: API Version Check</a>
    */
-  suspend fun ping(): KociResult<Boolean> {
+  suspend fun ping(): Boolean {
     return try {
       val response = client.get(router.base())
       if (!response.status.isSuccess()) {
         return parseHTTPError(response)
       }
-      KociResult.ok(true)
+      true
     } catch (e: Exception) {
-      KociResult.err(IOError("Network error: ${e.message}", e))
+      logger.e("Network error: ${e.message}", e)
+      false
     }
   }
 
@@ -187,9 +189,10 @@ internal constructor(
    * @param n Number of repositories to return per page in the catalog request
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun list(n: Int = 1000): Flow<KociResult<TagsResponse>> =
+  fun list(n: Int = 1000): Flow<TagsResponse?> =
     extensions
       .catalog(n)
+      .filterNotNull()
       .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
       .map { repo -> tags(repo) }
 

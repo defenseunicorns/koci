@@ -5,8 +5,7 @@
 
 package com.defenseunicorns.koci.api.client
 
-import com.defenseunicorns.koci.api.KociResult
-import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.api.models.CatalogResponse
 import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.auth.appendScopes
@@ -32,7 +31,12 @@ import kotlinx.serialization.json.Json
  * @see <a href="https://github.com/opencontainers/distribution-spec/tree/main/extensions">OCI
  *   Distribution Spec: Extensions</a>
  */
-class RegistryExtensions internal constructor(private val client: HttpClient, private val router: Router) {
+class RegistryExtensions
+internal constructor(
+  private val client: HttpClient,
+  private val router: Router,
+  private val logger: KociLogger,
+) {
   /**
    * Lists all repositories in the registry.
    *
@@ -43,16 +47,17 @@ class RegistryExtensions internal constructor(private val client: HttpClient, pr
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Repositories</a>
    */
-  suspend fun catalog(): KociResult<CatalogResponse> {
+  suspend fun catalog(): CatalogResponse? {
     return try {
       val response =
         client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
       if (!response.status.isSuccess()) {
         return parseHTTPError(response)
       }
-      KociResult.ok(Json.decodeFromString(response.body()))
+      Json.decodeFromString(response.body())
     } catch (e: Exception) {
-      KociResult.err(IOError("Failed to fetch catalog: ${e.message}", e))
+      logger.e("Failed to fetch catalog", e)
+      return null
     }
   }
 
@@ -70,14 +75,15 @@ class RegistryExtensions internal constructor(private val client: HttpClient, pr
    *
    * TODO: distribution is moving to a default max n of 1000
    */
-  fun catalog(n: Int, lastRepo: String? = null): Flow<CatalogResponse> = flow {
+  fun catalog(n: Int, lastRepo: String? = null): Flow<CatalogResponse?> = flow {
     var endpoint: Url? = router.catalog(n, lastRepo)
 
     while (endpoint != null) {
       val response = client.get(endpoint) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
 
       if (!response.status.isSuccess()) {
-        error("HTTP ${response.status.value}: ${response.status.description}")
+        logger.e("HTTP ${response.status.value}: ${response.status.description}")
+        return@flow emit(null)
       }
 
       // If the header is not present, the client can assume that all results have been received.
@@ -89,16 +95,27 @@ class RegistryExtensions internal constructor(private val client: HttpClient, pr
           // https://datatracker.ietf.org/doc/html/rfc5988#section-5
           val next =
             linkHeaderRegex.find(linkHeader)?.groupValues?.get(1)
-              ?: error("$linkHeader does not satisfy $linkHeaderRegex")
+              ?: run {
+                logger.e("$linkHeader does not satisfy $linkHeaderRegex")
+                return@flow emit(null)
+              }
 
           val url = Url(next)
           val nextN =
             url.parameters["n"]?.toInt()
-              ?: error("$linkHeader does not contain an 'n' parameter")
+              ?: run {
+                logger.e("$linkHeader does not contain an 'n' parameter")
+                return@flow emit(null)
+              }
           router.catalog(nextN, url.parameters["last"])
         }
 
-      emit(Json.decodeFromString(response.body()))
+      try {
+        emit(Json.decodeFromString(response.body()))
+      } catch (e: Exception) {
+        logger.e("Failed to decode response", e)
+        emit(null)
+      }
     }
   }
 }

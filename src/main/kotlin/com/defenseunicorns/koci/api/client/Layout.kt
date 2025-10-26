@@ -8,13 +8,7 @@ package com.defenseunicorns.koci.api.client
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociLogLevel
-import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.api.OCIException
-import com.defenseunicorns.koci.api.errors.DigestMismatch
-import com.defenseunicorns.koci.api.errors.Generic
-import com.defenseunicorns.koci.api.errors.IOError
-import com.defenseunicorns.koci.api.errors.InvalidLayout
-import com.defenseunicorns.koci.api.errors.SizeMismatch
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Digest
 import com.defenseunicorns.koci.api.models.Index
@@ -132,7 +126,7 @@ private constructor(
     return true
   }
 
-  fun size(descriptor: Descriptor) : Long {
+  fun size(descriptor: Descriptor): Long {
     logger.d("Checking size: $descriptor")
 
     val path = blob(descriptor)
@@ -337,7 +331,7 @@ private constructor(
    * @param stream The input stream containing the content
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Double>> =
+  fun push(descriptor: Descriptor, stream: InputStream): Flow<Double?> =
     transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
   /**
@@ -346,95 +340,92 @@ private constructor(
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<KociResult<Double>> =
-    flow {
-      logger.d("Pushing to disk: ${descriptor.digest}")
+  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<Double?> = flow {
+    logger.d("Pushing to disk: ${descriptor.digest}")
 
-      val ok = exists(descriptor)
+    val ok = exists(descriptor)
 
-      if (!ok) {
-        val stagingPath = staging(descriptor)
-        val finalPath = blob(descriptor)
-        val md = descriptor.digest.algorithm.hasher()
+    if (!ok) {
+      val stagingPath = staging(descriptor)
+      val finalPath = blob(descriptor)
+      val md = descriptor.digest.algorithm.hasher()
 
-        // Ensure staging directory exists
-        fileSystem.createDirectories(stagingPath.parent!!)
+      // Ensure staging directory exists
+      fileSystem.createDirectories(stagingPath.parent!!)
 
-        // If resuming a download, hash the existing staged file data first
-        // It is up to the caller to properly resume the stream at the proper location,
-        // otherwise a DigestMismatch will occur
-        if (fileSystem.exists(stagingPath)) {
-          logger.d("Resuming push for ${descriptor.digest}")
-          fileSystem.source(stagingPath).buffer().use { source ->
-            val buffer = ByteArray(BUFFER_SIZE)
-            var bytesRead: Int
-            while (source.read(buffer).also { bytesRead = it } != -1) {
-              md.update(buffer, 0, bytesRead)
-            }
+      // If resuming a download, hash the existing staged file data first
+      // It is up to the caller to properly resume the stream at the proper location,
+      // otherwise a DigestMismatch will occur
+      if (fileSystem.exists(stagingPath)) {
+        logger.d("Resuming push for ${descriptor.digest}")
+        fileSystem.source(stagingPath).buffer().use { source ->
+          val buffer = ByteArray(BUFFER_SIZE)
+          var bytesRead: Int
+          while (source.read(buffer).also { bytesRead = it } != -1) {
+            md.update(buffer, 0, bytesRead)
           }
         }
-
-        // Stream new data to staging, hashing as we write
-        fileSystem.appendingSink(stagingPath).buffer().use { sink ->
-          stream.source().buffer().use { source ->
-            val buffer = ByteArray(BUFFER_SIZE)
-            var bytesRead: Int
-            while (source.read(buffer).also { bytesRead = it } != -1) {
-              md.update(buffer, 0, bytesRead)
-              sink.write(buffer, 0, bytesRead)
-              // TODO: Fix this
-              //    emit(KociResult.ok(bytesRead))
-              emit(KociResult.ok(0.0))
-            }
-          }
-        }
-
-        // Verify size
-        val length = fileSystem.metadata(stagingPath).size ?: 0L
-        if (length != descriptor.size) {
-          logger.e(
-            "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
-          )
-          fileSystem.delete(stagingPath)
-          emit(KociResult.err(SizeMismatch(descriptor, length)))
-          return@flow
-        }
-
-        // Verify digest
-        val digest = Digest.create(descriptor.digest.algorithm, md.digest())
-
-        if (digest != descriptor.digest) {
-          logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
-          fileSystem.delete(stagingPath)
-          emit(KociResult.err(DigestMismatch(descriptor, digest)))
-          return@flow
-        }
-
-        // Verification successful - move to final location
-        // We can't use atomicMove since staging and blobs may be on different filesystems
-        fileSystem.createDirectories(finalPath.parent!!)
-
-        logger.d("Finalization move: $stagingPath -> $finalPath")
-        try {
-          // Try atomic move first (works if same filesystem)
-          fileSystem.atomicMove(stagingPath, finalPath)
-        } catch (_: IOException) {
-          // Fall back to copy-then-delete for cross-filesystem moves
-          logger.d("Atomic move failed, using copy: ${descriptor.digest}")
-          fileSystem.copy(stagingPath, finalPath)
-          fileSystem.delete(stagingPath)
-        }
-
-        // Verify the final file (uses strict checking if enabled)
-        if (!exists(descriptor)) {
-          logger.e("Final verification failed: ${descriptor.digest} not found after move")
-          emit(KociResult.err(Generic("File not found after finalization move")))
-          return@flow
-        }
-
-        logger.d("Successfully downloaded ${descriptor.digest}")
       }
+
+      // Stream new data to staging, hashing as we write
+      fileSystem.appendingSink(stagingPath).buffer().use { sink ->
+        stream.source().buffer().use { source ->
+          val buffer = ByteArray(BUFFER_SIZE)
+          var bytesRead: Int
+          while (source.read(buffer).also { bytesRead = it } != -1) {
+            md.update(buffer, 0, bytesRead)
+            sink.write(buffer, 0, bytesRead)
+            // TODO: Fix this
+            //    emit(KociResult.ok(bytesRead))
+            emit(0.0)
+          }
+        }
+      }
+
+      // Verify size
+      val length = fileSystem.metadata(stagingPath).size ?: 0L
+      if (length != descriptor.size) {
+        logger.e(
+          "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
+        )
+        fileSystem.delete(stagingPath)
+        return@flow emit(null)
+      }
+
+      // Verify digest
+      val digest = Digest.create(descriptor.digest.algorithm, md.digest())
+
+      if (digest != descriptor.digest) {
+        logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
+        fileSystem.delete(stagingPath)
+        return@flow emit(null)
+      }
+
+      // Verification successful - move to final location
+      // We can't use atomicMove since staging and blobs may be on different filesystems
+      fileSystem.createDirectories(finalPath.parent!!)
+
+      logger.d("Finalization move: $stagingPath -> $finalPath")
+      try {
+        // Try atomic move first (works if same filesystem)
+        fileSystem.atomicMove(stagingPath, finalPath)
+      } catch (_: IOException) {
+        // Fall back to copy-then-delete for cross-filesystem moves
+        logger.d("Atomic move failed, using copy: ${descriptor.digest}")
+        fileSystem.copy(stagingPath, finalPath)
+        fileSystem.delete(stagingPath)
+        return@flow emit(null)
+      }
+
+      // Verify the final file (uses strict checking if enabled)
+      if (!exists(descriptor)) {
+        logger.e("Final verification failed: ${descriptor.digest} not found after move")
+        return@flow emit(null)
+      }
+
+      logger.d("Successfully downloaded ${descriptor.digest}")
     }
+  }
 
   /**
    * Retrieves content from the layout as an input stream.
@@ -514,7 +505,7 @@ private constructor(
     try {
       val isReferenceValid = reference.validate()
 
-      if(!isReferenceValid) {
+      if (!isReferenceValid) {
         return false
       }
 
@@ -560,9 +551,10 @@ private constructor(
    *
    * @return Ok with number of files cleaned up, or Err if cleanup fails
    */
-  private fun cleanStaging(): KociResult<Int> {
+  private fun cleanStaging(): Boolean {
     return try {
       var cleaned = 0
+
       listOf("sha256", "sha512").forEach { algorithm ->
         val dir = "$stagingPath/$algorithm".toPath()
         if (fileSystem.exists(dir) && fileSystem.metadata(dir).isDirectory) {
@@ -578,10 +570,10 @@ private constructor(
         }
       }
       logger.d("Cleaned $cleaned staging files")
-      KociResult.ok(cleaned)
+      true
     } catch (e: Exception) {
       logger.e("Failed to clean staging directory", e)
-      KociResult.err(IOError("Failed to clean staging: ${e.message}", e))
+      false
     }
   }
 
@@ -597,16 +589,16 @@ private constructor(
    * @throws OCIException.Generic if downloads are in progress - GC should not run while
    *   interrupted.
    */
-  fun gc(): KociResult<List<Digest>> {
+  fun gc(): List<Digest> {
     if (transferCoordinator.activeTransfers() > 0) {
-      return KociResult.err(Generic("Cannot run GC: downloads are in progress"))
+      logger.e("Cannot run GC: downloads are in progress")
+      return emptyList()
     }
 
     // Clean up staging first
     cleanStaging()
 
     return try {
-
       val referencedDescriptors = expand(index.manifests).toSet()
 
       val blobsOnDisk = mutableListOf<Digest>()
@@ -623,16 +615,15 @@ private constructor(
         }
       }
 
-      val removed =
-        blobsOnDisk
-          .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
-          .mapNotNull { zombieDigest ->
-            val path = "$blobsPath/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
-            runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
-          }
-      KociResult.ok(removed)
+      blobsOnDisk
+        .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
+        .mapNotNull { zombieDigest ->
+          val path = "$blobsPath/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
+          runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
+        }
     } catch (e: Exception) {
-      KociResult.err(IOError("Failed to run GC: ${e.message}", e))
+      logger.e("Failed to run GC", e)
+      emptyList()
     }
   }
 
@@ -661,7 +652,7 @@ private constructor(
       stagingPath: String = "$rootPath/staging",
       strictChecking: Boolean = true,
       logLevel: KociLogLevel = KociLogLevel.DEBUG,
-    ): KociResult<Layout> {
+    ): Layout? {
       val logger = KociLogger(logLevel)
 
       val fs = FileSystem.SYSTEM
@@ -675,11 +666,13 @@ private constructor(
           logger.d("Creating root directory at $rootPath")
           fs.createDirectories(rootDir)
         } catch (e: IOException) {
-          return KociResult.err(IOError("Failed to create root directory: ${e.message}", e))
+          logger.e("Failed to create root directory", e)
+          return null
         }
       } else {
         if (!fs.metadata(rootDir).isDirectory) {
-          return KociResult.err(InvalidLayout(rootPath, "Path exists but is not a directory"))
+          logger.e("Path exists but is not a directory: $rootPath")
+          return null
         }
       }
 
@@ -691,7 +684,8 @@ private constructor(
             writeUtf8(Json.encodeToString(LayoutMarker(LAYOUT_VERSION)))
           }
         } catch (e: Exception) {
-          return KociResult.err(IOError("Failed to write layout file: ${e.message}", e))
+          logger.e("Failed to write layout file", e)
+          return null
         }
       }
 
@@ -710,7 +704,8 @@ private constructor(
             }
           }
         } catch (e: Exception) {
-          return KociResult.err(IOError("Failed to read index: ${e.message}", e))
+          logger.e("Failed to read index: ${e.message}", e)
+          return null
         }
 
       // Create blob storage directories
@@ -720,7 +715,8 @@ private constructor(
           fs.createDirectories("$blobsPath/$algorithm".toPath())
         }
       } catch (e: Exception) {
-        return KociResult.err(IOError("Failed to create blob directories: ${e.message}", e))
+        logger.e("Failed to create blob directories", e)
+        return null
       }
 
       // Create directory for staging operations
@@ -728,23 +724,21 @@ private constructor(
         logger.d("Creating staging directory at $stagingPath")
         fs.createDirectories(stagingPath.toPath())
       } catch (e: Exception) {
-        return KociResult.err(IOError("Failed to create temp directory: ${e.message}", e))
+        logger.e("Failed to create temp directory", e)
+        return null
       }
 
       logger.d("Layout created")
 
-      val layout =
-        Layout(
-          index = index,
-          rootPath = rootPath,
-          blobsPath = blobsPath,
-          stagingPath = stagingPath,
-          strictChecking = strictChecking,
-          logger = logger,
-          transferCoordinator = TransferCoordinator(logger),
-        )
-
-      return KociResult.ok(layout)
+      return Layout(
+        index = index,
+        rootPath = rootPath,
+        blobsPath = blobsPath,
+        stagingPath = stagingPath,
+        strictChecking = strictChecking,
+        logger = logger,
+        transferCoordinator = TransferCoordinator(logger),
+      )
     }
   }
 }

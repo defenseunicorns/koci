@@ -60,7 +60,6 @@ import okio.source
  * @property stagingPath The directory path for staging/temporary operations
  * @property transferCoordinator The transfer coordinator for managing concurrent transfers
  */
-@Suppress("detekt:TooManyFunctions")
 class Layout
 private constructor(
   private val index: Index,
@@ -191,7 +190,6 @@ private constructor(
    */
   // TODO: ensure removals do not impact other images through unit tests
   @OptIn(ExperimentalSerializationApi::class)
-  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   suspend fun remove(descriptor: Descriptor): KociResult<Boolean> {
     logger.d("Removing descriptor: ${descriptor.digest}")
     val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }

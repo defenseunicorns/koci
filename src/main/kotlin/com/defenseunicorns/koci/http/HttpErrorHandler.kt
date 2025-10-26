@@ -24,7 +24,7 @@ import io.ktor.http.contentType
  * @param response The HTTP response with an error status code
  * @return OCIResult.Err containing the parsed error
  */
-suspend fun <T> parseHTTPError(response: HttpResponse): KociResult<T> {
+internal suspend fun <T> parseHTTPError(response: HttpResponse): KociResult<T> {
   // Try to parse OCI-compliant error response
   if (response.contentType() == ContentType.Application.Json) {
     try {

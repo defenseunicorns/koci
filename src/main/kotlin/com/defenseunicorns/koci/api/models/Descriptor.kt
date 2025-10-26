@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci.api.models
 
+import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.models.Annotations
 import io.ktor.http.ContentType
 import java.io.InputStream
@@ -77,7 +78,7 @@ class Descriptor(
       stream: InputStream,
       mediaType: String = ContentType.Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
-    ): Descriptor {
+    ): KociResult<Descriptor> {
       val md = algorithm.hasher()
       var size = 0L
       val buffer = ByteArray(BUFFER_SIZE)
@@ -88,7 +89,10 @@ class Descriptor(
           md.update(buffer, 0, bytesRead)
         }
       }
-      return Descriptor(mediaType, Digest(algorithm, md.digest()), size)
+
+      val digest = Digest.create(algorithm, md.digest())
+
+      return digest.map { digest -> Descriptor(mediaType, digest, size) }
     }
   }
 }

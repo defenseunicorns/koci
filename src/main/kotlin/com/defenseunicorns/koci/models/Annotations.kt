@@ -5,6 +5,8 @@
 
 package com.defenseunicorns.koci.models
 
+internal typealias Annotations = Map<String, String>
+
 /**
  * [Pre-defined annotations
  * keys](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys)

@@ -7,6 +7,22 @@ package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
+import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.errors.DescriptorNotFound
+import com.defenseunicorns.koci.api.errors.DigestMismatch
+import com.defenseunicorns.koci.api.errors.Generic
+import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.api.errors.SizeMismatch
+import com.defenseunicorns.koci.api.errors.UnsupportedManifest
+import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Digest
+import com.defenseunicorns.koci.api.models.Index
+import com.defenseunicorns.koci.api.models.Manifest
+import com.defenseunicorns.koci.api.models.Platform
+import com.defenseunicorns.koci.api.models.Reference
+import com.defenseunicorns.koci.api.models.TagsResponse
+import com.defenseunicorns.koci.api.models.UploadStatus
+import com.defenseunicorns.koci.api.models.Versioned
 import com.defenseunicorns.koci.auth.ACTION_DELETE
 import com.defenseunicorns.koci.auth.ACTION_PULL
 import com.defenseunicorns.koci.auth.ACTION_PUSH
@@ -16,23 +32,6 @@ import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-import com.defenseunicorns.koci.api.models.Reference
-import com.defenseunicorns.koci.api.models.Descriptor
-import com.defenseunicorns.koci.api.models.Digest
-import com.defenseunicorns.koci.api.models.Index
-import com.defenseunicorns.koci.api.models.Manifest
-import com.defenseunicorns.koci.api.models.Platform
-import com.defenseunicorns.koci.api.models.UploadStatus
-import com.defenseunicorns.koci.api.models.Versioned
-import com.defenseunicorns.koci.api.KociError
-import com.defenseunicorns.koci.api.KociResult
-import com.defenseunicorns.koci.api.errors.DescriptorNotFound
-import com.defenseunicorns.koci.api.errors.DigestMismatch
-import com.defenseunicorns.koci.api.errors.Generic
-import com.defenseunicorns.koci.api.errors.IOError
-import com.defenseunicorns.koci.api.errors.SizeMismatch
-import com.defenseunicorns.koci.api.errors.UnsupportedManifest
-import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -84,7 +83,6 @@ import kotlinx.serialization.json.decodeFromStream
  * @property name Repository name as retrieved from a reference (e.g., "[host]/[name]:[tag]")
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
-@Suppress("detekt:TooManyFunctions")
 class Repository
 internal constructor(
   private val client: HttpClient,
@@ -610,7 +608,7 @@ internal constructor(
    *
    * Uses the transfer coordinator to prevent duplicate downloads of the same descriptor.
    */
-  private suspend fun download(descriptor: Descriptor, store: Layout): Flow<KociResult<Double>> =
+  private fun download(descriptor: Descriptor, store: Layout): Flow<KociResult<Double>> =
     transferCoordinator.transfer(descriptor = descriptor) { actualDownload(descriptor, store) }
 
   /**
@@ -717,7 +715,6 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#starting-an-upload">OCI
    *   Distribution Spec: Starting an Upload</a>
    */
-  @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount")
   private suspend fun startOrResumeUpload(descriptor: Descriptor): KociResult<UploadStatus> {
     return when (val prev = uploading[descriptor]) {
       null -> {
@@ -785,7 +782,6 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs">OCI
    *   Distribution Spec: Pushing Blobs</a>
    */
-  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
   fun push(stream: InputStream, expected: Descriptor): Flow<KociResult<Long>> = flow {
     try {
       logger.d("Pushing blob: ${expected.digest}")
@@ -1029,7 +1025,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
    *   Distribution Spec: Resuming an Upload</a>
    */
-  fun Headers.toUploadStatus(): UploadStatus {
+  private fun Headers.toUploadStatus(): UploadStatus {
     val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
     val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
     val re = Regex("^([0-9]+)-([0-9]+)\$")
@@ -1044,20 +1040,5 @@ internal constructor(
   companion object {
     private const val FINISHED_AMOUNT = 100.0
     private const val MIN_CHUNK_SIZE = 5L * 1024L * 1024L
-    
-    internal fun create(
-      router: Router,
-      client: HttpClient,
-      repositoryName: String,
-      logger: KociLogger,
-      transferCoordinator: TransferCoordinator,
-    ) =
-      Repository(
-        client = client,
-        router = router,
-        name = repositoryName,
-        logger = logger,
-        transferCoordinator = transferCoordinator,
-      )
   }
 }

@@ -36,7 +36,6 @@ import kotlinx.serialization.json.Json
  * - https://docs.docker.com/registry/spec/auth/jwt/
  * - https://docs.docker.com/registry/spec/auth/token/
  */
-@Suppress("detekt:SpreadOperator")
 private suspend fun HttpClient.fetchDistributionToken(
   realm: String,
   service: String,
@@ -104,7 +103,6 @@ private suspend fun HttpClient.fetchDistributionToken(
  *
  * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
  */
-@Suppress("detekt:ThrowsCount", "detekt:SpreadOperator")
 private suspend fun HttpClient.fetchOAuth2Token(
   realm: String,
   service: String,

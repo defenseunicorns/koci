@@ -100,12 +100,12 @@ class Reference(val registry: String, val repository: String, val reference: Str
 
     // Validate reference (tag or digest)
     if (reference.isBlank()) {
-      return KociResult.Companion.ok(true)
+      return KociResult.ok(true)
     }
 
     // Check if it's a valid tag
     if (tagRegex.matchEntire(reference) != null) {
-      return KociResult.Companion.ok(true)
+      return KociResult.ok(true)
     }
 
     // Check if it's a valid digest

@@ -1,5 +1,6 @@
 package com.defenseunicorns.koci.api
 
+import com.defenseunicorns.koci.api.errors.KociError
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 

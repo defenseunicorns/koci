@@ -10,6 +10,7 @@ import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociError
 import com.defenseunicorns.koci.api.KociLogLevel
 import com.defenseunicorns.koci.api.KociResult
+import com.defenseunicorns.koci.api.errors.IOError
 import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
 import com.defenseunicorns.koci.http.Router
@@ -98,7 +99,7 @@ internal constructor(
       }
       KociResult.ok(true)
     } catch (e: Exception) {
-      KociResult.err(KociError.IOError("Network error: ${e.message}", e))
+      KociResult.err(IOError("Network error: ${e.message}", e))
     }
   }
 
@@ -110,7 +111,7 @@ internal constructor(
    *
    * @param name Repository name (e.g., "library/ubuntu")
    */
-  fun repo(name: String) = Repository.create(router, client, name, logger, transferCoordinator)
+  fun repo(name: String) = Repository(client, router, name, logger, transferCoordinator)
 
   /**
    * Lists all tags in a repository.

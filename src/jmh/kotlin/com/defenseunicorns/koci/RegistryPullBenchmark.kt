@@ -37,8 +37,8 @@ import org.openjdk.jmh.annotations.Warmup
  * - Atomic move to blobs
  * - Index updates
  *
- * NOTE: This requires a running registry at the configured URL.
- * Results will vary based on network conditions and registry performance.
+ * NOTE: This requires a running registry at the configured URL. Results will vary based on network
+ * conditions and registry performance.
  *
  * Run with: ./gradlew jmh --includes=RegistryPullBenchmark
  */
@@ -53,7 +53,7 @@ open class RegistryPullBenchmark {
   private lateinit var registry: Registry
   private lateinit var layout: Layout
   private lateinit var tempDir: String
-  
+
   // Configure your registry URL here
   private val registryUrl = System.getenv("BENCHMARK_REGISTRY_URL") ?: "https://192.168.3.240:5000"
   private val testRepo = System.getenv("BENCHMARK_REPO") ?: "core-base"
@@ -62,20 +62,20 @@ open class RegistryPullBenchmark {
   @Setup(Level.Trial)
   fun setup() {
     tempDir = Files.createTempDirectory("koci-bench-registry").toString()
-    
+
     layout = Layout.create(tempDir, strictChecking = true).getOrNull()!!
-    
+
     registry = Registry.create(registryUrl = registryUrl, logLevel = KociLogLevel.ASSERT)
-    
+
     println("🔗 Benchmarking against: $registryUrl/$testRepo:$testTag")
   }
 
   @TearDown(Level.Trial)
   fun tearDown() {
     // Clean up temporary directory
-    Files.walk(java.nio.file.Paths.get(tempDir))
-      .sorted(Comparator.reverseOrder())
-      .forEach { Files.deleteIfExists(it) }
+    Files.walk(java.nio.file.Paths.get(tempDir)).sorted(Comparator.reverseOrder()).forEach {
+      Files.deleteIfExists(it)
+    }
   }
 
   @TearDown(Level.Invocation)
@@ -87,47 +87,37 @@ open class RegistryPullBenchmark {
     }
   }
 
-  /**
-   * Benchmark: Single pull from registry.
-   * Measures end-to-end time for a complete image pull.
-   */
-  @Benchmark
-  fun singlePull() = runBlocking {
-    registry.pull(testRepo, testTag, layout).collect()
-  }
+  /** Benchmark: Single pull from registry. Measures end-to-end time for a complete image pull. */
+  @Benchmark fun singlePull() = runBlocking { registry.pull(testRepo, testTag, layout).collect() }
 
   /**
-   * Benchmark: 3 concurrent pulls of the same image.
-   * Tests coordinator efficiency - only one should download, others wait.
-   * 
+   * Benchmark: 3 concurrent pulls of the same image. Tests coordinator efficiency - only one should
+   * download, others wait.
+   *
    * This simulates multiple pods/containers trying to pull the same image.
    */
   @Benchmark
   fun concurrentPullsSameImage() = runBlocking {
-    val jobs = (1..3).map {
-      async {
-        registry.pull(testRepo, testTag, layout).collect()
-      }
-    }
+    val jobs = (1..3).map { async { registry.pull(testRepo, testTag, layout).collect() } }
     jobs.awaitAll()
   }
 
   /**
-   * Benchmark: Pull with existing content (cache hit).
-   * Tests how fast the system detects and skips already-downloaded content.
+   * Benchmark: Pull with existing content (cache hit). Tests how fast the system detects and skips
+   * already-downloaded content.
    */
   @Benchmark
   fun pullWithCache() = runBlocking {
     // First pull to populate cache
     registry.pull(testRepo, testTag, layout).collect()
-    
+
     // Second pull should be much faster (everything exists)
     registry.pull(testRepo, testTag, layout).collect()
   }
 
   /**
-   * Benchmark: List repositories and pull first one.
-   * Tests the full workflow from discovery to download.
+   * Benchmark: List repositories and pull first one. Tests the full workflow from discovery to
+   * download.
    */
   @Benchmark
   fun listAndPull() = runBlocking {

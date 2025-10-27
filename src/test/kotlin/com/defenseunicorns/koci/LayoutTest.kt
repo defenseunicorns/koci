@@ -1,40 +1,40 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.client.Layout
-//import com.defenseunicorns.koci.models.Descriptor
-//import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
-//import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-//import com.defenseunicorns.koci.models.Manifest
-//import com.defenseunicorns.koci.models.Reference
-//import com.defenseunicorns.koci.models.content.Digest
-//import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
-//import com.defenseunicorns.koci.models.errors.OCIResult
-//import java.io.ByteArrayInputStream
-//import java.nio.file.Path
-//import java.util.concurrent.ConcurrentHashMap
-//import kotlinx.coroutines.async
-//import kotlinx.coroutines.awaitAll
-//import kotlinx.coroutines.flow.collect
-//import kotlinx.coroutines.runBlocking
-//import kotlinx.coroutines.sync.Mutex
-//import kotlinx.coroutines.test.runTest
-//import kotlinx.serialization.json.Json
-//import okio.FileSystem
-//import okio.Path.Companion.toPath
-//import org.junit.jupiter.api.AfterEach
-//import org.junit.jupiter.api.Assertions.assertEquals
-//import org.junit.jupiter.api.Assertions.assertFalse
-//import org.junit.jupiter.api.Assertions.assertTrue
-//import org.junit.jupiter.api.BeforeEach
-//import org.junit.jupiter.api.Test
-//import org.junit.jupiter.api.io.TempDir
+// import com.defenseunicorns.koci.client.Layout
+// import com.defenseunicorns.koci.models.Descriptor
+// import com.defenseunicorns.koci.models.IMAGE_BLOBS_DIR
+// import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+// import com.defenseunicorns.koci.models.Manifest
+// import com.defenseunicorns.koci.models.Reference
+// import com.defenseunicorns.koci.models.content.Digest
+// import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
+// import com.defenseunicorns.koci.models.errors.OCIResult
+// import java.io.ByteArrayInputStream
+// import java.nio.file.Path
+// import java.util.concurrent.ConcurrentHashMap
+// import kotlinx.coroutines.async
+// import kotlinx.coroutines.awaitAll
+// import kotlinx.coroutines.flow.collect
+// import kotlinx.coroutines.runBlocking
+// import kotlinx.coroutines.sync.Mutex
+// import kotlinx.coroutines.test.runTest
+// import kotlinx.serialization.json.Json
+// import okio.FileSystem
+// import okio.Path.Companion.toPath
+// import org.junit.jupiter.api.AfterEach
+// import org.junit.jupiter.api.Assertions.assertEquals
+// import org.junit.jupiter.api.Assertions.assertFalse
+// import org.junit.jupiter.api.Assertions.assertTrue
+// import org.junit.jupiter.api.BeforeEach
+// import org.junit.jupiter.api.Test
+// import org.junit.jupiter.api.io.TempDir
 //
-//class LayoutTest {
+// class LayoutTest {
 //
 //  @TempDir lateinit var tempDir: Path
 //
@@ -67,7 +67,8 @@
 //          digest =
 //            Digest(
 //              RegisteredAlgorithm.SHA256,
-//              RegisteredAlgorithm.SHA256.hasher().apply { update(content1.toByteArray()) }.digest(),
+//              RegisteredAlgorithm.SHA256.hasher().apply { update(content1.toByteArray())
+// }.digest(),
 //            ),
 //          size = content1.toByteArray().size.toLong(),
 //        )
@@ -77,7 +78,8 @@
 //          digest =
 //            Digest(
 //              RegisteredAlgorithm.SHA256,
-//              RegisteredAlgorithm.SHA256.hasher().apply { update(content2.toByteArray()) }.digest(),
+//              RegisteredAlgorithm.SHA256.hasher().apply { update(content2.toByteArray())
+// }.digest(),
 //            ),
 //          size = content2.toByteArray().size.toLong(),
 //        )
@@ -142,7 +144,8 @@
 //
 //    // Verify layer2 is a zombie (not referenced by any manifest)
 //    val zombiePath =
-//      "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
 //        .toPath()
 //    assertTrue(FileSystem.SYSTEM.exists(zombiePath))
 //
@@ -221,16 +224,20 @@
 //    // Verify blobs still exist on disk
 //    val fs = FileSystem.SYSTEM
 //    val configPath =
-//      "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
 //        .toPath()
 //    val layer1Path =
-//      "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
 //        .toPath()
 //    val layer2Path =
-//      "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
 //        .toPath()
 //    val manifestPath =
-//      "$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
 //        .toPath()
 //
 //    assertTrue(fs.exists(configPath))
@@ -292,10 +299,12 @@
 //      // Verify both layers still exist on disk
 //      val fs = FileSystem.SYSTEM
 //      val layer1Path =
-//        "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
 //          .toPath()
 //      val layer2Path =
-//        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+//
+// "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
 //          .toPath()
 //      assertTrue(fs.exists(layer1Path))
 //      assertTrue(fs.exists(layer2Path))
@@ -318,7 +327,8 @@
 //      )
 //
 //    val fs = FileSystem.SYSTEM
-//    val layerPath = "$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}".toPath()
+//    val layerPath =
+// "$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}".toPath()
 //    fs.createDirectories(layerPath.parent!!)
 //    fs.write(layerPath) { write(layerBytes) }
 //
@@ -357,4 +367,4 @@
 //
 //    return descriptor
 //  }
-//}
+// }

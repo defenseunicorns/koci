@@ -1,19 +1,19 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.auth.ACTION_DELETE
-//import com.defenseunicorns.koci.auth.ACTION_PULL
-//import com.defenseunicorns.koci.auth.ACTION_PUSH
-//import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
-//import com.defenseunicorns.koci.auth.scopeRepository
-//import kotlin.test.Test
-//import kotlin.test.assertEquals
+// import com.defenseunicorns.koci.auth.ACTION_DELETE
+// import com.defenseunicorns.koci.auth.ACTION_PULL
+// import com.defenseunicorns.koci.auth.ACTION_PUSH
+// import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
+// import com.defenseunicorns.koci.auth.scopeRepository
+// import kotlin.test.Test
+// import kotlin.test.assertEquals
 //
-//class ScopesTest {
+// class ScopesTest {
 //  @Test
 //  @Suppress("detekt:LongMethod")
 //  fun cleanScopes() {
@@ -88,4 +88,4 @@
 //      assertEquals(expected, actual)
 //    }
 //  }
-//}
+// }

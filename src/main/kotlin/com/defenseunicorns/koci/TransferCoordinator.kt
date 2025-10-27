@@ -1,15 +1,18 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci
 
-import com.defenseunicorns.koci.api.KociError
-import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.api.models.Descriptor
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Coordinates transfers (downloads/uploads) across multiple concurrent operations to prevent
@@ -20,9 +23,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * concurrent operations.
  *
  * Thread-safe and designed for use across multiple coroutines.
- *
- * @param T The type of progress value emitted (e.g., Int for bytes downloaded, Long for bytes
- *   uploaded)
  */
 internal class TransferCoordinator(private val logger: KociLogger) {
   private val inProgress = ConcurrentHashMap<Descriptor, TransferState>()
@@ -38,76 +38,74 @@ internal class TransferCoordinator(private val logger: KociLogger) {
    * @param transfer Function that performs the actual transfer, emitting progress as OCIResult<T>
    * @return Flow emitting progress updates or errors
    */
-  fun transfer(
-    descriptor: Descriptor,
-    transfer: suspend () -> Flow<KociResult<Double>>,
-  ): Flow<KociResult<Double>> = flow {
+  fun transfer(descriptor: Descriptor, transfer: suspend () -> Flow<Double?>): Flow<Double?> =
+    flow {
       // Check if already transferring or claim the transfer
       val (state, shouldTransfer) =
-          mutex.withLock {
-              val state = inProgress.getOrPut(descriptor) { TransferState() }
-              val shouldTransfer = !state.claimed && !state.completion.isCompleted
-              if (shouldTransfer) {
-                  state.claimed = true // Claim it so others wait
-              }
-              state to shouldTransfer
+        mutex.withLock {
+          val state = inProgress.getOrPut(descriptor) { TransferState() }
+          val shouldTransfer = !state.claimed && !state.completion.isCompleted
+          if (shouldTransfer) {
+            state.claimed = true // Claim it so others wait
           }
+          state to shouldTransfer
+        }
 
       try {
-          if (shouldTransfer) {
-              // We're the one transferring - execute the transfer
-              try {
-                  var hasError = false
+        if (shouldTransfer) {
+          // We're the one transferring - execute the transfer
+          try {
+            var hasError = false
 
-                  transfer().collect { result ->
-                      when (result) {
-                          is KociResult.Ok -> emit(result)
-                          is KociResult.Err -> {
-                              hasError = true
-                              emit(result)
-                          }
-                      }
-                  }
-
-                  // Mark transfer complete
-                  mutex.withLock {
-                      state.succeeded = !hasError
-                      state.completion.complete(Unit)
-                  }
-              } catch (e: Exception) {
-                  // Mark transfer failed
-                  mutex.withLock {
-                      logger.e("Transfer failed: ${descriptor.digest}", e)
-                      state.succeeded = false
-                      state.completion.complete(Unit)
-                  }
-                  throw e
+            transfer().collect { result ->
+              when (result == null) {
+                true -> {
+                  hasError = true
+                  emit(result)
+                }
+                false -> emit(result)
               }
-          } else {
-              // Someone else is transferring (or already finished) - wait if needed
-              logger.d("Waiting for transfer to complete: ${descriptor.digest}")
-              state.completion.await()
+            }
 
-              // Check the result
-              if (!state.succeeded) {
-                  logger.e("Transfer failed: ${descriptor.digest}")
-                  emit(KociResult.Companion.err(KociError.TransferFailed(descriptor)))
-              }
+            // Mark transfer complete
+            mutex.withLock {
+              state.succeeded = !hasError
+              state.completion.complete(Unit)
+            }
+          } catch (e: Exception) {
+            // Mark transfer failed
+            mutex.withLock {
+              logger.e("Transfer failed: ${descriptor.digest}", e)
+              state.succeeded = false
+              state.completion.complete(Unit)
+            }
+            throw e
           }
+        } else {
+          // Someone else is transferring (or already finished) - wait if needed
+          logger.d("Waiting for transfer to complete: ${descriptor.digest}")
+          state.completion.await()
+
+          // Check the result
+          if (!state.succeeded) {
+            logger.e("Transfer failed: ${descriptor.digest}")
+            emit(null)
+          }
+        }
       } finally {
-          // Decrement refcount and clean up if no one else is waiting
-          val shouldRemove =
-              mutex.withLock {
-                  val count = state.refCount.decrementAndGet()
-                  count <= 0
-              }
-
-          if (shouldRemove) {
-              logger.d("Removing from progress tracking: ${descriptor.digest}")
-              inProgress.remove(descriptor, state)
+        // Decrement refcount and clean up if no one else is waiting
+        val shouldRemove =
+          mutex.withLock {
+            val count = state.refCount.decrementAndGet()
+            count <= 0
           }
+
+        if (shouldRemove) {
+          logger.d("Removing from progress tracking: ${descriptor.digest}")
+          inProgress.remove(descriptor, state)
+        }
       }
-  }
+    }
 
   /**
    * Checks if a descriptor is currently being transferred.
@@ -137,9 +135,9 @@ internal class TransferCoordinator(private val logger: KociLogger) {
    * @property refCount Number of operations waiting on this transfer
    */
   private data class TransferState(
-      val completion: CompletableDeferred<Unit> = CompletableDeferred(),
-      var succeeded: Boolean = false,
-      var claimed: Boolean = false,
-      val refCount: AtomicInteger = AtomicInteger(0),
+    val completion: CompletableDeferred<Unit> = CompletableDeferred(),
+    var succeeded: Boolean = false,
+    var claimed: Boolean = false,
+    val refCount: AtomicInteger = AtomicInteger(0),
   )
 }

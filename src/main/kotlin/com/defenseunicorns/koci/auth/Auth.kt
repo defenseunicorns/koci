@@ -82,8 +82,7 @@ private suspend fun HttpClient.fetchDistributionToken(
       return result
     }
 
-    override fun toString(): String =
-      "TokenResponse(token='$token', accessToken=$accessToken)"
+    override fun toString(): String = "TokenResponse(token='$token', accessToken=$accessToken)"
   }
 
   val json = Json { ignoreUnknownKeys = true }
@@ -146,7 +145,8 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  @Serializable class TokenResponse(@SerialName("access_token") val accessToken: String) {
+  @Serializable
+  class TokenResponse(@SerialName("access_token") val accessToken: String) {
     override fun equals(other: Any?): Boolean {
       if (this === other) return true
       if (other !is TokenResponse) return false

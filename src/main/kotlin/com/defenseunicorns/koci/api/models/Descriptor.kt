@@ -5,7 +5,6 @@
 
 package com.defenseunicorns.koci.api.models
 
-import com.defenseunicorns.koci.api.KociResult
 import com.defenseunicorns.koci.models.Annotations
 import io.ktor.http.ContentType
 import java.io.InputStream
@@ -51,15 +50,16 @@ class Descriptor(
     annotations: Annotations? = this.annotations,
     data: String? = this.data,
     platform: Platform? = this.platform,
-  ) = Descriptor(
-    mediaType = mediaType,
-    digest = digest,
-    size = size,
-    urls = urls,
-    annotations = annotations,
-    data = data,
-    platform = platform,
-  )
+  ) =
+    Descriptor(
+      mediaType = mediaType,
+      digest = digest,
+      size = size,
+      urls = urls,
+      annotations = annotations,
+      data = data,
+      platform = platform,
+    )
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true

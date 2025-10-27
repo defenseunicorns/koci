@@ -1,31 +1,31 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.client.Layout
-//import com.defenseunicorns.koci.client.Registry
-//import java.nio.file.Files
-//import java.util.concurrent.TimeUnit
-//import kotlinx.coroutines.flow.collect
-//import kotlinx.coroutines.launch
-//import kotlinx.coroutines.runBlocking
-//import org.openjdk.jmh.annotations.Benchmark
-//import org.openjdk.jmh.annotations.BenchmarkMode
-//import org.openjdk.jmh.annotations.Fork
-//import org.openjdk.jmh.annotations.Level
-//import org.openjdk.jmh.annotations.Measurement
-//import org.openjdk.jmh.annotations.Mode
-//import org.openjdk.jmh.annotations.OutputTimeUnit
-//import org.openjdk.jmh.annotations.Scope
-//import org.openjdk.jmh.annotations.Setup
-//import org.openjdk.jmh.annotations.State
-//import org.openjdk.jmh.annotations.TearDown
-//import org.openjdk.jmh.annotations.Warmup
+// import com.defenseunicorns.koci.client.Layout
+// import com.defenseunicorns.koci.client.Registry
+// import java.nio.file.Files
+// import java.util.concurrent.TimeUnit
+// import kotlinx.coroutines.flow.collect
+// import kotlinx.coroutines.launch
+// import kotlinx.coroutines.runBlocking
+// import org.openjdk.jmh.annotations.Benchmark
+// import org.openjdk.jmh.annotations.BenchmarkMode
+// import org.openjdk.jmh.annotations.Fork
+// import org.openjdk.jmh.annotations.Level
+// import org.openjdk.jmh.annotations.Measurement
+// import org.openjdk.jmh.annotations.Mode
+// import org.openjdk.jmh.annotations.OutputTimeUnit
+// import org.openjdk.jmh.annotations.Scope
+// import org.openjdk.jmh.annotations.Setup
+// import org.openjdk.jmh.annotations.State
+// import org.openjdk.jmh.annotations.TearDown
+// import org.openjdk.jmh.annotations.Warmup
 //
-///**
+/// **
 // * Real-world benchmark that mimics Main.kt behavior.
 // *
 // * Pulls all images from a registry catalog, similar to:
@@ -45,19 +45,20 @@
 // *
 // * Run with: ./gradlew jmh --includes=RealWorldBenchmark
 // */
-//@State(Scope.Benchmark)
-//@BenchmarkMode(Mode.SingleShotTime)
-//@OutputTimeUnit(TimeUnit.SECONDS)
-//@Fork(1)
-//@Warmup(iterations = 0) // No warmup for real-world scenario
-//@Measurement(iterations = 3) // 3 runs to get average
-//open class RealWorldBenchmark {
+// @State(Scope.Benchmark)
+// @BenchmarkMode(Mode.SingleShotTime)
+// @OutputTimeUnit(TimeUnit.SECONDS)
+// @Fork(1)
+// @Warmup(iterations = 0) // No warmup for real-world scenario
+// @Measurement(iterations = 3) // 3 runs to get average
+// open class RealWorldBenchmark {
 //
 //  private lateinit var registry: Registry
 //  private lateinit var layout: Layout
 //  private lateinit var tempDir: String
 //
-//  private val registryUrl = System.getenv("BENCHMARK_REGISTRY_URL") ?: "https://192.168.3.240:5000"
+//  private val registryUrl = System.getenv("BENCHMARK_REGISTRY_URL") ?:
+// "https://192.168.3.240:5000"
 //
 //  @Setup(Level.Trial)
 //  fun setup() {
@@ -158,4 +159,4 @@
 //
 //    println("\n✅ Both pulls complete")
 //  }
-//}
+// }

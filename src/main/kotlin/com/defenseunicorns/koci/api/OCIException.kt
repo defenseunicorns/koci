@@ -1,6 +1,10 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci.api
 
-import com.defenseunicorns.koci.api.errors.KociError
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 
@@ -8,8 +12,7 @@ import io.ktor.http.HttpStatusCode
  * Exception types for OCI operations that should fail-fast.
  *
  * These exceptions are used in infrastructure/middleware layers (like Auth) where throwing is
- * appropriate. For domain-level errors that should be handled explicitly, use [KociError] and
- * [KociResult] instead.
+ * appropriate.
  */
 sealed class OCIException(message: String, cause: Throwable? = null) : Exception(message, cause) {
 

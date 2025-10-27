@@ -7,8 +7,6 @@ package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
-import com.defenseunicorns.koci.api.errors.Generic
-import com.defenseunicorns.koci.api.errors.IOError
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Index
 import com.defenseunicorns.koci.api.models.Manifest
@@ -29,6 +27,7 @@ import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.tagRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.accept
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -47,9 +46,8 @@ import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.http.isSuccess
 import java.io.InputStream
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
@@ -57,9 +55,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flattenMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -83,7 +79,9 @@ internal constructor(
   private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
 ) {
-  
+  /** Tracks in-progress blob uploads for resumable operations. */
+  private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
+
   /**
    * Checks if a blob or manifest exists in the repository.
    *
@@ -275,7 +273,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI
    *   Distribution Spec: Pulling Blobs</a>
    */
-  suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
+  private suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
     return client
       .prepareGet(
         when (descriptor.mediaType) {
@@ -401,7 +399,7 @@ internal constructor(
     }
 
     pull(desc, store).collect { progressResult ->
-      when(progressResult == null) {
+      when (progressResult == null) {
         true -> return@collect emit(null)
         false -> emit(progressResult)
       }
@@ -450,76 +448,90 @@ internal constructor(
     when (descriptor.mediaType) {
       INDEX_MEDIA_TYPE -> {
         val indexContent = index(descriptor) ?: return@flow emit(null)
+        val manifests = indexContent.manifests
+        val totalBytes = manifests.sumOf { it.size } + descriptor.size
 
-        val total = indexContent.manifests.size
-        var completedPulls = 0
-        indexContent.manifests.forEach { manifestDescriptor ->
-          pull(manifestDescriptor, store).collect { progressResult ->
-            when (progressResult != null) {
-              true -> {
-                val currentManifestContribution = progressResult / 100.0
-                // TODO: This doesn't work now
-                val overallProgress = ((completedPulls + currentManifestContribution) / total * 100)
-                emit(overallProgress)
-              }
-              false -> {
-                emit(null)
-                return@collect
-              }
+        var completedBytes = 0.0
+
+        manifests.forEach { manifestDesc ->
+          pull(manifestDesc, store).collect { childProgress ->
+            if (childProgress == null) {
+              return@collect emit(null)
             }
+
+            // Weight child's progress by its total size
+            val childContribution = (childProgress / 100.0) * manifestDesc.size
+            val overallProgress = ((completedBytes + childContribution) / totalBytes) * 100
+            emit(overallProgress)
           }
-          completedPulls += 1
+
+          completedBytes += manifestDesc.size
         }
-        download(descriptor, store).collect { result ->
-          when(result == null) {
-            true -> return@collect emit(null)
-            false -> emit(result)
-          }
+
+        // Now pull the descriptor itself
+        downloadWithProgress(descriptor, store).collect { progress ->
+          if (progress == null) return@collect emit(null)
+          val overall = ((completedBytes + (progress / 100.0 * descriptor.size)) / totalBytes) * 100
+          emit(overall)
         }
-        
+
         emit(FINISHED_AMOUNT)
       }
 
       MANIFEST_MEDIA_TYPE -> {
         val manifestContent = manifest(descriptor) ?: return@flow emit(null)
+        val layers = manifestContent.layers + manifestContent.config
+        val totalBytes = layers.sumOf { it.size } + descriptor.size
 
-        val layersToFetch = manifestContent.layers.toMutableList() + manifestContent.config
-        val total = layersToFetch.sumOf { it.size } + manifestContent.config.size + descriptor.size
+        val completedBytes = AtomicLong(0)
 
-        val acc = AtomicInteger(0)
-
-        layersToFetch
+        layers
           .asFlow()
           .map { layer ->
             flow {
               download(layer, store).collect { result ->
-                when (result) {
-                  is KociResult.Ok -> {
-                    // val curr = acc.addAndGet(result.value)
-                    emit((curr.toDouble() * 100 / total).roundToInt())
+                when (result == null) {
+                  true -> return@collect emit(null)
+                  false -> {
+                    completedBytes.addAndGet(layer.size)
+                    val overall = (completedBytes.get().toDouble() / totalBytes) * 100
+                    emit(overall)
                   }
-                  is KociResult.Err ->
-                    throw IllegalStateException("Layer download failed: ${result.error}")
                 }
               }
             }
           }
-          .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
+          .flattenMerge(concurrency = 3)
+          .collect { emit(it) }
+
+        // Pull the manifest itself at the end
+        downloadWithProgress(descriptor, store).collect { progress ->
+          if (progress == null) return@collect emit(null)
+          val overall =
+            ((completedBytes.get() + (progress / 100.0 * descriptor.size)) / totalBytes) * 100
+          emit(overall)
+        }
+
+        emit(FINISHED_AMOUNT)
       }
 
       else -> {
-        download(descriptor, store).collect { result ->
-          when (result) {
-            is KociResult.Ok -> emit(result)
-            is KociResult.Err -> {
-              emit(result)
-              return@collect
-            }
-          }
-        }
+        downloadWithProgress(descriptor, store).collect { progress -> emit(progress) }
+        emit(FINISHED_AMOUNT)
       }
     }
   }
+
+  private suspend fun downloadWithProgress(target: Descriptor, store: Layout): Flow<Double?> =
+    flow {
+      download(target, store).collect { result ->
+        when (result == null) {
+          true -> return@collect emit(null)
+          false -> emit(result)
+        }
+      }
+      emit(FINISHED_AMOUNT)
+    }
 
   @Volatile private var supportsRange: Boolean? = null
 
@@ -569,7 +581,6 @@ internal constructor(
    * concurrent requests for the same descriptor will wait for this to complete.
    */
   private fun actualDownload(descriptor: Descriptor, store: Layout): Flow<Double?> = flow {
-    // TODO: Return percentage not bytes
     logger.d("Downloading descriptor: ${descriptor.digest}")
 
     // if the descriptor is 100% downloaded w/ size and sha matching, early return
@@ -595,8 +606,7 @@ internal constructor(
       emit(((resumeFrom.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)) * 100.0)
     } else {
       if (!store.remove(descriptor)) {
-        emit(null)
-        return@flow
+        return@flow emit(null)
       }
     }
 
@@ -645,52 +655,54 @@ internal constructor(
   private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus? {
     return when (val prev = uploading[descriptor]) {
       null -> {
-        try {
-          val response =
-            client.post(router.uploads(name)) {
-              headers[HttpHeaders.ContentLength] = 0.toString()
-              attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-            }
-          if (response.status != HttpStatusCode.Accepted) {
-            return parseHTTPError(response)
+        val res =
+          client.post(router.uploads(name)) {
+            headers[HttpHeaders.ContentLength] = 0.toString()
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
           }
-          response.headers.toUploadStatus()
-        } catch (e: Exception) {
-          logger.e("Failed to start upload", e)
-          null
+        if (res.status != HttpStatusCode.Accepted) {
+          logger.e("Expected status ${HttpStatusCode.Accepted} but got: ${res.status}")
+          return null
         }
+        return res.headers.toUploadStatus()
       }
 
       else -> {
         if (prev.offset > 0) {
           try {
-            val response =
-              client.get(router.parseUploadLocation(prev.location)) {
+            client
+              .get(router.parseUploadLocation(prev.location)) {
                 attributes.appendScopes(scopeRepository(name, ACTION_PULL))
               }
+              .also { res ->
+                if (res.status != HttpStatusCode.NoContent) {
+                  logger.e("Expected status ${HttpStatusCode.NoContent} but got: ${res.status}")
+                  return null
+                }
 
-            when (response.status) {
-              HttpStatusCode.NoContent -> {
-                val curr = response.headers.toUploadStatus()
+                val curr = res.headers.toUploadStatus()
                 if (curr.offset != prev.offset) {
                   prev.offset = curr.offset
                 }
-                prev
               }
-              HttpStatusCode.NotFound -> {
-                // Upload session expired, start a new one
-                uploading.remove(descriptor)
-                startOrResumeUpload(descriptor)
-              }
-              else -> parseHTTPError(response)
+          } catch (e: Registry.FromResponse) {
+            if (e.fr.status == HttpStatusCode.NotFound) {
+              uploading.remove(descriptor)
+
+              return startOrResumeUpload(descriptor)
             }
-          } catch (e: Exception) {
-            logger.e("Failed to resume upload", e)
-            null
+            throw e
+          } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.NotFound) {
+              uploading.remove(descriptor)
+
+              return startOrResumeUpload(descriptor)
+            }
+            throw e
           }
-        } else {
-          prev
         }
+
+        prev
       }
     }
   }
@@ -737,32 +749,30 @@ internal constructor(
             }
 
           if (response.status != HttpStatusCode.Created) {
-            emit(parseHTTPError(response))
-            return@flow
+            return@flow emit(parseHTTPError(response))
           }
 
-          emit(KociResult.ok(bytesLeft))
+          val progress = ((expected.size - bytesLeft).toDouble() / expected.size.toDouble()) * 100.0
+          emit(progress)
         }
 
         else -> {
           var offset = start.offset
           stream.use { s ->
             if (offset > 0) {
-              s.skipNBytes(offset + 1)
+              s.skipNBytes(offset)
             }
 
             while (currentCoroutineContext().isActive) {
               val chunk = s.readNBytes(start.minChunkSize.toInt())
-
-              if (chunk.isEmpty()) {
-                break
-              }
+              if (chunk.isEmpty()) break
 
               val endRange = offset + chunk.size - 1
               val currentLocation =
                 uploading[expected]?.location
                   ?: run {
-                    emit(KociResult.err(Generic("Upload location unexpectedly null")))
+                    logger.e("Upload location unexpectedly null")
+                    emit(null)
                     return@flow
                   }
 
@@ -782,19 +792,21 @@ internal constructor(
               uploading[expected] = status
               offset = status.offset + 1
 
-              emit(KociResult.ok(offset))
+              val progress = (offset.toDouble() / expected.size.toDouble()) * 100.0
+              emit(progress)
             }
           }
 
-          val final =
+          val finalLocation =
             uploading[expected]?.location
               ?: run {
-                emit(KociResult.err(Generic("Upload location unexpectedly null")))
+                logger.e("Upload location unexpectedly null")
+                emit(null)
                 return@flow
               }
 
           val finalResponse =
-            client.put(final) {
+            client.put(finalLocation) {
               url { encodedParameters.append("digest", expected.digest.toString()) }
               attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
             }
@@ -803,6 +815,9 @@ internal constructor(
             emit(parseHTTPError(finalResponse))
             return@flow
           }
+
+          // ✅ Ensure we finish cleanly with full progress
+          emit(FINISHED_AMOUNT)
         }
       }
 
@@ -810,7 +825,7 @@ internal constructor(
       logger.d("Successfully pushed blob: ${expected.digest}")
     } catch (e: Exception) {
       logger.e("Failed to push blob: ${expected.digest}", e)
-      emit(KociResult.err(IOError("Failed to push blob: ${e.message}", e)))
+      emit(null)
     }
   }
 
@@ -864,11 +879,11 @@ internal constructor(
       // get digest from Location header
       val location = response.headers[HttpHeaders.Location]
 
-      if(location == null) {
+      if (location == null) {
         logger.e("Missing Location header in response")
         return false
       }
-      
+
       true
     } catch (e: Exception) {
       logger.e("Failed to tag content", e)

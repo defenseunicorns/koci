@@ -1,36 +1,36 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.client.TransferCoordinator
-//import com.defenseunicorns.koci.createKociLogger
-//import com.defenseunicorns.koci.models.content.Descriptor
-//import com.defenseunicorns.koci.models.content.Digest
-//import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
-//import com.defenseunicorns.koci.models.errors.OCIResult
-//import java.util.concurrent.TimeUnit
-//import kotlinx.coroutines.async
-//import kotlinx.coroutines.awaitAll
-//import kotlinx.coroutines.delay
-//import kotlinx.coroutines.flow.Flow
-//import kotlinx.coroutines.flow.collect
-//import kotlinx.coroutines.flow.flow
-//import kotlinx.coroutines.runBlocking
-//import org.openjdk.jmh.annotations.Benchmark
-//import org.openjdk.jmh.annotations.BenchmarkMode
-//import org.openjdk.jmh.annotations.Fork
-//import org.openjdk.jmh.annotations.Measurement
-//import org.openjdk.jmh.annotations.Mode
-//import org.openjdk.jmh.annotations.OutputTimeUnit
-//import org.openjdk.jmh.annotations.Scope
-//import org.openjdk.jmh.annotations.Setup
-//import org.openjdk.jmh.annotations.State
-//import org.openjdk.jmh.annotations.Warmup
+// import com.defenseunicorns.koci.client.TransferCoordinator
+// import com.defenseunicorns.koci.createKociLogger
+// import com.defenseunicorns.koci.models.content.Descriptor
+// import com.defenseunicorns.koci.models.content.Digest
+// import com.defenseunicorns.koci.models.content.RegisteredAlgorithm
+// import com.defenseunicorns.koci.models.errors.OCIResult
+// import java.util.concurrent.TimeUnit
+// import kotlinx.coroutines.async
+// import kotlinx.coroutines.awaitAll
+// import kotlinx.coroutines.delay
+// import kotlinx.coroutines.flow.Flow
+// import kotlinx.coroutines.flow.collect
+// import kotlinx.coroutines.flow.flow
+// import kotlinx.coroutines.runBlocking
+// import org.openjdk.jmh.annotations.Benchmark
+// import org.openjdk.jmh.annotations.BenchmarkMode
+// import org.openjdk.jmh.annotations.Fork
+// import org.openjdk.jmh.annotations.Measurement
+// import org.openjdk.jmh.annotations.Mode
+// import org.openjdk.jmh.annotations.OutputTimeUnit
+// import org.openjdk.jmh.annotations.Scope
+// import org.openjdk.jmh.annotations.Setup
+// import org.openjdk.jmh.annotations.State
+// import org.openjdk.jmh.annotations.Warmup
 //
-///**
+/// **
 // * Benchmark for TransferCoordinator to measure performance improvements.
 // *
 // * Tests concurrent transfers of the same descriptor to verify that:
@@ -40,13 +40,13 @@
 // *
 // * Run with: ./gradlew jmh
 // */
-//@State(Scope.Benchmark)
-//@BenchmarkMode(Mode.Throughput)
-//@OutputTimeUnit(TimeUnit.SECONDS)
-//@Fork(1)
-//@Warmup(iterations = 2, time = 1, timeUnit = TimeUnit.SECONDS)
-//@Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
-//open class TransferCoordinatorBenchmark {
+// @State(Scope.Benchmark)
+// @BenchmarkMode(Mode.Throughput)
+// @OutputTimeUnit(TimeUnit.SECONDS)
+// @Fork(1)
+// @Warmup(iterations = 2, time = 1, timeUnit = TimeUnit.SECONDS)
+// @Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
+// open class TransferCoordinatorBenchmark {
 //
 //  private lateinit var coordinator: TransferCoordinator
 //  private lateinit var testDescriptor: Descriptor
@@ -133,4 +133,4 @@
 //      coordinator.transfer(testDescriptor) { simulateTransfer() }.collect()
 //    }
 //  }
-//}
+// }

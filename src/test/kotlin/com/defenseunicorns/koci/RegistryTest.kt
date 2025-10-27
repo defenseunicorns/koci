@@ -1,78 +1,78 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.client.Layout
-//import com.defenseunicorns.koci.client.Registry
-//import com.defenseunicorns.koci.client.pull
-//import com.defenseunicorns.koci.client.repo
-//import com.defenseunicorns.koci.client.resolve
-//import com.defenseunicorns.koci.client.tags
-//import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
-//import com.defenseunicorns.koci.models.CatalogResponse
-//import com.defenseunicorns.koci.models.Descriptor
-//import com.defenseunicorns.koci.models.IMAGE_LAYOUT_FILE
-//import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
-//import com.defenseunicorns.koci.models.LayoutMarker
-//import com.defenseunicorns.koci.models.MANIFEST_CONFIG_MEDIA_TYPE
-//import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
-//import com.defenseunicorns.koci.models.Manifest
-//import com.defenseunicorns.koci.models.Platform
-//import com.defenseunicorns.koci.models.Reference
-//import com.defenseunicorns.koci.models.TagsResponse
-//import com.defenseunicorns.koci.models.content.Digest
-//import com.defenseunicorns.koci.models.errors.OCIException
-//import io.ktor.client.HttpClient
-//import io.ktor.client.engine.cio.CIO
-//import io.ktor.client.plugins.ClientRequestException
-//import io.ktor.client.plugins.UserAgent
-//import java.io.File
-//import java.io.FileOutputStream
-//import java.util.concurrent.Executors
-//import kotlin.io.path.ExperimentalPathApi
-//import kotlin.io.path.absolutePathString
-//import kotlin.io.path.createTempDirectory
-//import kotlin.io.path.deleteRecursively
-//import kotlin.random.Random
-//import kotlin.test.Test
-//import kotlin.test.assertContentEquals
-//import kotlin.test.assertEquals
-//import kotlin.test.assertFails
-//import kotlin.test.assertFailsWith
-//import kotlin.test.assertFalse
-//import kotlin.test.assertIs
-//import kotlin.test.assertNull
-//import kotlin.test.assertTrue
-//import kotlin.time.Duration.Companion.minutes
-//import kotlinx.coroutines.CancellationException
-//import kotlinx.coroutines.asCoroutineDispatcher
-//import kotlinx.coroutines.async
-//import kotlinx.coroutines.awaitAll
-//import kotlinx.coroutines.cancel
-//import kotlinx.coroutines.flow.collect
-//import kotlinx.coroutines.flow.last
-//import kotlinx.coroutines.flow.onCompletion
-//import kotlinx.coroutines.flow.toList
-//import kotlinx.coroutines.launch
-//import kotlinx.coroutines.runBlocking
-//import kotlinx.coroutines.test.runTest
-//import kotlinx.serialization.ExperimentalSerializationApi
-//import kotlinx.serialization.json.Json
-//import kotlinx.serialization.json.decodeFromStream
-//import org.junit.jupiter.api.AfterAll
-//import org.junit.jupiter.api.MethodOrderer
-//import org.junit.jupiter.api.Order
-//import org.junit.jupiter.api.TestMethodOrder
-//import org.junit.jupiter.api.assertDoesNotThrow
-//import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+// import com.defenseunicorns.koci.client.Layout
+// import com.defenseunicorns.koci.client.Registry
+// import com.defenseunicorns.koci.client.pull
+// import com.defenseunicorns.koci.client.repo
+// import com.defenseunicorns.koci.client.resolve
+// import com.defenseunicorns.koci.client.tags
+// import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
+// import com.defenseunicorns.koci.models.CatalogResponse
+// import com.defenseunicorns.koci.models.Descriptor
+// import com.defenseunicorns.koci.models.IMAGE_LAYOUT_FILE
+// import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
+// import com.defenseunicorns.koci.models.LayoutMarker
+// import com.defenseunicorns.koci.models.MANIFEST_CONFIG_MEDIA_TYPE
+// import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
+// import com.defenseunicorns.koci.models.Manifest
+// import com.defenseunicorns.koci.models.Platform
+// import com.defenseunicorns.koci.models.Reference
+// import com.defenseunicorns.koci.models.TagsResponse
+// import com.defenseunicorns.koci.models.content.Digest
+// import com.defenseunicorns.koci.models.errors.OCIException
+// import io.ktor.client.HttpClient
+// import io.ktor.client.engine.cio.CIO
+// import io.ktor.client.plugins.ClientRequestException
+// import io.ktor.client.plugins.UserAgent
+// import java.io.File
+// import java.io.FileOutputStream
+// import java.util.concurrent.Executors
+// import kotlin.io.path.ExperimentalPathApi
+// import kotlin.io.path.absolutePathString
+// import kotlin.io.path.createTempDirectory
+// import kotlin.io.path.deleteRecursively
+// import kotlin.random.Random
+// import kotlin.test.Test
+// import kotlin.test.assertContentEquals
+// import kotlin.test.assertEquals
+// import kotlin.test.assertFails
+// import kotlin.test.assertFailsWith
+// import kotlin.test.assertFalse
+// import kotlin.test.assertIs
+// import kotlin.test.assertNull
+// import kotlin.test.assertTrue
+// import kotlin.time.Duration.Companion.minutes
+// import kotlinx.coroutines.CancellationException
+// import kotlinx.coroutines.asCoroutineDispatcher
+// import kotlinx.coroutines.async
+// import kotlinx.coroutines.awaitAll
+// import kotlinx.coroutines.cancel
+// import kotlinx.coroutines.flow.collect
+// import kotlinx.coroutines.flow.last
+// import kotlinx.coroutines.flow.onCompletion
+// import kotlinx.coroutines.flow.toList
+// import kotlinx.coroutines.launch
+// import kotlinx.coroutines.runBlocking
+// import kotlinx.coroutines.test.runTest
+// import kotlinx.serialization.ExperimentalSerializationApi
+// import kotlinx.serialization.json.Json
+// import kotlinx.serialization.json.decodeFromStream
+// import org.junit.jupiter.api.AfterAll
+// import org.junit.jupiter.api.MethodOrderer
+// import org.junit.jupiter.api.Order
+// import org.junit.jupiter.api.TestMethodOrder
+// import org.junit.jupiter.api.assertDoesNotThrow
+// import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 //
-//const val TEST_BLOB_MEDIATYPE = "application/vnd.koci.test.blob.v1+text"
+// const val TEST_BLOB_MEDIATYPE = "application/vnd.koci.test.blob.v1+text"
 //
-//@TestMethodOrder(MethodOrderer.OrderAnnotation::class)
-//class RegistryTest {
+// @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
+// class RegistryTest {
 //  companion object {
 //    val tmp = createTempDirectory("koci-test")
 //
@@ -197,7 +197,8 @@
 //
 //    val config: String = repo.fetch(manifest.config) { it.bufferedReader().readText() }
 //    assertEquals(
-//      "{\"architecture\":\"amd64\",\"ociVersion\":\"1.1.0\",\"annotations\":{\"org.opencontainers.image.description\":\"Simple example to load classic DOS games into K8s in the airgap\",\"org.opencontainers.image.title\":\"dos-games\"}}",
+//
+// "{\"architecture\":\"amd64\",\"ociVersion\":\"1.1.0\",\"annotations\":{\"org.opencontainers.image.description\":\"Simple example to load classic DOS games into K8s in the airgap\",\"org.opencontainers.image.title\":\"dos-games\"}}",
 //      config,
 //    )
 //
@@ -214,7 +215,8 @@
 //      Descriptor(
 //        mediaType = "blob",
 //        size = 12,
-//        digest = Digest("sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"),
+//        digest =
+// Digest("sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"),
 //        annotations = mutableMapOf(),
 //      )
 //
@@ -565,9 +567,9 @@
 //
 //    nvcr.tags("nvidia/l4t-pytorch").getOrThrow()
 //  }
-//}
+// }
 //
-//fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {
+// fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {
 //  val random = Random.Default
 //  val buffer = ByteArray(1024) // 1KB buffer
 //
@@ -585,4 +587,4 @@
 //    mediaType = TEST_BLOB_MEDIATYPE,
 //    stream = File(filePath).inputStream(),
 //  )
-//}
+// }

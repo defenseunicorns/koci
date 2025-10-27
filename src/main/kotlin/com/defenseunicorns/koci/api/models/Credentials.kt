@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 Defense Unicorns
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.defenseunicorns.koci.api.models
 
 /** Credential contains authentication credentials used to access remote registries. */
@@ -57,5 +62,6 @@ class Credentials(
     return result
   }
 
-  override fun toString(): String = "Credentials(username='$username', password='$password', refreshToken='$refreshToken', accessToken='$accessToken')"
+  override fun toString(): String =
+    "Credentials(username='$username', password='$password', refreshToken='$refreshToken', accessToken='$accessToken')"
 }

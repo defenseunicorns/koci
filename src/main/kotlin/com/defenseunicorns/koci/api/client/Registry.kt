@@ -8,7 +8,8 @@ package com.defenseunicorns.koci.api.client
 import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.TransferCoordinator
 import com.defenseunicorns.koci.api.KociLogLevel
-import com.defenseunicorns.koci.api.errors.IOError
+import com.defenseunicorns.koci.api.OCIException
+import com.defenseunicorns.koci.api.errors.OciActionableFailure
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Platform
 import com.defenseunicorns.koci.api.models.TagsResponse
@@ -16,10 +17,18 @@ import com.defenseunicorns.koci.auth.OCIAuthPlugin
 import com.defenseunicorns.koci.http.Router
 import com.defenseunicorns.koci.http.parseHTTPError
 import io.ktor.client.HttpClient
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.pluginOrNull
 import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.http.isSuccess
 import java.io.InputStream
@@ -29,8 +38,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapConcat
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Main entry point for interacting with OCI spec compliant registries.
@@ -67,6 +77,15 @@ internal constructor(
         headers {
           // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support
           append("Docker-Distribution-API-Version", "registry/2.0")
+        }
+
+        HttpResponseValidator {
+          handleResponseExceptionWithRequest { exception, _ ->
+            val clientException =
+              exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
+            attemptThrow4XX(clientException.response)
+            return@handleResponseExceptionWithRequest
+          }
         }
 
         if (timeoutPlugin == null) {
@@ -195,6 +214,58 @@ internal constructor(
       .filterNotNull()
       .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
       .map { repo -> tags(repo) }
+
+  /**
+   * Represents an error response from an OCI registry.
+   *
+   * This class models the error response format defined in the OCI spec, which consists of an array
+   * of errors. Each registry API error response must include at least one error.
+   *
+   * @property errors List of actionable errors returned by the registry
+   * @property status HTTP status code of the response
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes">OCI
+   *   Spec: Errors</a>
+   */
+  @Serializable
+  data class FailureResponse(
+    val errors: List<OciActionableFailure>,
+    @Transient var status: HttpStatusCode = HttpStatusCode.Accepted,
+  )
+
+  /**
+   * Thrown when an error response is received from an OCI registry.
+   *
+   * @param fr The parsed failure response from the registry
+   */
+  class FromResponse(val fr: FailureResponse) :
+    Exception(fr.errors.joinToString { "${it.code}: ${it.message}" })
+
+  /**
+   * Attempts to parse and throw an error from a 4XX HTTP response.
+   *
+   * This function handles error responses from OCI registries by parsing the JSON error response
+   * and throwing an appropriate exception. It is used to convert HTTP errors into typed exceptions
+   * for better error handling.
+   *
+   * @param response The HTTP response with a 4XX status code
+   * @throws OCIException.FromResponse if the response contains a valid error payload
+   */
+  private suspend fun attemptThrow4XX(response: HttpResponse) {
+    require(response.status.value in (400..499)) {
+      "Attempted to throw when status was not >=400 && <=499"
+    }
+
+    if (response.contentType() == ContentType.Application.Json) {
+      try {
+        val fr: FailureResponse = response.body()
+        fr.status = response.status
+        throw FromResponse(fr)
+      } catch (_: NoTransformationFoundException) {
+        return
+      }
+    }
+  }
 
   companion object {
     fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG): Registry {

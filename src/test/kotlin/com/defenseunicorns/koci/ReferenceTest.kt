@@ -1,43 +1,47 @@
-///*
+/// *
 // * Copyright 2024-2025 Defense Unicorns
 // * SPDX-License-Identifier: Apache-2.0
 // */
 //
-//package com.defenseunicorns.koci
+// package com.defenseunicorns.koci
 //
-//import com.defenseunicorns.koci.models.Reference
-//import io.ktor.http.Url
-//import kotlin.test.Test
-//import kotlin.test.assertEquals
-//import kotlin.test.assertFailsWith
-//import kotlin.test.assertFalse
-//import kotlin.test.assertTrue
-//import org.junit.jupiter.api.assertDoesNotThrow
+// import com.defenseunicorns.koci.models.Reference
+// import io.ktor.http.Url
+// import kotlin.test.Test
+// import kotlin.test.assertEquals
+// import kotlin.test.assertFailsWith
+// import kotlin.test.assertFalse
+// import kotlin.test.assertTrue
+// import org.junit.jupiter.api.assertDoesNotThrow
 //
-//class ReferenceTest {
+// class ReferenceTest {
 //  @Test
 //  @Suppress("detekt:MaxLineLength", "detekt:LongMethod")
 //  fun good() {
 //    val testCases =
 //      mapOf(
 //        // valid form A
-//        "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20" to
+//
+// "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20" to
 //          (Reference(
 //            "localhost:5000",
 //            "library/registry",
 //            "sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20",
 //          ) to
-//            "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20"),
+//
+// "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20"),
 //
 //        // valid form B
-//        "localhost:5000/library/registry:2.8.3@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20" to
+//
+// "localhost:5000/library/registry:2.8.3@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20" to
 //          (Reference(
 //            "localhost:5000",
 //            "library/registry",
 //            "sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20",
 //            // note that the tag is lost upon parsing as a digest is a more specific reference
 //          ) to
-//            "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20"),
+//
+// "localhost:5000/library/registry@sha256:1b640322f9a983281970daaeba1a6d303f399d67890644389ff419d951963e20"),
 //
 //        // valid form C
 //        "localhost:5000/library/registry:2.8.3" to
@@ -85,7 +89,8 @@
 //  fun bad() {
 //    data class Invalid(val string: String, val reference: Reference, val message: String)
 //
-//    // adapted from https://github.com/containers/image/blob/main/docker/reference/reference_test.go
+//    // adapted from
+// https://github.com/containers/image/blob/main/docker/reference/reference_test.go
 //    val testCases =
 //      listOf(
 //        Invalid("", Reference("", "", ""), "registry cannot be empty"),
@@ -129,4 +134,4 @@
 //        .also { assertEquals(tc.message, it.message) }
 //    }
 //  }
-//}
+// }

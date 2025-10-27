@@ -206,19 +206,20 @@ private constructor(
   @OptIn(ExperimentalSerializationApi::class)
   suspend fun remove(descriptor: Descriptor): Boolean {
     logger.d("Removing descriptor: ${descriptor.digest}")
+
+    val path = blob(descriptor)
+
+    if (!fileSystem.exists(path)) {
+      logger.d("Descriptor not found, nothing to remove: ${descriptor.digest}")
+      return false
+    }
+
     val (mu, refCount) = removing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
 
     try {
       mu.withLock {
-        val path = blob(descriptor)
-
-        if (!fileSystem.exists(path)) {
-          logger.d("Descriptor not found, nothing to remove: ${descriptor.digest}")
-          return false
-        }
-
         when (descriptor.mediaType) {
           INDEX_MEDIA_TYPE -> {
             val indexToRemove: Index = fetch(descriptor).use { Json.decodeFromStream(it) }
@@ -353,31 +354,51 @@ private constructor(
       // Ensure staging directory exists
       fileSystem.createDirectories(stagingPath.parent!!)
 
-      // If resuming a download, hash the existing staged file data first
-      // It is up to the caller to properly resume the stream at the proper location,
-      // otherwise a DigestMismatch will occur
-      if (fileSystem.exists(stagingPath)) {
-        logger.d("Resuming push for ${descriptor.digest}")
+      val resumeOffset =
+        if (fileSystem.exists(stagingPath)) {
+          fileSystem.metadata(stagingPath).size ?: 0L
+        } else {
+          0L
+        }
+
+      var totalBytesRead = 0L
+
+      // Hash any already staged data
+      if (resumeOffset > 0) {
+        var bytesRead: Int
+        logger.d("Resuming push for ${descriptor.digest}, offset=$resumeOffset")
         fileSystem.source(stagingPath).buffer().use { source ->
           val buffer = ByteArray(BUFFER_SIZE)
-          var bytesRead: Int
           while (source.read(buffer).also { bytesRead = it } != -1) {
             md.update(buffer, 0, bytesRead)
+            totalBytesRead += bytesRead
           }
         }
       }
 
-      // Stream new data to staging, hashing as we write
+      // 2. Append new data, starting after the resume offset
       fileSystem.appendingSink(stagingPath).buffer().use { sink ->
         stream.source().buffer().use { source ->
-          val buffer = ByteArray(BUFFER_SIZE)
           var bytesRead: Int
+          // 🧭 Skip already-written bytes in the incoming stream
+          if (resumeOffset > 0) {
+            try {
+              source.skip(resumeOffset)
+            } catch (e: Exception) {
+              logger.e("Failed to skip with offset of $resumeOffset", e)
+              return@flow emit(null)
+            }
+          }
+
+          val buffer = ByteArray(BUFFER_SIZE)
           while (source.read(buffer).also { bytesRead = it } != -1) {
             md.update(buffer, 0, bytesRead)
             sink.write(buffer, 0, bytesRead)
-            // TODO: Fix this
-            //    emit(KociResult.ok(bytesRead))
-            emit(0.0)
+            totalBytesRead += bytesRead
+
+            emit(
+              (totalBytesRead.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0) * 100.0
+            )
           }
         }
       }
@@ -485,8 +506,6 @@ private constructor(
    * @param reference The reference to associate with the descriptor
    */
   // TODO: figure out how to use sealed Versioned here as well?
-  //
-  // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
   fun tag(descriptor: Descriptor, reference: Reference): Boolean {
     if (descriptor.mediaType.isEmpty()) {
@@ -590,8 +609,8 @@ private constructor(
    *   interrupted.
    */
   fun gc(): List<Digest> {
-    if (transferCoordinator.activeTransfers() > 0) {
-      logger.e("Cannot run GC: downloads are in progress")
+    if (transferCoordinator.activeTransfers() > 0 || removing.isNotEmpty()) {
+      logger.e("Cannot run GC: downloads are in progress or removal is in progress")
       return emptyList()
     }
 

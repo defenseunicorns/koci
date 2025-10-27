@@ -55,6 +55,10 @@ internal class KociLogger(logLevel: KociLogLevel) {
     logger?.i(message)
   }
 
+  fun w(message: String) {
+    logger?.w(message)
+  }
+
   fun e(message: String, throwable: Throwable? = null) {
     logger?.e(message, throwable)
   }

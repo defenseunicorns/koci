@@ -10,7 +10,6 @@ import com.defenseunicorns.koci.api.models.CatalogResponse
 import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.auth.appendScopes
 import com.defenseunicorns.koci.http.Router
-import com.defenseunicorns.koci.http.parseHTTPError
 import com.defenseunicorns.koci.models.linkHeaderRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -52,7 +51,7 @@ internal constructor(
       val response =
         client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
       if (!response.status.isSuccess()) {
-        return parseHTTPError(response)
+        return null
       }
       Json.decodeFromString(response.body())
     } catch (e: Exception) {

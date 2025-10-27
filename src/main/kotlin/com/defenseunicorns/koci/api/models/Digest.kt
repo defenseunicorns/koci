@@ -33,6 +33,16 @@ enum class RegisteredAlgorithm(private val n: String) {
       SHA512 -> MessageDigest.getInstance("SHA-512")
     }
   }
+
+  companion object {
+    fun toEnum(n: String): RegisteredAlgorithm? {
+      return when (n) {
+        "sha256" -> SHA256
+        "sha512" -> SHA512
+        else -> null
+      }
+    }
+  }
 }
 
 /**
@@ -100,11 +110,12 @@ class Digest internal constructor(val algorithm: RegisteredAlgorithm, val hex: S
       return create(algorithm, stringHex)
     }
 
-    fun validateHex(algorithm: RegisteredAlgorithm, hex: String): Boolean {
+    fun validateHex(algorithm: RegisteredAlgorithm?, hex: String): Boolean {
       val expectedLength =
         when (algorithm) {
           RegisteredAlgorithm.SHA256 -> SHA_256_LENGTH
           RegisteredAlgorithm.SHA512 -> SHA_512_LENGTH
+          null -> return false
         }
 
       return when {
@@ -127,7 +138,7 @@ class Digest internal constructor(val algorithm: RegisteredAlgorithm, val hex: S
         return false
       }
 
-      return validateHex(RegisteredAlgorithm.valueOf(algo), content.substringAfter(":"))
+      return validateHex(RegisteredAlgorithm.toEnum(algo), content.substringAfter(":"))
     }
   }
 }

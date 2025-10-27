@@ -38,74 +38,72 @@ internal class TransferCoordinator(private val logger: KociLogger) {
    * @param transfer Function that performs the actual transfer, emitting progress as OCIResult<T>
    * @return Flow emitting progress updates or errors
    */
-  fun transfer(descriptor: Descriptor, transfer: suspend () -> Flow<Double?>): Flow<Double?> =
-    flow {
-      // Check if already transferring or claim the transfer
-      val (state, shouldTransfer) =
-        mutex.withLock {
-          val state = inProgress.getOrPut(descriptor) { TransferState() }
-          val shouldTransfer = !state.claimed && !state.completion.isCompleted
-          if (shouldTransfer) {
-            state.claimed = true // Claim it so others wait
-          }
-          state to shouldTransfer
-        }
-
-      try {
+  fun transfer(descriptor: Descriptor, transfer: suspend () -> Flow<Int?>): Flow<Int?> = flow {
+    // Check if already transferring or claim the transfer
+    val (state, shouldTransfer) =
+      mutex.withLock {
+        val state = inProgress.getOrPut(descriptor) { TransferState() }
+        val shouldTransfer = !state.claimed && !state.completion.isCompleted
         if (shouldTransfer) {
-          // We're the one transferring - execute the transfer
-          try {
-            var hasError = false
-
-            transfer().collect { result ->
-              when (result == null) {
-                true -> {
-                  hasError = true
-                  emit(result)
-                }
-                false -> emit(result)
-              }
-            }
-
-            // Mark transfer complete
-            mutex.withLock {
-              state.succeeded = !hasError
-              state.completion.complete(Unit)
-            }
-          } catch (e: Exception) {
-            // Mark transfer failed
-            mutex.withLock {
-              logger.e("Transfer failed: ${descriptor.digest}", e)
-              state.succeeded = false
-              state.completion.complete(Unit)
-            }
-            throw e
-          }
-        } else {
-          // Someone else is transferring (or already finished) - wait if needed
-          logger.d("Waiting for transfer to complete: ${descriptor.digest}")
-          state.completion.await()
-
-          // Check the result
-          if (!state.succeeded) {
-            logger.e("Transfer failed: ${descriptor.digest}")
-            emit(null)
-          }
+          state.claimed = true // Claim it so others wait
         }
-      } finally {
-        // Decrement refcount and clean up if no one else is waiting
-        val shouldRemove =
-          mutex.withLock {
-            val count = state.refCount.decrementAndGet()
-            count <= 0
+        state to shouldTransfer
+      }
+
+    try {
+      if (shouldTransfer) {
+        // We're the one transferring - execute the transfer
+        try {
+          var hasError = false
+
+          transfer().collect { result ->
+            when (result == null) {
+              true -> {
+                hasError = true
+                emit(result)
+              }
+              false -> emit(result)
+            }
           }
 
-        if (shouldRemove) {
-          logger.d("Removing from progress tracking: ${descriptor.digest}")
-          inProgress.remove(descriptor, state)
+          // Mark transfer complete
+          mutex.withLock {
+            state.succeeded = !hasError
+            state.completion.complete(Unit)
+          }
+        } catch (e: Exception) {
+          // Mark transfer failed
+          mutex.withLock {
+            logger.e("Transfer failed: ${descriptor.digest}", e)
+            state.succeeded = false
+            state.completion.complete(Unit)
+          }
+          throw e
+        }
+      } else {
+        // Someone else is transferring (or already finished) - wait if needed
+        logger.d("Waiting for transfer to complete: ${descriptor.digest}")
+        state.completion.await()
+
+        // Check the result
+        if (!state.succeeded) {
+          logger.e("Transfer failed: ${descriptor.digest}")
+          emit(null)
         }
       }
+    } finally {
+      // Decrement refcount and clean up if no one else is waiting
+      val shouldRemove =
+        mutex.withLock {
+          val count = state.refCount.decrementAndGet()
+          count <= 0
+        }
+
+      if (shouldRemove) {
+        inProgress.remove(descriptor, state)
+      }
     }
+  }
 
   /**
    * Checks if a descriptor is currently being transferred.

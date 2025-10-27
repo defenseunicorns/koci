@@ -60,7 +60,7 @@ import okio.source
  */
 class Layout
 private constructor(
-  private val index: Index,
+  internal val index: Index,
   private val rootPath: String,
   private val blobsPath: String,
   private val stagingPath: String,
@@ -86,7 +86,6 @@ private constructor(
     val path = blob(descriptor)
 
     if (!fileSystem.exists(path)) {
-      logger.d("Blob does not exist: ${descriptor.digest}")
       return false
     }
 
@@ -332,7 +331,7 @@ private constructor(
    * @param stream The input stream containing the content
    * @return Flow emitting OCIResult with the number of bytes written in each chunk, or an error
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<Double?> =
+  fun push(descriptor: Descriptor, stream: InputStream): Flow<Int?> =
     transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
   /**
@@ -341,7 +340,7 @@ private constructor(
    * This is called by the coordinator when this is the first request for a descriptor. Other
    * concurrent requests for the same descriptor will wait for this to complete.
    */
-  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<Double?> = flow {
+  private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<Int?> = flow {
     logger.d("Pushing to disk: ${descriptor.digest}")
 
     val ok = exists(descriptor)
@@ -396,9 +395,9 @@ private constructor(
             sink.write(buffer, 0, bytesRead)
             totalBytesRead += bytesRead
 
-            emit(
-              (totalBytesRead.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0) * 100.0
-            )
+            val fraction =
+              (totalBytesRead.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)
+            emit((fraction * 100.0).toInt())
           }
         }
       }
@@ -610,7 +609,7 @@ private constructor(
    */
   fun gc(): List<Digest> {
     if (transferCoordinator.activeTransfers() > 0 || removing.isNotEmpty()) {
-      logger.e("Cannot run GC: downloads are in progress or removal is in progress")
+      logger.w("Cannot run GC: downloads are in progress or removal is in progress")
       return emptyList()
     }
 
@@ -670,7 +669,7 @@ private constructor(
       blobsPath: String = "$rootPath/blobs",
       stagingPath: String = "$rootPath/staging",
       strictChecking: Boolean = true,
-      logLevel: KociLogLevel = KociLogLevel.DEBUG,
+      logLevel: KociLogLevel = KociLogLevel.WARN,
     ): Layout? {
       val logger = KociLogger(logLevel)
 

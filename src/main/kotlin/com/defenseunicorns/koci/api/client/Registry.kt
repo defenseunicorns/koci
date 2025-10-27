@@ -15,7 +15,6 @@ import com.defenseunicorns.koci.api.models.Platform
 import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
 import com.defenseunicorns.koci.http.Router
-import com.defenseunicorns.koci.http.parseHTTPError
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
@@ -114,7 +113,7 @@ internal constructor(
     return try {
       val response = client.get(router.base())
       if (!response.status.isSuccess()) {
-        return parseHTTPError(response)
+        return false
       }
       true
     } catch (e: Exception) {
@@ -159,10 +158,10 @@ internal constructor(
    *   Distribution Spec: Existing Manifests</a>
    */
   suspend fun resolve(
-    repository: Repository,
+    repository: String,
     tag: String,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ) = repository.resolve(tag, platformResolver)
+  ) = repo(repository).resolve(tag, platformResolver)
 
   /**
    * Pushes a blob to the repository.
@@ -175,8 +174,8 @@ internal constructor(
    * @param expected Descriptor with expected size and digest
    * @return Flow emitting progress updates as bytes uploaded
    */
-  fun push(repository: Repository, stream: InputStream, expected: Descriptor) =
-    repository.push(stream, expected)
+  fun push(repository: String, stream: InputStream, expected: Descriptor) =
+    repo(repository).push(stream, expected)
 
   /**
    * Pulls content by tag and stores it in the provided layout.
@@ -190,11 +189,11 @@ internal constructor(
    * @param platformResolver Optional function to select platform from index manifest
    */
   fun pull(
-    repository: Repository,
+    repository: String,
     tag: String,
     storage: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ) = repository.pull(tag, storage, platformResolver)
+  ) = repo(repository).pull(tag, storage, platformResolver)
 
   /**
    * Lists all repositories with their tags.
@@ -268,7 +267,7 @@ internal constructor(
   }
 
   companion object {
-    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.DEBUG): Registry {
+    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.WARN): Registry {
 
       val logger = KociLogger(logLevel)
 

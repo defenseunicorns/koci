@@ -9,7 +9,10 @@ import com.defenseunicorns.koci.api.client.Layout
 import com.defenseunicorns.koci.api.client.Registry
 import com.defenseunicorns.koci.api.models.CatalogResponse
 import com.defenseunicorns.koci.api.models.Descriptor
+import com.defenseunicorns.koci.api.models.Digest
 import com.defenseunicorns.koci.api.models.LayoutMarker
+import com.defenseunicorns.koci.api.models.Manifest
+import com.defenseunicorns.koci.api.models.Reference
 import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.models.ANNOTATION_REF_NAME
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
@@ -19,9 +22,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.UserAgent
-import com.defenseunicorns.koci.api.models.Digest
-import com.defenseunicorns.koci.api.models.Manifest
-import com.defenseunicorns.koci.api.models.Reference
 import io.ktor.util.Platform
 import java.io.File
 import java.io.FileOutputStream
@@ -51,7 +51,6 @@ import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -157,17 +156,10 @@ class RegistryTest {
 
   @Test
   fun resolve() = runTest {
-    assertEquals(
-      INDEX_MEDIA_TYPE,
-      registry.repo("dos-games").resolve("1.1.0").mediaType,
-    )
+    assertEquals(INDEX_MEDIA_TYPE, registry.repo("dos-games").resolve("1.1.0").mediaType)
     assertEquals(
       MANIFEST_MEDIA_TYPE,
-      registry
-        .repo("dos-games")
-        .resolve("1.1.0") { platform -> platform.os == "multi" }
-        
-        .mediaType,
+      registry.repo("dos-games").resolve("1.1.0") { platform -> platform.os == "multi" }.mediaType,
     )
     assertFailsWith<OCIException.ManifestNotSupported> {
       registry.repo("library/registry").resolve("2.8.0")
@@ -179,12 +171,10 @@ class RegistryTest {
   fun `fetch a layer`() = runTest {
     val repo = registry.repo("dos-games")
     val manifest =
-      repo
-        .resolve("1.1.0")
-        .map { desc ->
-          repo.index(desc).map { repo.manifest(it.manifests.first()) }
-        }
-        
+      repo.resolve("1.1.0").map { desc ->
+        repo.index(desc).map { repo.manifest(it.manifests.first()) }
+      }
+
     val p = repo.pull(manifest.config, storage)
 
     assertEquals(manifest.config.size.toInt(), p.last())
@@ -232,12 +222,9 @@ class RegistryTest {
     val repo = registry.repo("dos-games")
     val desc = repo.resolve("1.1.0")
     val layer =
-      repo
-        .index(desc)
-        .map { index ->
-          repo.manifest(index.manifests.first()).layers.maxBy { it.size }
-        }
-        
+      repo.index(desc).map { index ->
+        repo.manifest(index.manifests.first()).layers.maxBy { it.size }
+      }
 
     val cancelAtBytes = listOf(layer.size.toInt() / 4, layer.size.toInt() / 2, -100)
 
@@ -320,10 +307,7 @@ class RegistryTest {
 
       assertEquals(100, prog.last())
 
-      assertTrue(
-        storage
-          .remove(Reference.parse("registry-1.docker.io/library/gradle:latest"))
-      )
+      assertTrue(storage.remove(Reference.parse("registry-1.docker.io/library/gradle:latest")))
     }
 
   @Test
@@ -531,18 +515,12 @@ class RegistryTest {
 
     // Case 3: Successfully mount a blob from source repo
     assertTrue(sourceRepo.exists(existingBlob), "Blob should exist in source repo")
-    assertFalse(
-      targetRepo.exists(existingBlob),
-      "Blob should not exist in target repo yet",
-    )
+    assertFalse(targetRepo.exists(existingBlob), "Blob should not exist in target repo yet")
 
     val mountResult = targetRepo.mount(existingBlob, "dos-games")
     assertTrue(mountResult, "Mount should succeed for existing blob")
 
-    assertTrue(
-      targetRepo.exists(existingBlob),
-      "Blob should exist in target repo after mount",
-    )
+    assertTrue(targetRepo.exists(existingBlob), "Blob should exist in target repo after mount")
 
     assertTrue(targetRepo.remove(existingBlob), "Blob removal should succeed")
   }

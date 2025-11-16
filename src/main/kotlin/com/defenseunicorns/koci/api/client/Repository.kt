@@ -49,6 +49,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flattenMerge
@@ -65,11 +66,19 @@ import kotlinx.serialization.json.decodeFromStream
  * Supports all required operations including pulling/pushing blobs and manifests, content
  * verification, resumable uploads, cross-repository mounting, and tag management.
  *
- * @property client HTTP client for registry communication
- * @property router Url routing for registry endpoints
+ * Provides access to repository-level operations in an OCI registry.
+ *
+ * A Repository represents a named collection of related container images or artifacts within a
+ * registry. It provides methods for:
+ * - Pushing and pulling manifests and blobs
+ * - Listing tags
+ * - Checking blob existence
+ * - Managing uploads
+ *
  * @property name Repository name as retrieved from a reference (e.g., "[host]/[name]:[tag]")
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
+@Suppress("LargeClass") // Repository aggregates all OCI registry operations per spec
 class Repository
 internal constructor(
   private val client: HttpClient,
@@ -386,38 +395,40 @@ internal constructor(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Flow<Int?> = flow {
-    logger.d("Pulling $name:$tag")
-    val desc = resolve(tag, platformResolver)
+  ): Flow<Int?> =
+    flow {
+        logger.d("Pulling $name:$tag")
+        val desc = resolve(tag, platformResolver)
 
-    if (desc == null) {
-      emit(null)
-      return@flow
-    }
+        if (desc == null) {
+          emit(null)
+          return@flow
+        }
 
-    pull(desc, store).collect { progressResult ->
-      when (progressResult == null) {
-        true -> return@collect emit(null)
-        false -> emit(progressResult) // Already an Int percentage (0-100)
+        pull(desc, store).collect { progressResult ->
+          when (progressResult == null) {
+            true -> return@collect emit(null)
+            false -> emit(progressResult) // Already an Int percentage (0-100)
+          }
+        }
+
+        // After successful pull, tag the content
+        val ref = Reference(registry = router.base(), repository = name, reference = tag)
+        val ok = store.exists(desc)
+        if (!ok) {
+          logger.e("Incomplete pull for $name:$tag: content not found after download")
+          return@flow emit(null)
+        }
+
+        logger.d("Successfully pulled $name:$tag")
+
+        if (!store.tag(desc, ref)) {
+          logger.e("Could not tag: $desc with $ref")
+          return@flow emit(null)
+        }
+        // No need to emit 100.0 again - already emitted by pull(desc, store)
       }
-    }
-
-    // After successful pull, tag the content
-    val ref = Reference(registry = router.base(), repository = name, reference = tag)
-    val ok = store.exists(desc)
-    if (!ok) {
-      logger.e("Incomplete pull for $name:$tag: content not found after download")
-      return@flow emit(null)
-    }
-
-    logger.d("Successfully pulled $name:$tag")
-
-    if (!store.tag(desc, ref)) {
-      logger.e("Could not tag: $desc with $ref")
-      return@flow emit(null)
-    }
-    // No need to emit 100.0 again - already emitted by pull(desc, store)
-  }
+      .distinctUntilChanged()
 
   /**
    * Pulls content by descriptor and stores it in the provided layout.
@@ -431,99 +442,109 @@ internal constructor(
    * @param store Layout to store content in
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun pull(descriptor: Descriptor, store: Layout): Flow<Int?> = flow {
-    logger.d("Pulling descriptor: ${descriptor.digest}")
+  fun pull(descriptor: Descriptor, store: Layout): Flow<Int?> =
+    flow {
+        logger.d("Pulling descriptor: ${descriptor.digest}")
 
-    if (store.exists(descriptor)) {
-      emit(FINISHED_AMOUNT)
-      return@flow
-    }
+        if (store.exists(descriptor)) {
+          emit(FINISHED_AMOUNT)
+          return@flow
+        }
 
-    when (descriptor.mediaType) {
-      INDEX_MEDIA_TYPE -> {
-        val indexContent = index(descriptor) ?: return@flow emit(null)
-        val manifests = indexContent.manifests
-        val totalBytes = manifests.sumOf { it.size } + descriptor.size
+        when (descriptor.mediaType) {
+          INDEX_MEDIA_TYPE -> {
+            val indexContent = index(descriptor) ?: return@flow emit(null)
+            val manifests = indexContent.manifests
+            val totalBytes = manifests.sumOf { it.size } + descriptor.size
 
-        var completedBytes = 0.0
+            var completedBytes = 0.0
 
-        manifests.forEach { manifestDesc ->
-          pull(manifestDesc, store).collect { childProgress ->
-            if (childProgress == null) {
-              return@collect emit(null)
+            manifests.forEach { manifestDesc ->
+              pull(manifestDesc, store).collect { childProgress ->
+                if (childProgress == null) {
+                  return@collect emit(null)
+                }
+
+                // childProgress is 0-100 Int, convert to fraction and weight by size
+                val childContribution = (childProgress / PERCENTAGE_MULTIPLIER) * manifestDesc.size
+                val overallProgress =
+                  ((completedBytes + childContribution) / totalBytes * PERCENTAGE_MULTIPLIER)
+                    .toInt()
+                emit(overallProgress)
+              }
+
+              completedBytes += manifestDesc.size
             }
 
-            // childProgress is 0-100 Int, convert to fraction and weight by size
-            val childContribution = (childProgress / 100.0) * manifestDesc.size
-            val overallProgress =
-              ((completedBytes + childContribution) / totalBytes * 100.0).toInt()
-            emit(overallProgress)
+            // Now pull the descriptor itself
+            downloadWithProgress(descriptor, store).collect { progress ->
+              if (progress == null) return@collect emit(null)
+              val overall =
+                ((completedBytes + (progress / PERCENTAGE_MULTIPLIER * descriptor.size)) /
+                    totalBytes * PERCENTAGE_MULTIPLIER)
+                  .toInt()
+              emit(overall)
+            }
+
+            emit(FINISHED_AMOUNT)
           }
 
-          completedBytes += manifestDesc.size
-        }
+          MANIFEST_MEDIA_TYPE -> {
+            val manifestContent = manifest(descriptor) ?: return@flow emit(null)
+            val layers = manifestContent.layers + manifestContent.config
+            val layerBytes = layers.sumOf { it.size }
+            val totalBytes = layerBytes + descriptor.size
 
-        // Now pull the descriptor itself
-        downloadWithProgress(descriptor, store).collect { progress ->
-          if (progress == null) return@collect emit(null)
-          val overall =
-            ((completedBytes + (progress / 100.0 * descriptor.size)) / totalBytes * 100.0).toInt()
-          emit(overall)
-        }
+            val layerProgress = ConcurrentHashMap<Descriptor, Int>()
 
-        emit(FINISHED_AMOUNT)
-      }
-
-      MANIFEST_MEDIA_TYPE -> {
-        val manifestContent = manifest(descriptor) ?: return@flow emit(null)
-        val layers = manifestContent.layers + manifestContent.config
-        val layerBytes = layers.sumOf { it.size }
-        val totalBytes = layerBytes + descriptor.size
-
-        val layerProgress = ConcurrentHashMap<Descriptor, Int>()
-
-        layers
-          .asFlow()
-          .map { layer ->
-            flow {
-              download(layer, store).collect { result ->
-                when (result == null) {
-                  true -> return@collect emit(null)
-                  false -> {
-                    // result is 0-100 Int percentage
-                    layerProgress[layer] = result
-                    val currentLayerBytes =
-                      layers.sumOf { l -> ((layerProgress[l] ?: 0) / 100.0 * l.size).toLong() }
-                    val overall = (currentLayerBytes.toDouble() / totalBytes * 100.0).toInt()
-                    emit(overall)
+            layers
+              .asFlow()
+              .map { layer ->
+                flow {
+                  download(layer, store).collect { result ->
+                    when (result == null) {
+                      true -> return@collect emit(null)
+                      false -> {
+                        // result is 0-100 Int percentage
+                        layerProgress[layer] = result
+                        val currentLayerBytes =
+                          layers.sumOf { l ->
+                            ((layerProgress[l] ?: 0) / PERCENTAGE_MULTIPLIER * l.size).toLong()
+                          }
+                        val overall =
+                          (currentLayerBytes.toDouble() / totalBytes * PERCENTAGE_MULTIPLIER)
+                            .toInt()
+                        emit(overall)
+                      }
+                    }
                   }
                 }
               }
+              .flattenMerge()
+              .collect { emit(it) }
+
+            // Pull the manifest itself at the end
+            downloadWithProgress(descriptor, store).collect { progress ->
+              if (progress == null) return@collect emit(null)
+              val overall =
+                ((layerBytes + (progress / PERCENTAGE_MULTIPLIER * descriptor.size)) / totalBytes *
+                    PERCENTAGE_MULTIPLIER)
+                  .toInt()
+              emit(overall)
             }
+
+            emit(FINISHED_AMOUNT)
           }
-          .flattenMerge()
-          .distinctUntilChanged()
-          .collect { emit(it) }
 
-        // Pull the manifest itself at the end
-        downloadWithProgress(descriptor, store).collect { progress ->
-          if (progress == null) return@collect emit(null)
-          val overall =
-            ((layerBytes + (progress / 100.0 * descriptor.size)) / totalBytes * 100.0).toInt()
-          emit(overall)
+          else -> {
+            downloadWithProgress(descriptor, store).collect { progress -> emit(progress) }
+            emit(FINISHED_AMOUNT)
+          }
         }
-
-        emit(FINISHED_AMOUNT)
       }
+      .distinctUntilChanged()
 
-      else -> {
-        downloadWithProgress(descriptor, store).collect { progress -> emit(progress) }
-        emit(FINISHED_AMOUNT)
-      }
-    }
-  }
-
-  private suspend fun downloadWithProgress(target: Descriptor, store: Layout): Flow<Int?> = flow {
+  private fun downloadWithProgress(target: Descriptor, store: Layout): Flow<Int?> = flow {
     download(target, store).collect { result ->
       when (result == null) {
         true -> return@collect emit(null)
@@ -604,7 +625,7 @@ internal constructor(
     if (descriptor.size < resumeFrom && supportsRange(descriptor)) {
       resumable = true
       val fraction = (resumeFrom.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)
-      emit((fraction * 100.0).toInt())
+      emit((fraction * PERCENTAGE_MULTIPLIER).toInt())
     } else if (resumeFrom == 0L) {
       resumable = false
     } else {
@@ -704,17 +725,113 @@ internal constructor(
           }
         }
 
-        prev
+        return prev
       }
     }
   }
 
+  private suspend fun FlowCollector<Int?>.pushMonolithic(
+    stream: InputStream,
+    expected: Descriptor,
+    start: UploadStatus,
+    bytesLeft: Long,
+  ): Boolean {
+    val response =
+      client.put(start.location) {
+        url { encodedParameters.append("digest", expected.digest.toString()) }
+        headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
+        setBody(stream)
+        attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+      }
+
+    if (response.status != HttpStatusCode.Created) {
+      emit(null)
+      return false
+    }
+
+    val progress =
+      ((expected.size - bytesLeft).toDouble() / expected.size.toDouble()) * PERCENTAGE_MULTIPLIER
+    emit(progress.toInt())
+    return true
+  }
+
+  private suspend fun FlowCollector<Int?>.pushChunked(
+    stream: InputStream,
+    expected: Descriptor,
+    start: UploadStatus,
+  ): Boolean {
+    var offset = start.offset
+    stream.use { s ->
+      if (offset > 0) s.skipNBytes(offset)
+
+      while (currentCoroutineContext().isActive) {
+        val chunk = s.readNBytes(start.minChunkSize.toInt())
+        if (chunk.isEmpty()) break
+
+        val endRange = offset + chunk.size - 1
+        val currentLocation =
+          uploading[expected]?.location
+            ?: run {
+              logger.e("Upload location unexpectedly null")
+              emit(null)
+              return false
+            }
+
+        val response =
+          client.patch(router.parseUploadLocation(currentLocation)) {
+            setBody(chunk)
+            headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+          }
+
+        if (response.status != HttpStatusCode.Accepted) {
+          emit(null)
+          return false
+        }
+
+        val status = response.headers.toUploadStatus()
+        uploading[expected] = status
+        offset = status.offset + 1
+
+        val progress = (offset.toDouble() / expected.size.toDouble()) * PERCENTAGE_MULTIPLIER
+        emit(progress.toInt())
+      }
+    }
+
+    return finalizeChunkedUpload(expected)
+  }
+
+  private suspend fun FlowCollector<Int?>.finalizeChunkedUpload(expected: Descriptor): Boolean {
+    val finalLocation =
+      uploading[expected]?.location
+        ?: run {
+          logger.e("Upload location unexpectedly null")
+          emit(null)
+          return false
+        }
+
+    val finalResponse =
+      client.put(finalLocation) {
+        url { encodedParameters.append("digest", expected.digest.toString()) }
+        attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+      }
+
+    if (finalResponse.status != HttpStatusCode.Created) {
+      emit(null)
+      return false
+    }
+
+    emit(FINISHED_AMOUNT)
+    return true
+  }
+
   /**
-   * Pushes a blob to the repository with chunked and resumable uploads.
+   * Pushes a blob to the repository with resumable upload support.
    *
-   * Uses monolithic upload for small blobs and chunked uploads for large ones (>5MB). Supports
-   * resuming interrupted uploads from the last successful byte offset. Verifies content integrity
-   * through digest validation.
+   * Implements the OCI Distribution Spec for pushing blobs using either monolithic or chunked
+   * uploads. The method automatically selects the appropriate strategy based on blob size and
+   * registry capabilities. Supports resuming interrupted uploads from the last successful byte
+   * offset. Verifies content integrity through digest validation.
    *
    * Emits progress updates as OCIResult<Long> where the value is bytes uploaded. Errors are emitted
    * as OCIResult.Err and the flow completes.
@@ -740,91 +857,17 @@ internal constructor(
         start.minChunkSize = MIN_CHUNK_SIZE
       }
 
-      when (val bytesLeft = expected.size - start.offset) {
-        in 1..start.minChunkSize -> {
-          val response =
-            client.put(start.location) {
-              url { encodedParameters.append("digest", expected.digest.toString()) }
-              headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
-              setBody(stream)
-              attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-            }
-
-          if (response.status != HttpStatusCode.Created) {
-            return@flow emit(null)
-          }
-
-          val progress = ((expected.size - bytesLeft).toDouble() / expected.size.toDouble()) * 100.0
-          emit(progress.toInt())
+      val bytesLeft = expected.size - start.offset
+      val success =
+        when {
+          bytesLeft in 1..start.minChunkSize -> pushMonolithic(stream, expected, start, bytesLeft)
+          else -> pushChunked(stream, expected, start)
         }
 
-        else -> {
-          var offset = start.offset
-          stream.use { s ->
-            if (offset > 0) {
-              s.skipNBytes(offset)
-            }
-
-            while (currentCoroutineContext().isActive) {
-              val chunk = s.readNBytes(start.minChunkSize.toInt())
-              if (chunk.isEmpty()) break
-
-              val endRange = offset + chunk.size - 1
-              val currentLocation =
-                uploading[expected]?.location
-                  ?: run {
-                    logger.e("Upload location unexpectedly null")
-                    emit(null)
-                    return@flow
-                  }
-
-              val response =
-                client.patch(router.parseUploadLocation(currentLocation)) {
-                  setBody(chunk)
-                  headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
-                  attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-                }
-
-              if (response.status != HttpStatusCode.Accepted) {
-                emit(null)
-                return@flow
-              }
-
-              val status = response.headers.toUploadStatus()
-              uploading[expected] = status
-              offset = status.offset + 1
-
-              val progress = (offset.toDouble() / expected.size.toDouble()) * 100.0
-              emit(progress.toInt())
-            }
-          }
-
-          val finalLocation =
-            uploading[expected]?.location
-              ?: run {
-                logger.e("Upload location unexpectedly null")
-                emit(null)
-                return@flow
-              }
-
-          val finalResponse =
-            client.put(finalLocation) {
-              url { encodedParameters.append("digest", expected.digest.toString()) }
-              attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-            }
-
-          if (finalResponse.status != HttpStatusCode.Created) {
-            emit(null)
-            return@flow
-          }
-
-          // ✅ Ensure we finish cleanly with full progress
-          emit(FINISHED_AMOUNT)
-        }
+      if (success) {
+        uploading.remove(expected)
+        logger.d("Successfully pushed blob: ${expected.digest}")
       }
-
-      uploading.remove(expected)
-      logger.d("Successfully pushed blob: ${expected.digest}")
     } catch (e: Exception) {
       logger.e("Failed to push blob: ${expected.digest}", e)
       emit(null)
@@ -992,5 +1035,6 @@ internal constructor(
   companion object {
     private const val FINISHED_AMOUNT = 100
     private const val MIN_CHUNK_SIZE = 5L * 1024L * 1024L
+    private const val PERCENTAGE_MULTIPLIER = 100.0
   }
 }

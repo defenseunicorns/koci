@@ -334,6 +334,66 @@ private constructor(
   fun push(descriptor: Descriptor, stream: InputStream): Flow<Int?> =
     transferCoordinator.transfer(descriptor = descriptor) { actualPush(descriptor, stream) }
 
+  private fun hashExistingStagedData(stagingPath: Path, md: java.security.MessageDigest): Long {
+    var totalBytesRead = 0L
+    fileSystem.source(stagingPath).buffer().use { source ->
+      val buffer = ByteArray(BUFFER_SIZE)
+      var bytesRead: Int
+      while (source.read(buffer).also { bytesRead = it } != -1) {
+        md.update(buffer, 0, bytesRead)
+        totalBytesRead += bytesRead
+      }
+    }
+    return totalBytesRead
+  }
+
+  private fun verifySizeAndDigest(
+    stagingPath: Path,
+    descriptor: Descriptor,
+    md: java.security.MessageDigest,
+  ): Boolean {
+    val length = fileSystem.metadata(stagingPath).size ?: 0L
+    if (length != descriptor.size) {
+      logger.e(
+        "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
+      )
+      fileSystem.delete(stagingPath)
+      return false
+    }
+
+    val digest = Digest.create(descriptor.digest.algorithm, md.digest())
+    if (digest != descriptor.digest) {
+      logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
+      fileSystem.delete(stagingPath)
+      return false
+    }
+    return true
+  }
+
+  private fun moveStagingToFinal(
+    stagingPath: Path,
+    finalPath: Path,
+    descriptor: Descriptor,
+  ): Boolean {
+    fileSystem.createDirectories(finalPath.parent!!)
+    logger.d("Finalization move: $stagingPath -> $finalPath")
+
+    try {
+      fileSystem.atomicMove(stagingPath, finalPath)
+    } catch (_: IOException) {
+      logger.d("Atomic move failed, using copy: ${descriptor.digest}")
+      fileSystem.copy(stagingPath, finalPath)
+      fileSystem.delete(stagingPath)
+      return false
+    }
+
+    if (!exists(descriptor)) {
+      logger.e("Final verification failed: ${descriptor.digest} not found after move")
+      return false
+    }
+    return true
+  }
+
   /**
    * Performs the actual push operation to disk.
    *
@@ -343,108 +403,59 @@ private constructor(
   private fun actualPush(descriptor: Descriptor, stream: InputStream): Flow<Int?> = flow {
     logger.d("Pushing to disk: ${descriptor.digest}")
 
-    val ok = exists(descriptor)
+    if (exists(descriptor)) return@flow
 
-    if (!ok) {
-      val stagingPath = staging(descriptor)
-      val finalPath = blob(descriptor)
-      val md = descriptor.digest.algorithm.hasher()
+    val stagingPath = staging(descriptor)
+    val finalPath = blob(descriptor)
+    val md = descriptor.digest.algorithm.hasher()
 
-      // Ensure staging directory exists
-      fileSystem.createDirectories(stagingPath.parent!!)
+    fileSystem.createDirectories(stagingPath.parent!!)
 
-      val resumeOffset =
-        if (fileSystem.exists(stagingPath)) {
-          fileSystem.metadata(stagingPath).size ?: 0L
-        } else {
-          0L
-        }
+    val resumeOffset =
+      if (fileSystem.exists(stagingPath)) fileSystem.metadata(stagingPath).size ?: 0L else 0L
 
-      var totalBytesRead = 0L
-
-      // Hash any already staged data
+    var totalBytesRead =
       if (resumeOffset > 0) {
-        var bytesRead: Int
         logger.d("Resuming push for ${descriptor.digest}, offset=$resumeOffset")
-        fileSystem.source(stagingPath).buffer().use { source ->
-          val buffer = ByteArray(BUFFER_SIZE)
-          while (source.read(buffer).also { bytesRead = it } != -1) {
-            md.update(buffer, 0, bytesRead)
-            totalBytesRead += bytesRead
+        hashExistingStagedData(stagingPath, md)
+      } else {
+        0L
+      }
+
+    // Append new data, starting after the resume offset
+    fileSystem.appendingSink(stagingPath).buffer().use { sink ->
+      stream.source().buffer().use { source ->
+        if (resumeOffset > 0) {
+          try {
+            source.skip(resumeOffset)
+          } catch (e: Exception) {
+            logger.e("Failed to skip with offset of $resumeOffset", e)
+            return@flow emit(null)
           }
         }
-      }
 
-      // 2. Append new data, starting after the resume offset
-      fileSystem.appendingSink(stagingPath).buffer().use { sink ->
-        stream.source().buffer().use { source ->
-          var bytesRead: Int
-          // 🧭 Skip already-written bytes in the incoming stream
-          if (resumeOffset > 0) {
-            try {
-              source.skip(resumeOffset)
-            } catch (e: Exception) {
-              logger.e("Failed to skip with offset of $resumeOffset", e)
-              return@flow emit(null)
-            }
-          }
+        val buffer = ByteArray(BUFFER_SIZE)
+        var bytesRead: Int
+        while (source.read(buffer).also { bytesRead = it } != -1) {
+          md.update(buffer, 0, bytesRead)
+          sink.write(buffer, 0, bytesRead)
+          totalBytesRead += bytesRead
 
-          val buffer = ByteArray(BUFFER_SIZE)
-          while (source.read(buffer).also { bytesRead = it } != -1) {
-            md.update(buffer, 0, bytesRead)
-            sink.write(buffer, 0, bytesRead)
-            totalBytesRead += bytesRead
-
-            val fraction =
-              (totalBytesRead.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)
-            emit((fraction * 100.0).toInt())
-          }
+          val fraction = (totalBytesRead.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)
+          emit((fraction * PERCENTAGE_MULTIPLIER).toInt())
         }
       }
-
-      // Verify size
-      val length = fileSystem.metadata(stagingPath).size ?: 0L
-      if (length != descriptor.size) {
-        logger.e(
-          "Size mismatch pushing ${descriptor.digest}: expected ${descriptor.size}, got $length"
-        )
-        fileSystem.delete(stagingPath)
-        return@flow emit(null)
-      }
-
-      // Verify digest
-      val digest = Digest.create(descriptor.digest.algorithm, md.digest())
-
-      if (digest != descriptor.digest) {
-        logger.e("Digest mismatch pushing ${descriptor.digest}: computed $digest")
-        fileSystem.delete(stagingPath)
-        return@flow emit(null)
-      }
-
-      // Verification successful - move to final location
-      // We can't use atomicMove since staging and blobs may be on different filesystems
-      fileSystem.createDirectories(finalPath.parent!!)
-
-      logger.d("Finalization move: $stagingPath -> $finalPath")
-      try {
-        // Try atomic move first (works if same filesystem)
-        fileSystem.atomicMove(stagingPath, finalPath)
-      } catch (_: IOException) {
-        // Fall back to copy-then-delete for cross-filesystem moves
-        logger.d("Atomic move failed, using copy: ${descriptor.digest}")
-        fileSystem.copy(stagingPath, finalPath)
-        fileSystem.delete(stagingPath)
-        return@flow emit(null)
-      }
-
-      // Verify the final file (uses strict checking if enabled)
-      if (!exists(descriptor)) {
-        logger.e("Final verification failed: ${descriptor.digest} not found after move")
-        return@flow emit(null)
-      }
-
-      logger.d("Successfully downloaded ${descriptor.digest}")
     }
+
+    if (!verifySizeAndDigest(stagingPath, descriptor, md)) {
+      return@flow emit(null)
+    }
+
+    if (!moveStagingToFinal(stagingPath, finalPath, descriptor)) {
+      return@flow emit(null)
+    }
+
+    logger.d("Successfully downloaded ${descriptor.digest}")
   }
 
   /**
@@ -574,18 +585,7 @@ private constructor(
       var cleaned = 0
 
       listOf("sha256", "sha512").forEach { algorithm ->
-        val dir = "$stagingPath/$algorithm".toPath()
-        if (fileSystem.exists(dir) && fileSystem.metadata(dir).isDirectory) {
-          fileSystem.list(dir).forEach { path ->
-            if (!fileSystem.metadata(path).isDirectory) {
-              runCatching {
-                fileSystem.delete(path)
-                cleaned++
-                logger.d("Cleaned staging file: ${path.name}")
-              }
-            }
-          }
-        }
+        cleaned += cleanStagingForAlgorithm(algorithm)
       }
       logger.d("Cleaned $cleaned staging files")
       true
@@ -593,6 +593,26 @@ private constructor(
       logger.e("Failed to clean staging directory", e)
       false
     }
+  }
+
+  private fun cleanStagingForAlgorithm(algorithm: String): Int {
+    var cleaned = 0
+    val dir = "$stagingPath/$algorithm".toPath()
+
+    if (!fileSystem.exists(dir) || !fileSystem.metadata(dir).isDirectory) {
+      return 0
+    }
+
+    fileSystem.list(dir).forEach { path ->
+      if (!fileSystem.metadata(path).isDirectory) {
+        runCatching {
+          fileSystem.delete(path)
+          cleaned++
+          logger.d("Cleaned staging file: ${path.name}")
+        }
+      }
+    }
+    return cleaned
   }
 
   /**
@@ -618,35 +638,46 @@ private constructor(
 
     return try {
       val referencedDescriptors = expand(index.manifests).toSet()
-
-      val blobsOnDisk = mutableListOf<Digest>()
-
-      listOf("sha256", "sha512").forEach { sha ->
-        val dir = "$blobsPath/$sha".toPath()
-        if (fileSystem.exists(dir) && fileSystem.metadata(dir).isDirectory) {
-          fileSystem.list(dir).forEach { path ->
-            if (!fileSystem.metadata(path).isDirectory) {
-              val digest = Digest(RegisteredAlgorithm.SHA256, path.name)
-              blobsOnDisk.add(digest)
-            }
-          }
-        }
-      }
-
-      blobsOnDisk
-        .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
-        .mapNotNull { zombieDigest ->
-          val path = "$blobsPath/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
-          runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
-        }
+      val blobsOnDisk = collectBlobsOnDisk()
+      removeUnreferencedBlobs(blobsOnDisk, referencedDescriptors)
     } catch (e: Exception) {
       logger.e("Failed to run GC", e)
       emptyList()
     }
   }
 
+  private fun collectBlobsOnDisk(): List<Digest> {
+    val blobsOnDisk = mutableListOf<Digest>()
+
+    listOf("sha256", "sha512").forEach { sha ->
+      val dir = "$blobsPath/$sha".toPath()
+      if (fileSystem.exists(dir) && fileSystem.metadata(dir).isDirectory) {
+        fileSystem.list(dir).forEach { path ->
+          if (!fileSystem.metadata(path).isDirectory) {
+            val digest = Digest(RegisteredAlgorithm.SHA256, path.name)
+            blobsOnDisk.add(digest)
+          }
+        }
+      }
+    }
+    return blobsOnDisk
+  }
+
+  private fun removeUnreferencedBlobs(
+    blobsOnDisk: List<Digest>,
+    referencedDescriptors: Set<Descriptor>,
+  ): List<Digest> {
+    return blobsOnDisk
+      .filter { it !in referencedDescriptors.map { desc -> desc.digest } }
+      .mapNotNull { zombieDigest ->
+        val path = "$blobsPath/${zombieDigest.algorithm}/${zombieDigest.hex}".toPath()
+        runCatching { fileSystem.delete(path) }.map { zombieDigest }.getOrNull()
+      }
+  }
+
   companion object {
     private const val BUFFER_SIZE = 32 * 1024
+    private const val PERCENTAGE_MULTIPLIER = 100.0
     /** LAYOUT_VERSION is the version of the OCI Image Layout */
     const val LAYOUT_VERSION = "1.0.0"
 

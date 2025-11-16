@@ -83,6 +83,10 @@ complexity:
     active: true
   TooManyFunctions:
     active: false
+  LongMethod:
+    active: true
+    allowedLines: 100
+    excludes: ["**/test/**"]
 coroutines:
   active: true
   GlobalCoroutineUsage:
@@ -227,4 +231,7 @@ libraries:
   active: true
   LibraryEntitiesShouldNotBePublic:
     active: true
-    excludes: ["**/api/**"]
+    excludes: ["**/api/**", "**/test/**"]
+  ForbiddenPublicDataClass:
+    active: true
+    excludes: ["**/test/**"]

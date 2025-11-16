@@ -227,10 +227,24 @@ internal constructor(
    *   Spec: Errors</a>
    */
   @Serializable
-  data class FailureResponse(
+  class FailureResponse(
     val errors: List<OciActionableFailure>,
     @Transient var status: HttpStatusCode = HttpStatusCode.Accepted,
-  )
+  ) {
+    override fun equals(other: Any?): Boolean {
+      if (this === other) return true
+      if (other !is FailureResponse) return false
+      if (errors != other.errors) return false
+      if (status != other.status) return false
+      return true
+    }
+
+    override fun hashCode(): Int {
+      var result = errors.hashCode()
+      result = 31 * result + status.hashCode()
+      return result
+    }
+  }
 
   /**
    * Thrown when an error response is received from an OCI registry.
@@ -251,8 +265,8 @@ internal constructor(
    * @throws OCIException.FromResponse if the response contains a valid error payload
    */
   private suspend fun attemptThrow4XX(response: HttpResponse) {
-    require(response.status.value in (400..499)) {
-      "Attempted to throw when status was not >=400 && <=499"
+    require(response.status.value in (HTTP_CLIENT_ERROR_MIN..HTTP_CLIENT_ERROR_MAX)) {
+      "Attempted to throw when status was not >=$HTTP_CLIENT_ERROR_MIN && <=$HTTP_CLIENT_ERROR_MAX"
     }
 
     if (response.contentType() == ContentType.Application.Json) {
@@ -267,6 +281,9 @@ internal constructor(
   }
 
   companion object {
+    private const val HTTP_CLIENT_ERROR_MIN = 400
+    private const val HTTP_CLIENT_ERROR_MAX = 499
+
     fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.WARN): Registry {
 
       val logger = KociLogger(logLevel)

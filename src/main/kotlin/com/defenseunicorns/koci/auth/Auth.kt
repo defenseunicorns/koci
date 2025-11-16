@@ -7,6 +7,7 @@ package com.defenseunicorns.koci.auth
 
 import com.defenseunicorns.koci.api.OCIException
 import com.defenseunicorns.koci.api.models.Credentials
+import com.defenseunicorns.koci.api.models.OCIAuthPluginConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.api.Send
@@ -29,6 +30,32 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+
+@Serializable
+private class DistributionTokenResponse(
+  val token: String,
+  @SerialName("access_token") val accessToken: String? = null,
+) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is DistributionTokenResponse) return false
+    if (token != other.token) return false
+    return accessToken == other.accessToken
+  }
+
+  override fun hashCode(): Int {
+    var result = token.hashCode()
+    result = 31 * result + (accessToken?.hashCode() ?: 0)
+    return result
+  }
+
+  override fun toString(): String =
+    "DistributionTokenResponse(token='$token', accessToken=$accessToken)"
+}
+
+private fun DistributionTokenResponse.extractToken(): String? {
+  return accessToken ?: token.takeIf { it.isNotEmpty() }
+}
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -61,41 +88,31 @@ private suspend fun HttpClient.fetchDistributionToken(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  // As specified in https://docs.docker.com/registry/spec/auth/token/ section
-  // "Token Response Fields", the token is either in `token` or
-  // `access_token`. If both present, they are identical.
-  @Serializable
-  class TokenResponse(
-    val token: String,
-    @SerialName("access_token") val accessToken: String? = null,
-  ) {
-    override fun equals(other: Any?): Boolean {
-      if (this === other) return true
-      if (other !is TokenResponse) return false
-      if (token != other.token) return false
-      return accessToken == other.accessToken
-    }
-
-    override fun hashCode(): Int {
-      var result = token.hashCode()
-      result = 31 * result + (accessToken?.hashCode() ?: 0)
-      return result
-    }
-
-    override fun toString(): String = "TokenResponse(token='$token', accessToken=$accessToken)"
-  }
-
   val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+  val tokenResponse: DistributionTokenResponse = json.decodeFromString(res.body())
 
-  if (tokenResponse.accessToken != null) {
-    return tokenResponse.accessToken
-  }
-  if (tokenResponse.token.isNotEmpty()) {
-    return tokenResponse.token
-  }
-  throw OCIException.EmptyTokenReturned(res)
+  return tokenResponse.extractToken() ?: throw OCIException.EmptyTokenReturned(res)
 }
+
+@Serializable
+private class OAuth2TokenResponse(@SerialName("access_token") val accessToken: String) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is OAuth2TokenResponse) return false
+    return accessToken == other.accessToken
+  }
+
+  override fun hashCode(): Int {
+    return accessToken.hashCode()
+  }
+
+  override fun toString(): String = "OAuth2TokenResponse(accessToken='$accessToken')"
+}
+
+private fun Credentials.hasRefreshToken(): Boolean = refreshToken.isNotEmpty()
+
+private fun Credentials.hasUsernamePassword(): Boolean =
+  username.isNotEmpty() && password.isNotEmpty()
 
 /**
  * fetchOAuth2Token fetches an OAuth2 access token.
@@ -108,30 +125,28 @@ private suspend fun HttpClient.fetchOAuth2Token(
   scopes: List<String>,
   cred: Credentials,
 ): String {
+  require(cred.hasRefreshToken() || cred.hasUsernamePassword()) {
+    "missing username or password for bearer auth"
+  }
+
   val res =
     post(realm) {
       contentType(ContentType.Application.FormUrlEncoded)
       formData {
-        // little redundant, but it makes linter / IDE happier this way
-        require(
-          cred.refreshToken.isNotEmpty() ||
-            (cred.username.isNotEmpty() && cred.password.isNotEmpty())
-        ) {
-          "missing username or password for bearer auth"
-        }
-        if (cred.refreshToken.isNotEmpty()) {
-          append("grant_type", "refresh_token")
-          append("refresh_token", cred.refreshToken)
-        } else if (cred.username.isNotEmpty() && cred.password.isNotEmpty()) {
-          append("grant_type", "password")
-          append("username", cred.username)
-          append("password", cred.password)
+        when {
+          cred.hasRefreshToken() -> {
+            append("grant_type", "refresh_token")
+            append("refresh_token", cred.refreshToken)
+          }
+          cred.hasUsernamePassword() -> {
+            append("grant_type", "password")
+            append("username", cred.username)
+            append("password", cred.password)
+          }
         }
 
         append("service", service)
-
-        val clientID = attributes.getOrNull(clientIDKey)
-        append("client_id", clientID ?: DEFAULT_CLIENT_ID)
+        append("client_id", attributes.getOrNull(clientIDKey) ?: DEFAULT_CLIENT_ID)
 
         if (scopes.isNotEmpty()) {
           append("scope", scopes.joinToString(" "))
@@ -145,45 +160,11 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  @Serializable
-  class TokenResponse(@SerialName("access_token") val accessToken: String) {
-    override fun equals(other: Any?): Boolean {
-      if (this === other) return true
-      if (other !is TokenResponse) return false
-      return accessToken == other.accessToken
-    }
-
-    override fun hashCode(): Int {
-      return accessToken.hashCode()
-    }
-
-    override fun toString(): String = "TokenResponse(accessToken='$accessToken')"
-  }
-
   val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+  val tokenResponse: OAuth2TokenResponse = json.decodeFromString(res.body())
 
-  if (tokenResponse.accessToken.isNotEmpty()) {
-    return tokenResponse.accessToken
-  }
-
-  throw OCIException.EmptyTokenReturned(res)
-}
-
-/**
- * Configuration for the OCI Authentication Plugin.
- *
- * Provides configuration options for the Ktor client plugin that handles OCI spec compliant
- * authentication.
- *
- * @property cred Credential used for authentication with registries
- * @property forceAttemptOAuth2 Forces OAuth2 authentication flow even when refresh token is empty
- */
-class OCIAuthPluginConfig {
-  var cred: Credentials = Credentials("", "", "", "")
-
-  // TODO: figure out what this is for and if we need it
-  var forceAttemptOAuth2 = false
+  return tokenResponse.accessToken.takeIf { it.isNotEmpty() }
+    ?: throw OCIException.EmptyTokenReturned(res)
 }
 
 /**

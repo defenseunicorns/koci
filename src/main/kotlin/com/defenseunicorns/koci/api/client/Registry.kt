@@ -61,9 +61,9 @@ import kotlinx.serialization.Transient
 class Registry
 internal constructor(
   registryUrl: String,
+  private var client: HttpClient,
   private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
-  private var client: HttpClient = HttpClient(CIO),
 ) {
   private val router = Router(registryUrl)
   val extensions = RegistryExtensions(client, router, logger)
@@ -187,8 +187,8 @@ internal constructor(
    * @param tag Tag to pull
    * @param storage Layout to store content in
    * @param platformResolver Optional function to select platform from index manifest
-   * @param strictChecking If true, verifies all referenced content exists even if manifest/index exists.
-   *   Set to false for better performance if you trust the layout integrity.
+   * @param strictChecking If true, verifies all referenced content exists even if manifest/index
+   *   exists. Set to false for better performance if you trust the layout integrity.
    */
   fun pull(
     repository: String,
@@ -287,14 +287,19 @@ internal constructor(
     private const val HTTP_CLIENT_ERROR_MIN = 400
     private const val HTTP_CLIENT_ERROR_MAX = 499
 
-    fun create(registryUrl: String, logLevel: KociLogLevel = KociLogLevel.WARN): Registry {
+    fun create(
+      registryUrl: String,
+      client: HttpClient = HttpClient(CIO),
+      logLevel: KociLogLevel = KociLogLevel.WARN,
+    ): Registry {
 
       val logger = KociLogger(logLevel)
 
       return Registry(
         registryUrl = registryUrl,
-        transferCoordinator = TransferCoordinator(logger),
+        client = client,
         logger = logger,
+        transferCoordinator = TransferCoordinator(logger),
       )
     }
   }

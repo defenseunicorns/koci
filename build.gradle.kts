@@ -119,7 +119,7 @@ version =
 
 mavenPublishing {
   publishToMavenCentral(automaticRelease = true)
-  signAllPublications()
+//  signAllPublications()
 
   pom {
     name = project.name

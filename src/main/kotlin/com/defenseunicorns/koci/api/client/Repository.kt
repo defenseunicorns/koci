@@ -387,6 +387,8 @@ internal constructor(
    * @param tag Tag to pull
    * @param store Layout to store content in
    * @param platformResolver Optional function to select platform from index
+   * @param strictChecking If true, verifies all referenced content exists even if manifest/index exists.
+   *   Set to false for better performance if you trust the layout integrity.
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
    *   Distribution Spec: Pulling Manifests</a>
@@ -395,6 +397,7 @@ internal constructor(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
+    strictChecking: Boolean = true,
   ): Flow<Int?> =
     flow {
         logger.d("Pulling $name:$tag")
@@ -405,7 +408,7 @@ internal constructor(
           return@flow
         }
 
-        pull(desc, store).collect { progressResult ->
+        pull(desc, store, strictChecking).collect { progressResult ->
           when (progressResult == null) {
             true -> return@collect emit(null)
             false -> emit(progressResult) // Already an Int percentage (0-100)
@@ -440,15 +443,28 @@ internal constructor(
    *
    * @param descriptor Content descriptor to pull
    * @param store Layout to store content in
+   * @param strictChecking If true, verifies all referenced content exists even if manifest/index exists.
+   *   Set to false for better performance if you trust the layout integrity.
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun pull(descriptor: Descriptor, store: Layout): Flow<Int?> =
+  fun pull(descriptor: Descriptor, store: Layout, strictChecking: Boolean = true): Flow<Int?> =
     flow {
         logger.d("Pulling descriptor: ${descriptor.digest}")
 
+        // For blobs, we can early return if they exist
+        // For manifests/indexes, only skip if strictChecking is disabled
         if (store.exists(descriptor)) {
-          emit(FINISHED_AMOUNT)
-          return@flow
+          if (descriptor.mediaType != MANIFEST_MEDIA_TYPE && 
+              descriptor.mediaType != INDEX_MEDIA_TYPE) {
+            // Regular blob exists - always safe to skip
+            emit(FINISHED_AMOUNT)
+            return@flow
+          } else if (!strictChecking) {
+            // Manifest/index exists and strict checking disabled - skip for performance
+            emit(FINISHED_AMOUNT)
+            return@flow
+          }
+          // Manifest/index exists but strict checking enabled - verify all referenced content
         }
 
         when (descriptor.mediaType) {
@@ -460,7 +476,7 @@ internal constructor(
             var completedBytes = 0.0
 
             manifests.forEach { manifestDesc ->
-              pull(manifestDesc, store).collect { childProgress ->
+              pull(manifestDesc, store, strictChecking).collect { childProgress ->
                 if (childProgress == null) {
                   return@collect emit(null)
                 }
@@ -622,16 +638,18 @@ internal constructor(
     var resumable = false
 
     // Handle partial downloads if exists check revealed size/digest mismatch
-    if (descriptor.size < resumeFrom && supportsRange(descriptor)) {
+    if (resumeFrom > 0 && resumeFrom < descriptor.size && supportsRange(descriptor)) {
+      // Partial download exists and registry supports range requests - resume
       resumable = true
       val fraction = (resumeFrom.toDouble() / descriptor.size.toDouble()).coerceIn(0.0, 1.0)
       emit((fraction * PERCENTAGE_MULTIPLIER).toInt())
     } else if (resumeFrom == 0L) {
+      // No existing file - fresh download
       resumable = false
     } else {
-      if (!store.remove(descriptor)) {
-        return@flow emit(null)
-      }
+      // File exists but is wrong size and can't resume - remove and re-download
+      store.remove(descriptor)
+      resumable = false
     }
 
     try {

@@ -18,7 +18,12 @@ fun main() {
     registry.list().collect {
       println(it?.name)
       it?.let {
-        registry.pull(it.name, it.tags.last(), layout).collect { progress -> println("$progress%") }
+        registry.pull(
+          repository = it.name,
+          tag = it.tags.last(),
+          storage = layout,
+          strictChecking = false
+        ).collect { progress -> println("$progress%") }
       }
     }
   }

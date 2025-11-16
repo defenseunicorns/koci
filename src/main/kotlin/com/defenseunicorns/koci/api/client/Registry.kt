@@ -187,13 +187,16 @@ internal constructor(
    * @param tag Tag to pull
    * @param storage Layout to store content in
    * @param platformResolver Optional function to select platform from index manifest
+   * @param strictChecking If true, verifies all referenced content exists even if manifest/index exists.
+   *   Set to false for better performance if you trust the layout integrity.
    */
   fun pull(
     repository: String,
     tag: String,
     storage: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ) = repo(repository).pull(tag, storage, platformResolver)
+    strictChecking: Boolean = true,
+  ) = repo(repository).pull(tag, storage, platformResolver, strictChecking)
 
   /**
    * Lists all repositories with their tags.

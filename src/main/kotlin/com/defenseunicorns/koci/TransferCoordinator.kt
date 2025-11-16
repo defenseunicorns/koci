@@ -43,6 +43,7 @@ internal class TransferCoordinator(private val logger: KociLogger) {
     val (state, shouldTransfer) =
       mutex.withLock {
         val state = inProgress.getOrPut(descriptor) { TransferState() }
+        state.refCount.incrementAndGet() // Increment refcount for this request
         val shouldTransfer = !state.claimed && !state.completion.isCompleted
         if (shouldTransfer) {
           state.claimed = true // Claim it so others wait
@@ -85,8 +86,10 @@ internal class TransferCoordinator(private val logger: KociLogger) {
         logger.d("Waiting for transfer to complete: ${descriptor.digest}")
         state.completion.await()
 
-        // Check the result
-        if (!state.succeeded) {
+        // Check the result and emit completion status
+        if (state.succeeded) {
+          emit(100) // Transfer succeeded, emit completion
+        } else {
           logger.e("Transfer failed: ${descriptor.digest}")
           emit(null)
         }

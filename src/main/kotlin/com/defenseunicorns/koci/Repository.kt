@@ -370,7 +370,7 @@ class Repository(
               }
             }
           }
-          .flattenMerge(concurrency = 3) // TODO: figure out best API to expose concurrency settings
+          .flattenMerge(concurrency = 6) // TODO: figure out best API to expose concurrency settings
           .onCompletion { cause ->
             if (cause == null) {
               copy(descriptor, store).collect { progress ->

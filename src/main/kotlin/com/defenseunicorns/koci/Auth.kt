@@ -207,17 +207,27 @@ val OCIAuthPlugin =
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
     on(Send) { request ->
+      val registryKey = request.url.build().hostWithPort
+      val requestScopes = request.attributes.getOrNull(scopesKey)
+
+      if (request.headers[HttpHeaders.Authorization] == null && requestScopes != null) {
+        val scopesKey = cleanScopes(requestScopes).joinToString(" ")
+        val cachedToken = tokenCache[registryKey]?.get(scopesKey)
+        if (cachedToken != null) {
+          request.bearerAuth(cachedToken)
+        }
+      }
+
       val originalCall = proceed(request)
       originalCall.response.run { // this: HttpResponse
         if (status == HttpStatusCode.Unauthorized) {
           var scopes = emptyList<String>()
           var token: String? = null
-          val registryKey = request.url.build().hostWithPort
+          val registryCache = tokenCache.computeIfAbsent(registryKey) { ConcurrentHashMap() }
 
           val authHeader =
             parseAuthorizationHeader(headers[HttpHeaders.WWWAuthenticate]!!)
               as HttpAuthHeader.Parameterized
-          val requestScopes = request.attributes.getOrNull(scopesKey)
 
           when (authHeader.authScheme) {
             AuthScheme.Basic -> {
@@ -245,16 +255,6 @@ val OCIAuthPlugin =
                   cleanScopes(challengeScopes)
                 }
 
-              // attempt req w/ cached token based upon scopes
-              val cachedToken = tokenCache[registryKey]?.get(scopes.joinToString(" "))
-              if (cachedToken != null) {
-                request.bearerAuth(cachedToken)
-                val cacheAttempt = proceed(request)
-                if (cacheAttempt.response.status.isSuccess()) {
-                  return@on cacheAttempt
-                }
-              }
-
               val cred = pluginConfig.cred
               token =
                 if (
@@ -277,7 +277,8 @@ val OCIAuthPlugin =
           }
           proceed(request).also {
             if (it.response.status.isSuccess() && token != null) {
-              tokenCache[registryKey]?.set(scopes.joinToString(" "), token)
+              val scopesKey = cleanScopes(scopes).joinToString(" ")
+              registryCache[scopesKey] = token
             }
           }
         } else {

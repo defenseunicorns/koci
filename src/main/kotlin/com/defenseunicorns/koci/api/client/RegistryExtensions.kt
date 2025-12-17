@@ -9,7 +9,7 @@ import com.defenseunicorns.koci.KociLogger
 import com.defenseunicorns.koci.api.models.CatalogResponse
 import com.defenseunicorns.koci.auth.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.auth.appendScopes
-import com.defenseunicorns.koci.http.Router
+import com.defenseunicorns.koci.api.client.Router
 import com.defenseunicorns.koci.models.linkHeaderRegex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body

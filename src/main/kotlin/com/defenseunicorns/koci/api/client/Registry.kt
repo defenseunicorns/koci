@@ -14,7 +14,6 @@ import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Platform
 import com.defenseunicorns.koci.api.models.TagsResponse
 import com.defenseunicorns.koci.auth.OCIAuthPlugin
-import com.defenseunicorns.koci.http.Router
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
@@ -37,7 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapConcat
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -65,7 +64,7 @@ internal constructor(
   private val logger: KociLogger,
   private val transferCoordinator: TransferCoordinator,
 ) {
-  private val router = Router(registryUrl)
+  val router = Router(registryUrl)
   val extensions = RegistryExtensions(client, router, logger)
 
   init {
@@ -210,12 +209,12 @@ internal constructor(
    * @param n Number of repositories to return per page in the catalog request
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun list(n: Int = 1000): Flow<TagsResponse?> =
+  fun list(n: Int = 1000): Flow<TagsResponse> =
     extensions
       .catalog(n)
       .filterNotNull()
       .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
-      .map { repo -> tags(repo) }
+      .mapNotNull { repo -> tags(repo) }
 
   /**
    * Represents an error response from an OCI registry.

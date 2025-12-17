@@ -7,7 +7,7 @@ package com.defenseunicorns.koci
 
 import com.defenseunicorns.koci.api.models.Descriptor
 import com.defenseunicorns.koci.api.models.Digest
-import com.defenseunicorns.koci.http.Router
+import com.defenseunicorns.koci.api.client.Router
 import com.defenseunicorns.koci.models.ANNOTATION_TITLE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import io.ktor.http.URLBuilder

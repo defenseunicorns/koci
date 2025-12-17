@@ -273,7 +273,7 @@ private constructor(
         }
       }
     } catch (e: Exception) {
-      logger.e("Failed to remove descriptor: ${descriptor.digest}", e)
+      logger.d("Failed to remove descriptor: ${descriptor.digest}")
       return false
     } finally {
       val pair = removing[descriptor]
@@ -695,7 +695,7 @@ private constructor(
      *
      * @return OCIResult containing the Layout or an error
      */
-    internal fun create(
+    fun create(
       rootPath: String,
       blobsPath: String = "$rootPath/blobs",
       stagingPath: String = "$rootPath/staging",

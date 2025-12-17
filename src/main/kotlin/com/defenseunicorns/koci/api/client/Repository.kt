@@ -20,7 +20,7 @@ import com.defenseunicorns.koci.auth.ACTION_PULL
 import com.defenseunicorns.koci.auth.ACTION_PUSH
 import com.defenseunicorns.koci.auth.appendScopes
 import com.defenseunicorns.koci.auth.scopeRepository
-import com.defenseunicorns.koci.http.Router
+import com.defenseunicorns.koci.api.client.Router
 import com.defenseunicorns.koci.models.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.models.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.models.tagRegex
@@ -279,7 +279,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI
    *   Distribution Spec: Pulling Blobs</a>
    */
-  private suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
+  suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
     return client
       .prepareGet(
         when (descriptor.mediaType) {

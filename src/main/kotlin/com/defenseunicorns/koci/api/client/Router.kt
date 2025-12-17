@@ -1,9 +1,4 @@
-/*
- * Copyright 2025 Defense Unicorns
- * SPDX-License-Identifier: Apache-2.0
- */
-
-package com.defenseunicorns.koci.http
+package com.defenseunicorns.koci.api.client
 
 import com.defenseunicorns.koci.api.models.Descriptor
 import io.ktor.http.URLBuilder
@@ -23,9 +18,9 @@ import java.net.URI
  * - Upload session management
  * - Cross-repository blob mounting
  *
- * All methods return fully constructed [Url] objects ready for use with HTTP clients.
+ * All methods return fully constructed [io.ktor.http.Url] objects ready for use with HTTP clients.
  */
-internal class Router(registryUrl: String) {
+class Router(registryUrl: String) {
 
   private val base: URLBuilder = URLBuilder().takeFrom(registryUrl).appendPathSegments("v2/")
 
@@ -150,5 +145,16 @@ internal class Router(registryUrl: String) {
   private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
     parameters.append("n", n.toString())
     last?.let { parameters.append("last", it) }
+  }
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (javaClass != other?.javaClass) return false
+    other as Router
+    return base == other.base
+  }
+
+  override fun hashCode(): Int {
+    return base.hashCode()
   }
 }

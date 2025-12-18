@@ -1,15 +1,15 @@
 [versions]
-kotlin = "2.2.10"
+kotlin = "2.3.0"
 junit = "4.13.2"
 kotlinxCoroutinesCore = "1.10.2"
 kotlinxCoroutinesTest = "1.10.2"
 kotlinxSerializationJson = "1.9.0"
-ktorClient = "3.2.3"
-ktorSerializationKotlinxJson = "3.2.3"
-kover = "0.9.1"
+ktorClient = "3.3.3"
+ktorSerializationKotlinxJson = "3.3.3"
+kover = "0.9.4"
 detekt = "2.0.0-alpha.1"
-mavenPublish = "0.34.0"
-spotless = "8.0.0"
+mavenPublish = "0.35.0"
+spotless = "8.1.0"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }

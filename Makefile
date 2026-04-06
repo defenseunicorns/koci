@@ -37,6 +37,10 @@ registry-seed: registry-up
 	@ ./bin/oras cp docker.io/library/registry:2.8.0  localhost:5005/library/registry:2.8.0
 	@ ./bin/oras cp docker.io/library/registry:latest localhost:5005/library/registry:latest
 
+.PHONY: bench
+bench:
+	@ bash bench/run.sh $(BENCH_ARGS)
+
 .PHONY: install-deps
 install-deps:
 	@ZARF_VERSION=$(ZARF_VERSION) \

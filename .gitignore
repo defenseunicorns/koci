@@ -28,6 +28,8 @@ bin/
 
 ### Koci specific ###
 .registry
+bench/results/
+bench/go/bench-go
 
 # Windsurf rules
 .windsurfrules

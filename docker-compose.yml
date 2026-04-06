@@ -8,5 +8,3 @@ services:
       REGISTRY_STORAGE_DELETE_ENABLED: true
     volumes:
       - ./.registry:/var/lib/registry/docker/registry/v2
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5005/v2/" ]

@@ -32,7 +32,7 @@ import kotlinx.serialization.json.decodeFromStream
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
  *   Distribution Spec: Resuming an Upload</a>
  */
-fun Headers.toUploadStatus(): UploadStatus {
+public fun Headers.toUploadStatus(): UploadStatus {
   val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
   val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
   val re = Regex("^([0-9]+)-([0-9]+)\$")
@@ -56,7 +56,7 @@ fun Headers.toUploadStatus(): UploadStatus {
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
  */
 @Suppress("detekt:TooManyFunctions")
-class Repository(
+public class Repository(
   private val client: HttpClient,
   private val router: Router,
   private val name: String,
@@ -74,7 +74,7 @@ class Repository(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#checking-if-content-exists-in-the-registry">OCI
    *   Distribution Spec: Checking if Content Exists</a>
    */
-  suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+  public suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
     val endpoint =
       when (descriptor.mediaType) {
         MANIFEST_MEDIA_TYPE,
@@ -104,7 +104,7 @@ class Repository(
    *   Distribution Spec: Pulling Manifests</a>
    */
   @OptIn(ExperimentalSerializationApi::class)
-  suspend fun resolve(
+  public suspend fun resolve(
     tag: String,
     platformResolver: ((Platform) -> Boolean)? = null,
   ): Result<Descriptor> = runCatching {
@@ -182,7 +182,7 @@ class Repository(
    * TODO: Similarly, a registry MAY implement tag deletion, while others MAY allow deletion only by
    *   manifest.
    */
-  suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+  public suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
     val endpoint =
       when (descriptor.mediaType) {
         MANIFEST_MEDIA_TYPE,
@@ -209,7 +209,7 @@ class Repository(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI
    *   Distribution Spec: Pulling Blobs</a>
    */
-  suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
+  public suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T {
     return client
       .prepareGet(
         when (descriptor.mediaType) {
@@ -241,7 +241,7 @@ class Repository(
    *   Distribution Spec: Pulling Manifests</a>
    */
   @OptIn(ExperimentalSerializationApi::class)
-  suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
+  public suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
     require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
     fetch(descriptor, Json::decodeFromStream)
   }
@@ -259,7 +259,7 @@ class Repository(
    *   Distribution Spec: Pulling Manifests</a>
    */
   @OptIn(ExperimentalSerializationApi::class)
-  suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
+  public suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
     require(descriptor.mediaType == INDEX_MEDIA_TYPE)
     fetch(descriptor, Json::decodeFromStream)
   }
@@ -273,7 +273,7 @@ class Repository(
    *
    * TODO: Implement pagination support as described in the specification
    */
-  suspend fun tags(): Result<TagsResponse> = runCatching {
+  public suspend fun tags(): Result<TagsResponse> = runCatching {
     val res =
       client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
     Json.decodeFromString(res.body())
@@ -292,7 +292,7 @@ class Repository(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
    *   Distribution Spec: Pulling Manifests</a>
    */
-  fun pull(
+  public fun pull(
     tag: String,
     store: Layout,
     platformResolver: ((Platform) -> Boolean)? = null,
@@ -326,7 +326,7 @@ class Repository(
    * @param store Layout to store content in
    */
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
+  public fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
     when (descriptor.mediaType) {
       INDEX_MEDIA_TYPE -> {
         if (store.exists(descriptor).getOrDefault(false)) {
@@ -575,7 +575,7 @@ class Repository(
    *   Distribution Spec: Pushing Blobs</a>
    */
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
+  public fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
     channelFlow {
         if (exists(expected).getOrDefault(false)) {
           send(expected.size)
@@ -678,7 +678,7 @@ class Repository(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests">OCI
    *   Distribution Spec: Pushing Manifests</a>
    */
-  suspend fun tag(content: Versioned, ref: String): Result<Descriptor> = runCatching {
+  public suspend fun tag(content: Versioned, ref: String): Result<Descriptor> = runCatching {
     requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
     val (ct, txt) =
       when (content) {
@@ -734,7 +734,7 @@ class Repository(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
    *   Distribution Spec: Mounting a Blob</a>
    */
-  suspend fun mount(descriptor: Descriptor, sourceRepository: String): Result<Boolean> =
+  public suspend fun mount(descriptor: Descriptor, sourceRepository: String): Result<Boolean> =
     runCatching {
       require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
       require(descriptor.mediaType != INDEX_MEDIA_TYPE)

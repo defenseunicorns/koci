@@ -12,21 +12,21 @@ import java.net.URI
  * Regex pattern for validating tags according to OCI spec. Tags must start with a word character
  * followed by up to 127 word, dot, or hyphen characters.
  */
-val TagRegex = Regex("^\\w[\\w.-]{0,127}")
+public val TagRegex: Regex = Regex("^\\w[\\w.-]{0,127}")
 
 /**
  * Regex pattern for validating repository names according to OCI spec. Repository names must follow
  * a specific pattern with lowercase alphanumeric characters, separators, and optional path
  * components.
  */
-val RepositoryRegex =
+public val RepositoryRegex: Regex =
   Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
 
 /**
  * Regex pattern for validating digest strings according to OCI spec. Digests must be in the format
  * algorithm:hex where algorithm is a lowercase identifier and hex is a base64-encoded string.
  */
-val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
+public val DigestRegex: Regex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
 
 /**
  * Represents a complete reference to an OCI artifact.
@@ -38,13 +38,13 @@ val DigestRegex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
  *
  * References are used to uniquely identify and locate artifacts in OCI-compliant registries.
  */
-data class Reference(val registry: String, val repository: String, val reference: String) {
+public data class Reference(val registry: String, val repository: String, val reference: String) {
   /**
    * Creates a Reference from a [Url] registry and string repository and reference.
    *
    * Extracts the host and optional port from the URL to form the registry component.
    */
-  constructor(
+  public constructor(
     registry: Url,
     repository: String,
     reference: String,
@@ -60,7 +60,7 @@ data class Reference(val registry: String, val repository: String, val reference
     reference = reference,
   )
 
-  companion object {
+  public companion object {
     /**
      * <--- path --------------------------------------------> | - Decode `path` <=== REPOSITORY
      * ===> <--- reference ------------------> | - Decode `reference` <=== REPOSITORY ===> @
@@ -79,7 +79,7 @@ data class Reference(val registry: String, val repository: String, val reference
      *
      * @param artifact String representation of the artifact reference
      */
-    fun parse(artifact: String): Result<Reference> = runCatching {
+    public fun parse(artifact: String): Result<Reference> = runCatching {
       val reg = artifact.substringBefore("/", "")
       require(reg.isNotEmpty()) { "registry cannot be empty" }
       val repoAndRef = artifact.substringAfter("/", "")
@@ -130,7 +130,7 @@ data class Reference(val registry: String, val repository: String, val reference
    *
    * @throws IllegalArgumentException if the reference is not a valid digest
    */
-  fun digest(): Digest {
+  public fun digest(): Digest {
     return Digest(reference)
   }
 
@@ -144,7 +144,7 @@ data class Reference(val registry: String, val repository: String, val reference
    *
    * @throws IllegalArgumentException if any component is invalid
    */
-  fun validate() {
+  public fun validate() {
     // validate registry
     require(registry.isNotEmpty()) { "registry cannot be empty" }
     val uri = URI("dummy://$registry")
@@ -169,12 +169,12 @@ data class Reference(val registry: String, val repository: String, val reference
   }
 
   /** Checks if this reference is empty (all components are empty strings). */
-  fun isEmpty(): Boolean {
+  public fun isEmpty(): Boolean {
     return this.registry.isEmpty() && this.reference.isEmpty() && this.repository.isEmpty()
   }
 
   /** Checks if this reference is not empty (at least one component is non-empty). */
-  fun isNotEmpty(): Boolean {
+  public fun isNotEmpty(): Boolean {
     return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
   }
 }

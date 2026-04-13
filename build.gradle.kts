@@ -24,7 +24,10 @@ group = "com.defenseunicorns"
 
 repositories { mavenCentral() }
 
-kotlin { jvmToolchain(21) }
+kotlin {
+  jvmToolchain(21)
+  explicitApi()
+}
 
 dependencies {
   implementation(libs.ktor.client.core)

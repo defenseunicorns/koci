@@ -17,6 +17,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+private val json = Json { ignoreUnknownKeys = true }
+
 /** Credential contains authentication credentials used to access remote registries. */
 data class Credential(
   /** Username is the name of the user for the remote registry. */
@@ -99,7 +101,6 @@ private suspend fun HttpClient.fetchDistributionToken(
     @SerialName("access_token") val accessToken: String? = null,
   )
 
-  val json = Json { ignoreUnknownKeys = true }
   val tokenResponse: TokenResponse = json.decodeFromString(res.body())
 
   if (tokenResponse.accessToken != null) {
@@ -162,7 +163,6 @@ private suspend fun HttpClient.fetchOAuth2Token(
 
   @Serializable data class TokenResponse(@SerialName("access_token") val accessToken: String)
 
-  val json = Json { ignoreUnknownKeys = true }
   val tokenResponse: TokenResponse = json.decodeFromString(res.body())
 
   if (tokenResponse.accessToken.isNotEmpty()) {

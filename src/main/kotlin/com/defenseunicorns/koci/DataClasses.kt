@@ -184,7 +184,7 @@ data class Descriptor(
     ): Descriptor {
       val md = algorithm.hasher()
       var size = 0L
-      val buffer = ByteArray(1024)
+      val buffer = ByteArray(IO_BUFFER_SIZE)
       stream.use { s ->
         var bytesRead: Int
         while (s.read(buffer).also { bytesRead = it } != -1) {

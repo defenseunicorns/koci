@@ -10,7 +10,6 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
     types: [ milestoned, opened, edited, synchronize ]
   schedule:
     - cron: '41 1 * * 5'

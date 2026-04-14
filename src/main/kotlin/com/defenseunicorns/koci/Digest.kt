@@ -77,7 +77,7 @@ public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: S
   public constructor(
     algorithm: RegisteredAlgorithm,
     hex: ByteArray,
-  ) : this(algorithm, hex.joinToString("") { "%02x".format(it) })
+  ) : this(algorithm, hex.joinToString("") { it.toHexString() })
 
   init {
     requireNotNull(DigestRegex.matchEntire(this.toString())) {

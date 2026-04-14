@@ -108,7 +108,7 @@ public class Layout private constructor(internal val index: Index, private val r
     val digest =
       withContext(Dispatchers.IO) {
         file.inputStream().use { s ->
-          val buffer = ByteArray(1024)
+          val buffer = ByteArray(IO_BUFFER_SIZE)
           val md = descriptor.digest.algorithm.hasher()
           var bytesRead: Int
           while (s.read(buffer).also { bytesRead = it } != -1) {
@@ -314,7 +314,7 @@ public class Layout private constructor(internal val index: Index, private val r
           if (fileExists) {
             withContext(Dispatchers.IO) {
               file.inputStream().use { fis ->
-                val buffer = ByteArray(32 * 1024)
+                val buffer = ByteArray(IO_BUFFER_SIZE)
                 var bytesRead: Int
                 while (fis.read(buffer).also { bytesRead = it } != -1) {
                   md.update(buffer, 0, bytesRead)
@@ -324,7 +324,7 @@ public class Layout private constructor(internal val index: Index, private val r
             }
           }
 
-          val buffer = ByteArray(4 * 1024)
+          val buffer = ByteArray(IO_BUFFER_SIZE)
           var bytesRead: Int
           withContext(Dispatchers.IO) {
             FileOutputStream(file, true).use { out ->

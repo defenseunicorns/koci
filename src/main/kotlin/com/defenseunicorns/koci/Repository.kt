@@ -586,7 +586,7 @@ public class Repository(
         val start = startOrResumeUpload(expected).also { uploading[expected] = it }
 
         if (start.minChunkSize == 0L) {
-          start.minChunkSize = 5 * 1024 * 1024
+          start.minChunkSize = DEFAULT_UPLOAD_CHUNK_SIZE
         }
 
         when (val bytesLeft = expected.size - start.offset) {

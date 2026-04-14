@@ -531,7 +531,7 @@ class RegistryTest {
 
 fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor {
   val random = Random.Default
-  val buffer = ByteArray(1024) // 1KB buffer
+  val buffer = ByteArray(IO_BUFFER_SIZE)
 
   FileOutputStream(File(filePath)).use { outputStream ->
     var bytesWritten = 0

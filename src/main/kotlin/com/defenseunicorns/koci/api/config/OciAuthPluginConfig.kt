@@ -3,60 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.api.config
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.api.*
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import io.ktor.http.*
-import io.ktor.http.auth.*
+import com.defenseunicorns.koci.api.Credential
+import com.defenseunicorns.koci.api.OCIException
+import com.defenseunicorns.koci.internal.DEFAULT_CLIENT_ID
+import com.defenseunicorns.koci.internal.appendScopes
+import com.defenseunicorns.koci.internal.cleanScopes
+import com.defenseunicorns.koci.internal.clientIDKey
+import com.defenseunicorns.koci.internal.scopesKey
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.api.ClientPlugin
+import io.ktor.client.plugins.api.Send
+import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.client.request.basicAuth
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.auth.AuthScheme
+import io.ktor.http.auth.HttpAuthHeader
+import io.ktor.http.auth.parseAuthorizationHeader
+import io.ktor.http.contentType
+import io.ktor.http.hostWithPort
+import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-
-/** Credential contains authentication credentials used to access remote registries. */
-public data class Credential(
-  /** Username is the name of the user for the remote registry. */
-  val username: String,
-  /** Password is the secret associated with the username. */
-  val password: String,
-  /**
-   * RefreshToken is a bearer token to be sent to the authorization service for fetching access
-   * tokens.
-   *
-   * A refresh token is often referred as an identity token.
-   *
-   * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
-   */
-  val refreshToken: String,
-  /**
-   * AccessToken is a bearer token to be sent to the registry.
-   *
-   * An access token is often referred as a registry token.
-   *
-   * [Reference](https://docs.docker.com/registry/spec/auth/token/)
-   */
-  val accessToken: String,
-) {
-  /** Returns `true` if all properties are empty. */
-  public fun isEmpty(): Boolean {
-    return username.isEmpty() &&
-      password.isEmpty() &&
-      refreshToken.isEmpty() &&
-      accessToken.isEmpty()
-  }
-
-  /** Returns `true` if any property is not empty. */
-  public fun isNotEmpty(): Boolean {
-    return username.isNotEmpty() ||
-      password.isNotEmpty() ||
-      refreshToken.isNotEmpty() ||
-      accessToken.isNotEmpty()
-  }
-}
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -90,17 +68,8 @@ private suspend fun HttpClient.fetchDistributionToken(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  // As specified in https://docs.docker.com/registry/spec/auth/token/ section
-  // "Token Response Fields", the token is either in `token` or
-  // `access_token`. If both present, they are identical.
-  @Serializable
-  data class TokenResponse(
-    val token: String,
-    @SerialName("access_token") val accessToken: String? = null,
-  )
-
   val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+  val tokenResponse: DistributionTokenResponse = json.decodeFromString(res.body())
 
   if (tokenResponse.accessToken != null) {
     return tokenResponse.accessToken
@@ -110,6 +79,15 @@ private suspend fun HttpClient.fetchDistributionToken(
   }
   throw OCIException.EmptyTokenReturned(res)
 }
+
+// As specified in https://docs.docker.com/registry/spec/auth/token/ section
+// "Token Response Fields", the token is either in `token` or
+// `access_token`. If both present, they are identical.
+@Serializable
+private data class DistributionTokenResponse(
+  val token: String,
+  @SerialName("access_token") val accessToken: String? = null,
+)
 
 /**
  * fetchOAuth2Token fetches an OAuth2 access token.
@@ -160,10 +138,8 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  @Serializable data class TokenResponse(@SerialName("access_token") val accessToken: String)
-
   val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: TokenResponse = json.decodeFromString(res.body())
+  val tokenResponse: OAuth2TokenResponse = json.decodeFromString(res.body())
 
   if (tokenResponse.accessToken.isNotEmpty()) {
     return tokenResponse.accessToken
@@ -181,11 +157,11 @@ private suspend fun HttpClient.fetchOAuth2Token(
  * @property cred Credential used for authentication with registries
  * @property forceAttemptOAuth2 Forces OAuth2 authentication flow even when refresh token is empty
  */
-public class OCIAuthPluginConfig {
-  public var cred: Credential = Credential("", "", "", "")
+internal class OCIAuthPluginConfig {
+  var cred: Credential = Credential("", "", "", "")
 
   // TODO: figure out what this is for and if we need it
-  public var forceAttemptOAuth2: Boolean = false
+  var forceAttemptOAuth2: Boolean = false
 }
 
 /**
@@ -202,7 +178,7 @@ public class OCIAuthPluginConfig {
  * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec:
  *   Authentication</a>
  */
-public val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
+internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
   createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
@@ -287,3 +263,6 @@ public val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
       }
     }
   }
+
+@Serializable
+private data class OAuth2TokenResponse(@SerialName("access_token") val accessToken: String)

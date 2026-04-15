@@ -5,6 +5,26 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.v1.ANNOTATION_REF_NAME
+import com.defenseunicorns.koci.v1.CatalogResponse
+import com.defenseunicorns.koci.v1.Descriptor
+import com.defenseunicorns.koci.v1.Digest
+import com.defenseunicorns.koci.v1.IMAGE_LAYOUT_FILE
+import com.defenseunicorns.koci.v1.INDEX_MEDIA_TYPE
+import com.defenseunicorns.koci.v1.Layout
+import com.defenseunicorns.koci.v1.LayoutMarker
+import com.defenseunicorns.koci.v1.MANIFEST_CONFIG_MEDIA_TYPE
+import com.defenseunicorns.koci.v1.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.v1.Manifest
+import com.defenseunicorns.koci.v1.OCIException
+import com.defenseunicorns.koci.v1.Platform
+import com.defenseunicorns.koci.v1.Reference
+import com.defenseunicorns.koci.v1.Registry
+import com.defenseunicorns.koci.v1.TagsResponse
+import com.defenseunicorns.koci.v1.pull
+import com.defenseunicorns.koci.v1.repo
+import com.defenseunicorns.koci.v1.resolve
+import com.defenseunicorns.koci.v1.tags
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -55,7 +75,7 @@ class RegistryTest {
     assertEquals(emptyList(), storage.catalog())
     assertEquals(
       LayoutMarker("1.0.0"),
-      Json.decodeFromString(File("$tmp/$IMAGE_LAYOUT_FILE").readText()),
+      Json.decodeFromString(File("$tmp/${IMAGE_LAYOUT_FILE}").readText()),
     )
   }
 

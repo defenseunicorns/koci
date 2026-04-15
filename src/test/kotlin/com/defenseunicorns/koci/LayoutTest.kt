@@ -5,7 +5,14 @@
 
 package com.defenseunicorns.koci
 
-import io.ktor.utils.io.jvm.javaio.*
+import com.defenseunicorns.koci.v1.Descriptor
+import com.defenseunicorns.koci.v1.Digest
+import com.defenseunicorns.koci.v1.IMAGE_BLOBS_DIR
+import com.defenseunicorns.koci.v1.Layout
+import com.defenseunicorns.koci.v1.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.v1.Manifest
+import com.defenseunicorns.koci.v1.Reference
+import com.defenseunicorns.koci.v1.RegisteredAlgorithm
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Path
@@ -126,7 +133,7 @@ class LayoutTest {
     // Verify layer2 is a zombie (not referenced by any manifest)
     val zombieFile =
       File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        "$rootDir/${IMAGE_BLOBS_DIR}/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
       )
     assertTrue(zombieFile.exists())
 
@@ -199,19 +206,19 @@ class LayoutTest {
     // Verify blobs still exist on disk
     val configFile =
       File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
+        "$rootDir/${IMAGE_BLOBS_DIR}/${configDescriptor.digest.algorithm}/${configDescriptor.digest.hex}"
       )
     val layer1File =
       File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+        "$rootDir/${IMAGE_BLOBS_DIR}/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
       )
     val layer2File =
       File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+        "$rootDir/${IMAGE_BLOBS_DIR}/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
       )
     val manifestFile =
       File(
-        "$rootDir/$IMAGE_BLOBS_DIR/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
+        "$rootDir/${IMAGE_BLOBS_DIR}/${manifestDescriptor.digest.algorithm}/${manifestDescriptor.digest.hex}"
       )
 
     assertTrue(configFile.exists())
@@ -268,11 +275,11 @@ class LayoutTest {
       // Verify both layers still exist on disk
       val layer1File =
         File(
-          "$rootDir/$IMAGE_BLOBS_DIR/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
+          "$rootDir/${IMAGE_BLOBS_DIR}/${layer1Descriptor.digest.algorithm}/${layer1Descriptor.digest.hex}"
         )
       val layer2File =
         File(
-          "$rootDir/$IMAGE_BLOBS_DIR/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
+          "$rootDir/${IMAGE_BLOBS_DIR}/${layer2Descriptor.digest.algorithm}/${layer2Descriptor.digest.hex}"
         )
       assertTrue(layer1File.exists())
       assertTrue(layer2File.exists())
@@ -294,7 +301,7 @@ class LayoutTest {
         RegisteredAlgorithm.SHA256.hasher().apply { update(layerBytes) }.digest(),
       )
 
-    val layerFile = File("$rootDir/$IMAGE_BLOBS_DIR/${layerDigest.algorithm}/${layerDigest.hex}")
+    val layerFile = File("$rootDir/${IMAGE_BLOBS_DIR}/${layerDigest.algorithm}/${layerDigest.hex}")
     layerFile.parentFile.mkdirs()
     layerFile.writeBytes(layerBytes)
 

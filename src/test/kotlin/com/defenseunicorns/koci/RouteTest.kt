@@ -5,6 +5,11 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.v1.ANNOTATION_TITLE
+import com.defenseunicorns.koci.v1.Descriptor
+import com.defenseunicorns.koci.v1.Digest
+import com.defenseunicorns.koci.v1.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.v1.Router
 import io.ktor.http.*
 import kotlin.test.Test
 import kotlin.test.assertEquals

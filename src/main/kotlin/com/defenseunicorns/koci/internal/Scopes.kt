@@ -3,31 +3,35 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.internal
 
-import io.ktor.util.*
-import java.util.*
+import io.ktor.util.AttributeKey
+import io.ktor.util.Attributes
+import java.util.TreeSet
 
 /**
- * This file contains scope-related functionality for OCI registry authentication.
+ * Scope-related functionality for OCI registry authentication.
  *
  * Scopes define the access permissions required for different registry operations. They follow the
- * format: `resourceType:resourceName:actions`
+ * format: `resourceType:resourceName:actions`.
+ *
+ * Everything in this file is `internal` — scopes are an implementation detail of the auth plugin
+ * and are not part of the public v2 API surface.
  *
  * Reference: https://docs.docker.com/registry/spec/auth/scope/
  */
 
-/** ACTION_PULL represents generic read access for resources of the repository type. */
-public const val ACTION_PULL: String = "pull"
+/** Generic read access for resources of the repository type. */
+internal const val ACTION_PULL: String = "pull"
 
-/** ACTION_PUSH represents generic write access for resources of the repository type. */
-public const val ACTION_PUSH: String = "push"
+/** Generic write access for resources of the repository type. */
+internal const val ACTION_PUSH: String = "push"
 
-/** ACTION_DELETE represents the delete permission for resources of the repository type. */
-public const val ACTION_DELETE: String = "delete"
+/** Delete permission for resources of the repository type. */
+internal const val ACTION_DELETE: String = "delete"
 
-/** SCOPE_REGISTRY_CATALOG is the scope for registry catalog access. */
-public const val SCOPE_REGISTRY_CATALOG: String = "registry:catalog:*"
+/** Scope for registry catalog access. */
+internal const val SCOPE_REGISTRY_CATALOG: String = "registry:catalog:*"
 
 /**
  * Creates a repository scope string for authentication.
@@ -39,7 +43,7 @@ public const val SCOPE_REGISTRY_CATALOG: String = "registry:catalog:*"
  * @param actions One or more actions (pull, push, delete, etc.)
  * @return Formatted scope string
  */
-public fun scopeRepository(repo: String, vararg actions: String): String {
+internal fun scopeRepository(repo: String, vararg actions: String): String {
   val cleaned = cleanActions(actions.toList())
 
   return listOf("repository", repo, cleaned.joinToString(",")).joinToString(":")
@@ -54,7 +58,7 @@ public fun scopeRepository(repo: String, vararg actions: String): String {
  * @param actions List of action strings to clean
  * @return Cleaned list of actions
  */
-public fun cleanActions(actions: List<String>): List<String> {
+internal fun cleanActions(actions: List<String>): List<String> {
   val cleaned = actions.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
   if (cleaned.contains("*")) {
@@ -79,7 +83,7 @@ public fun cleanActions(actions: List<String>): List<String> {
   "detekt:ReturnCount",
   "detekt:LoopWithTooManyJumpStatements",
 )
-public fun cleanScopes(scopes: List<String>): List<String> {
+internal fun cleanScopes(scopes: List<String>): List<String> {
   // fast paths
   if (scopes.isEmpty()) return emptyList()
   if (scopes.size == 1) {
@@ -136,16 +140,16 @@ public fun cleanScopes(scopes: List<String>): List<String> {
 }
 
 /** Attribute key for storing authentication scopes in Ktor request attributes. */
-internal val scopesKey = AttributeKey<List<String>>("ociScopesKey")
+internal val scopesKey: AttributeKey<List<String>> = AttributeKey<List<String>>("ociScopesKey")
 
 /** Attribute key for storing client ID in Ktor request attributes. */
-public val clientIDKey: AttributeKey<String> = AttributeKey<String>("ociClientIDKey")
+internal val clientIDKey: AttributeKey<String> = AttributeKey<String>("ociClientIDKey")
 
 /** Default client ID used for authentication if none is provided. */
-internal const val DEFAULT_CLIENT_ID = "koci"
+internal const val DEFAULT_CLIENT_ID: String = "koci"
 
 /**
- * Extension function to append scopes to Ktor request attributes.
+ * Appends scopes to Ktor request attributes.
  *
  * Adds the provided scopes to any existing scopes in the attributes, cleaning and normalizing the
  * combined list.

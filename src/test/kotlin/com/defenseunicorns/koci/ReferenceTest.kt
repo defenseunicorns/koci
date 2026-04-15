@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.v1.Reference
 import io.ktor.http.*
 import kotlin.test.*
 import org.junit.jupiter.api.assertDoesNotThrow

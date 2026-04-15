@@ -5,6 +5,11 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.v1.ACTION_DELETE
+import com.defenseunicorns.koci.v1.ACTION_PULL
+import com.defenseunicorns.koci.v1.ACTION_PUSH
+import com.defenseunicorns.koci.v1.SCOPE_REGISTRY_CATALOG
+import com.defenseunicorns.koci.v1.scopeRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -55,7 +60,7 @@ class ScopesTest {
       )
 
     for ((dirty, clean) in testCases) {
-      val actual = cleanScopes(dirty)
+      val actual = com.defenseunicorns.koci.v1.cleanScopes(dirty)
       assertEquals(clean, actual)
     }
   }
@@ -79,7 +84,7 @@ class ScopesTest {
       )
 
     for ((actions, expected) in testCases) {
-      val actual = cleanActions(actions)
+      val actual = com.defenseunicorns.koci.v1.cleanActions(actions)
       assertEquals(expected, actual)
     }
   }

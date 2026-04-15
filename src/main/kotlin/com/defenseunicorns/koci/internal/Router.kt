@@ -3,21 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.internal
 
-import io.ktor.http.*
+import com.defenseunicorns.koci.api.Descriptor
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.appendPathSegments
+import io.ktor.http.clone
+import io.ktor.http.encodedPath
+import io.ktor.http.takeFrom
 import java.net.URI
-
-/**
- * Adds pagination parameters to a URL as specified in the OCI spec.
- *
- * @param n Number of results to return
- * @param last Optional token indicating where to resume listing
- */
-private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
-  parameters.append("n", n.toString())
-  last?.let { parameters.append("last", it) }
-}
 
 /**
  * Constructs API endpoints for an OCI spec compliant registry.
@@ -30,20 +25,20 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
  *
  * All methods return fully constructed [Url] objects ready for use with HTTP clients.
  */
-public class Router(registryURL: String) {
+internal class Router(registryURL: String) {
   private companion object {
     private const val V2_PREFIX = "v2/"
   }
 
-  private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
+  val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
 
   /** Returns the base URL for the registry API (v2 endpoint). */
-  public fun base(): Url {
+  fun base(): Url {
     return base.build()
   }
 
   /** Returns the URL for listing all repositories in the registry. */
-  public fun catalog(): Url {
+  fun catalog(): Url {
     return base.clone().appendPathSegments("_catalog").build()
   }
 
@@ -53,7 +48,7 @@ public class Router(registryURL: String) {
    * @param n Number of repositories to return
    * @param lastRepo Optional repository name to resume listing from
    */
-  public fun catalog(n: Int, lastRepo: String? = null): Url {
+  fun catalog(n: Int, lastRepo: String? = null): Url {
     return base.clone().appendPathSegments("_catalog").paginate(n, lastRepo).build()
   }
 
@@ -62,7 +57,7 @@ public class Router(registryURL: String) {
    *
    * @param repository Repository name
    */
-  public fun tags(repository: String): Url {
+  fun tags(repository: String): Url {
     return base.clone().appendPathSegments(repository, "tags", "list").build()
   }
 
@@ -72,7 +67,7 @@ public class Router(registryURL: String) {
    * @param repository Repository name
    * @param ref Tag or digest reference
    */
-  public fun manifest(repository: String, ref: String): Url {
+  fun manifest(repository: String, ref: String): Url {
     return base.clone().appendPathSegments(repository, "manifests", ref).build()
   }
 
@@ -82,7 +77,7 @@ public class Router(registryURL: String) {
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  public fun manifest(repository: String, descriptor: Descriptor): Url {
+  fun manifest(repository: String, descriptor: Descriptor): Url {
     return manifest(repository, descriptor.digest.toString())
   }
 
@@ -92,7 +87,7 @@ public class Router(registryURL: String) {
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  public fun blob(repository: String, descriptor: Descriptor): Url {
+  fun blob(repository: String, descriptor: Descriptor): Url {
     return base
       .clone()
       .appendPathSegments(repository, "blobs", descriptor.digest.toString())
@@ -104,7 +99,7 @@ public class Router(registryURL: String) {
    *
    * @param repository Repository name
    */
-  public fun uploads(repository: String): Url {
+  fun uploads(repository: String): Url {
     // the final "" allows for a trailing /
     return base.clone().appendPathSegments(repository, "blobs", "uploads", "").build()
   }
@@ -119,7 +114,7 @@ public class Router(registryURL: String) {
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
    *   Distribution Spec: Mounting a Blob</a>
    */
-  public fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
+  fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
     return base
       .clone()
       .appendPathSegments(repository, "blobs", "uploads", "")
@@ -140,12 +135,23 @@ public class Router(registryURL: String) {
    * @see <a href="https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.2">RFC 7231:
    *   Location</a>
    */
-  public fun parseUploadLocation(locationHeader: String): Url {
+  fun parseUploadLocation(locationHeader: String): Url {
     val uri = URI(locationHeader)
     if (uri.isAbsolute) {
       return URLBuilder().takeFrom(locationHeader).build()
     }
 
     return URLBuilder().takeFrom(base.build()).apply { encodedPath = locationHeader }.build()
+  }
+
+  /**
+   * Adds pagination parameters to a URL as specified in the OCI spec.
+   *
+   * @param n Number of results to return
+   * @param last Optional token indicating where to resume listing
+   */
+  private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
+    parameters.append("n", n.toString())
+    last?.let { parameters.append("last", it) }
   }
 }

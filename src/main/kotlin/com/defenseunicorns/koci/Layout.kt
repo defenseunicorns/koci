@@ -38,10 +38,11 @@ import kotlinx.serialization.json.decodeFromStream
  * @property root The root directory path where the layout is stored
  */
 @Suppress("detekt:TooManyFunctions")
-class Layout private constructor(internal val index: Index, private val root: String) {
-  internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
+public class Layout private constructor(internal val index: Index, private val root: String) {
+  internal val pushing: ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>> =
+    ConcurrentHashMap()
 
-  companion object {
+  public companion object {
     /**
      * Creates a new Layout or opens an existing one at the specified path.
      *
@@ -50,7 +51,7 @@ class Layout private constructor(internal val index: Index, private val root: St
      *
      * @param root The root directory path for the layout
      */
-    suspend fun create(root: String): Result<Layout> =
+    public suspend fun create(root: String): Result<Layout> =
       withContext(Dispatchers.IO) {
         runCatching {
           var index = Index()
@@ -91,7 +92,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    * @throws OCIException.SizeMismatch if the blob's size doesn't match the descriptor
    * @throws OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
    */
-  suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+  public suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
     val file = blob(descriptor)
 
     val exists = withContext(Dispatchers.IO) { file.exists() }
@@ -170,7 +171,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param reference The reference to remove
    */
-  suspend fun remove(reference: Reference): Result<Boolean> =
+  public suspend fun remove(reference: Reference): Result<Boolean> =
     resolve(reference).map { descriptor -> remove(descriptor).getOrThrow() }
 
   /**
@@ -185,7 +186,7 @@ class Layout private constructor(internal val index: Index, private val root: St
   // TODO: ensure removals do not impact other images through unit tests
   @OptIn(ExperimentalSerializationApi::class)
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+  public suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
@@ -293,7 +294,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
    * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
    */
-  fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
+  public fun push(descriptor: Descriptor, stream: InputStream): Flow<Int> = channelFlow {
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
 
     refCount.incrementAndGet()
@@ -366,7 +367,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param descriptor The descriptor of the content to fetch
    */
-  suspend fun fetch(descriptor: Descriptor): InputStream =
+  public suspend fun fetch(descriptor: Descriptor): InputStream =
     withContext(Dispatchers.IO) { FileInputStream(blob(descriptor)) }
 
   /**
@@ -374,7 +375,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @param predicate Function that returns true for the desired descriptor
    */
-  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Result<Descriptor> =
+  public suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Result<Descriptor> =
     runCatching {
       index.manifests.first { predicate(it) }
     }
@@ -388,7 +389,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    * @param reference The reference to resolve
    * @param platformResolver Optional function to select a specific platform
    */
-  suspend fun resolve(
+  public suspend fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
   ): Result<Descriptor> {
@@ -417,7 +418,7 @@ class Layout private constructor(internal val index: Index, private val root: St
   //
   // NOTE: this edits an annotation on the descriptor, object equality checks will not work anymore
   // TODO: unit test tagging
-  suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
+  public suspend fun tag(descriptor: Descriptor, reference: Reference): Result<Unit> = runCatching {
     require(descriptor.mediaType.isNotEmpty())
     require(descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE)
     require(descriptor.size > 0)
@@ -450,7 +451,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    *
    * @return List of all manifest descriptors in the layout's index
    */
-  fun catalog(): List<Descriptor> {
+  public fun catalog(): List<Descriptor> {
     return index.manifests.toList()
   }
 
@@ -462,7 +463,7 @@ class Layout private constructor(internal val index: Index, private val root: St
    * should be used to clean up zombie layers that might be left on disk if a remove operation is
    * interrupted.
    */
-  suspend fun gc(): Result<List<Digest>> = runCatching {
+  public suspend fun gc(): Result<List<Digest>> = runCatching {
     check(pushing.isEmpty()) { "there are downloads in progress" }
 
     val referencedDescriptors = expand(index.manifests).toSet()

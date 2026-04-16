@@ -23,7 +23,7 @@ import kotlinx.serialization.encoding.Encoder
  *
  * @property repositories List of repository names in the registry
  */
-@Serializable data class CatalogResponse(val repositories: List<String>)
+@Serializable public data class CatalogResponse(val repositories: List<String>)
 
 /**
  * Response structure for repository tags list requests.
@@ -33,35 +33,35 @@ import kotlinx.serialization.encoding.Encoder
  * @property name Repository name
  * @property tags List of tags associated with the repository, may be null if no tags exist
  */
-@Serializable data class TagsResponse(val name: String, val tags: List<String>?)
+@Serializable public data class TagsResponse(val name: String, val tags: List<String>?)
 
 /** MANIFEST_MEDIA_TYPE specifies the media type for an image manifest. */
-const val MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+public const val MANIFEST_MEDIA_TYPE: String = "application/vnd.oci.image.manifest.v1+json"
 
 /** MANIFEST_CONFIG_MEDIA_TYPE specifies the media type for the image configuration. */
-const val MANIFEST_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+public const val MANIFEST_CONFIG_MEDIA_TYPE: String = "application/vnd.oci.image.config.v1+json"
 
 /** INDEX_MEDIA_TYPE specifies the media type for an image index. */
-const val INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
+public const val INDEX_MEDIA_TYPE: String = "application/vnd.oci.image.index.v1+json"
 
 /** IMAGE_LAYOUT_FILE is the file name containing [LayoutMarker] in an OCI Image [Layout] */
-const val IMAGE_LAYOUT_FILE = "oci-layout"
+public const val IMAGE_LAYOUT_FILE: String = "oci-layout"
 
 /**
  * IMAGE_INDEX_FILE is the file name of the entry point for references and descriptors in an OCI
  * Image [Layout]
  */
-const val IMAGE_INDEX_FILE = "index.json"
+public const val IMAGE_INDEX_FILE: String = "index.json"
 
 /**
  * IMAGE_BLOBS_DIR is the directory name containing content addressable blobs in an OCI Image
  * [Layout]
  */
-const val IMAGE_BLOBS_DIR = "blobs"
+public const val IMAGE_BLOBS_DIR: String = "blobs"
 
 /** Manifest provides [MANIFEST_MEDIA_TYPE] mediatype structure when marshalled to JSON. */
 @Serializable
-data class Manifest(
+public data class Manifest(
   /** schemaVersion is the image manifest schema that this image follows */
   override val schemaVersion: Int? = null,
   /** mediaType specifies the type of this document data structure e.g. [MANIFEST_MEDIA_TYPE] */
@@ -80,7 +80,8 @@ data class Manifest(
 ) : Versioned
 
 /** Generated serializer/deserializer for a CopyOnWriteDescriptorArrayList */
-object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayList<Descriptor>> {
+public object CopyOnWriteDescriptorArrayListSerializer :
+  KSerializer<CopyOnWriteArrayList<Descriptor>> {
   override val descriptor: SerialDescriptor = ListSerializer(Descriptor.serializer()).descriptor
 
   override fun serialize(encoder: Encoder, value: CopyOnWriteArrayList<Descriptor>) {
@@ -99,7 +100,7 @@ object CopyOnWriteDescriptorArrayListSerializer : KSerializer<CopyOnWriteArrayLi
  * This structure provides [INDEX_MEDIA_TYPE] mediatype when marshalled to JSON.
  */
 @Serializable
-data class Index(
+public data class Index(
   override val schemaVersion: Int? = null,
   /** mediaType specifies the type of this document data structure e.g. [INDEX_MEDIA_TYPE] */
   val mediaType: String? = null,
@@ -114,11 +115,11 @@ data class Index(
  * LayoutMarker is the structure in the "oci-layout" file, found in the root of an OCI [Layout]
  * directory
  */
-@Serializable data class LayoutMarker(val imageLayoutVersion: String)
+@Serializable public data class LayoutMarker(val imageLayoutVersion: String)
 
 /** Platform describes the platform which the image in the manifest runs on. */
 @Serializable
-data class Platform(
+public data class Platform(
   /** architecture field specifies the CPU architecture, for example `amd64` or `ppc64le`. */
   val architecture: String,
   /** os specifies the operating system, for example `linux` or `windows`. */
@@ -147,7 +148,7 @@ data class Platform(
  * JSON.
  */
 @Serializable
-data class Descriptor(
+public data class Descriptor(
   /** mediaType is the media type of the object this schema refers to. */
   val mediaType: String,
   /** digest is the digest of the targeted content. */
@@ -171,13 +172,13 @@ data class Descriptor(
    */
   val platform: Platform? = null,
 ) {
-  companion object {
+  public companion object {
     /**
      * fromInputStream returns a [Descriptor], given the content and media type.
      *
      * if no media type is specified, "application/octet-stream" will be used
      */
-    fun fromInputStream(
+    public fun fromInputStream(
       mediaType: String = Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
       stream: InputStream,
@@ -198,7 +199,7 @@ data class Descriptor(
 }
 
 /** UploadStatus tracks the server-side state of an upload */
-data class UploadStatus(val location: String, var offset: Long, var minChunkSize: Long)
+public data class UploadStatus(val location: String, var offset: Long, var minChunkSize: Long)
 
 /**
  * Common interface for versioned OCI content types.
@@ -208,6 +209,6 @@ data class UploadStatus(val location: String, var offset: Long, var minChunkSize
  *
  * @property schemaVersion The schema version of the content
  */
-sealed interface Versioned {
-  val schemaVersion: Int?
+public sealed interface Versioned {
+  public val schemaVersion: Int?
 }

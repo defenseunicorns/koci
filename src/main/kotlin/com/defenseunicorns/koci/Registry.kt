@@ -33,9 +33,9 @@ import kotlinx.serialization.json.Json
  * val repository = registry.repo("myorg/myrepo")
  * ```
  */
-class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
-  val router = Router(registryURL)
-  val extensions = Extensions()
+public class Registry(registryURL: String, public var client: HttpClient = HttpClient(CIO)) {
+  public val router: Router = Router(registryURL)
+  public val extensions: Extensions = Extensions()
 
   init {
     val timeoutPlugin = client.pluginOrNull(HttpTimeout)
@@ -78,7 +78,9 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support">OCI
    *   Distribution Spec: API Version Check</a>
    */
-  suspend fun ping(): Result<Boolean> = runCatching { client.get(router.base()).status.isSuccess() }
+  public suspend fun ping(): Result<Boolean> = runCatching {
+    client.get(router.base()).status.isSuccess()
+  }
 
   /**
    * Provides access to OCI spec extensions.
@@ -89,7 +91,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
    * @see <a href="https://github.com/opencontainers/distribution-spec/tree/main/extensions">OCI
    *   Distribution Spec: Extensions</a>
    */
-  inner class Extensions {
+  public inner class Extensions {
     /**
      * Lists all repositories in the registry.
      *
@@ -100,7 +102,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
      *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
      *   Distribution Spec: Listing Repositories</a>
      */
-    suspend fun catalog(): Result<CatalogResponse> = runCatching {
+    public suspend fun catalog(): Result<CatalogResponse> = runCatching {
       val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
       Json.decodeFromString(res.body())
     }
@@ -119,7 +121,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
      *
      * TODO: distribution is moving to a default max n of 1000
      */
-    fun catalog(n: Int, lastRepo: String? = null): Flow<CatalogResponse> = flow {
+    public fun catalog(n: Int, lastRepo: String? = null): Flow<CatalogResponse> = flow {
       var endpoint: Url? = router.catalog(n, lastRepo)
 
       while (endpoint != null) {
@@ -160,7 +162,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
      * @param n Number of repositories to return per page in the catalog request
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun list(n: Int = 1000): Flow<TagsResponse> =
+    public fun list(n: Int = 1000): Flow<TagsResponse> =
       catalog(n)
         .flatMapConcat { catalogResponse -> catalogResponse.repositories.asFlow() }
         .map { repo -> tags(repo).getOrThrow() }
@@ -175,7 +177,7 @@ class Registry(registryURL: String, var client: HttpClient = HttpClient(CIO)) {
  *
  * @param name Repository name (e.g., "library/ubuntu")
  */
-fun Registry.repo(name: String) = Repository(client, router, name)
+public fun Registry.repo(name: String): Repository = Repository(client, router, name)
 
 /**
  * Lists all tags in a repository.
@@ -187,7 +189,7 @@ fun Registry.repo(name: String) = Repository(client, router, name)
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
  *   Distribution Spec: Listing Image Tags</a>
  */
-suspend fun Registry.tags(repository: String) = repo(repository).tags()
+public suspend fun Registry.tags(repository: String): Result<TagsResponse> = repo(repository).tags()
 
 /**
  * Resolves a tag to a content descriptor.
@@ -202,11 +204,11 @@ suspend fun Registry.tags(repository: String) = repo(repository).tags()
  * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull">OCI
  *   Distribution Spec: Existing Manifests</a>
  */
-suspend fun Registry.resolve(
+public suspend fun Registry.resolve(
   repository: String,
   tag: String,
   platformResolver: ((Platform) -> Boolean)? = null,
-) = repo(repository).resolve(tag, platformResolver)
+): Result<Descriptor> = repo(repository).resolve(tag, platformResolver)
 
 /**
  * Pulls content by tag and stores it in the provided layout.
@@ -219,9 +221,9 @@ suspend fun Registry.resolve(
  * @param storage Layout to store content in
  * @param platformResolver Optional function to select platform from index manifest
  */
-fun Registry.pull(
+public fun Registry.pull(
   repository: String,
   tag: String,
   storage: Layout,
   platformResolver: ((Platform) -> Boolean)? = null,
-) = repo(repository).pull(tag, storage, platformResolver)
+): Flow<Int> = repo(repository).pull(tag, storage, platformResolver)

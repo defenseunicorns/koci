@@ -16,7 +16,7 @@
     <ID>ForbiddenPublicDataClass:Errors.kt:FailureResponse</ID>
     <ID>ForbiddenPublicDataClass:Reference.kt:Reference</ID>
     <ID>ForbiddenPublicDataClass:ReferenceTest.kt:ReferenceTest$Invalid</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Annotations.kt:/** * Annotations is a simple map of strings. * * [Pre-defined annotations * keys](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys) */ typealias Annotations = Map&lt;String, String&gt;</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Annotations.kt:/** * Annotations is a simple map of strings. * * [Pre-defined annotations * keys](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys) */ public typealias Annotations = Map&lt;String, String&gt;</ID>
     <ID>LibraryEntitiesShouldNotBePublic:Auth.kt:Credential</ID>
     <ID>LibraryEntitiesShouldNotBePublic:Auth.kt:OCIAuthPluginConfig</ID>
     <ID>LibraryEntitiesShouldNotBePublic:DataClasses.kt:CatalogResponse</ID>
@@ -39,19 +39,19 @@
     <ID>LibraryEntitiesShouldNotBePublic:Reference.kt:Reference</ID>
     <ID>LibraryEntitiesShouldNotBePublic:ReferenceTest.kt:ReferenceTest</ID>
     <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:Registry</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:fun Registry.pull( repository: String, tag: String, storage: Layout, platformResolver: ((Platform) -&gt; Boolean)? = null, )</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:fun Registry.repo(name: String)</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:suspend fun Registry.resolve( repository: String, tag: String, platformResolver: ((Platform) -&gt; Boolean)? = null, )</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:suspend fun Registry.tags(repository: String)</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:public fun Registry.pull( repository: String, tag: String, storage: Layout, platformResolver: ((Platform) -&gt; Boolean)? = null, ): Flow&lt;Int&gt;</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:public fun Registry.repo(name: String): Repository</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:public suspend fun Registry.resolve( repository: String, tag: String, platformResolver: ((Platform) -&gt; Boolean)? = null, ): Result&lt;Descriptor&gt;</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Registry.kt:public suspend fun Registry.tags(repository: String): Result&lt;TagsResponse&gt;</ID>
     <ID>LibraryEntitiesShouldNotBePublic:RegistryTest.kt:RegistryTest</ID>
     <ID>LibraryEntitiesShouldNotBePublic:RegistryTest.kt:fun generateRandomFile(filePath: String, sizeInBytes: Int): Descriptor</ID>
     <ID>LibraryEntitiesShouldNotBePublic:Repository.kt:Repository</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Repository.kt:fun Headers.toUploadStatus(): UploadStatus</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Repository.kt:public fun Headers.toUploadStatus(): UploadStatus</ID>
     <ID>LibraryEntitiesShouldNotBePublic:RouteTest.kt:RouteTest</ID>
     <ID>LibraryEntitiesShouldNotBePublic:Router.kt:Router</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:@Suppress( "detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:LoopWithTooManyJumpStatements", ) fun cleanScopes(scopes: List&lt;String&gt;): List&lt;String&gt;</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:fun cleanActions(actions: List&lt;String&gt;): List&lt;String&gt;</ID>
-    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:fun scopeRepository(repo: String, vararg actions: String): String</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:@Suppress( "detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:LoopWithTooManyJumpStatements", ) public fun cleanScopes(scopes: List&lt;String&gt;): List&lt;String&gt;</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:public fun cleanActions(actions: List&lt;String&gt;): List&lt;String&gt;</ID>
+    <ID>LibraryEntitiesShouldNotBePublic:Scopes.kt:public fun scopeRepository(repo: String, vararg actions: String): String</ID>
     <ID>LibraryEntitiesShouldNotBePublic:ScopesTest.kt:ScopesTest</ID>
     <ID>MagicNumber:DataClasses.kt:Descriptor.Companion$1024</ID>
     <ID>MagicNumber:Digest.kt:Digest$128</ID>

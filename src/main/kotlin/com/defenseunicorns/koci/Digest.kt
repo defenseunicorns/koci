@@ -20,7 +20,7 @@ import kotlinx.serialization.encoding.Encoder
  * Each algorithm provides a string representation and a way to create a [MessageDigest] instance
  * for computing digests using that algorithm.
  */
-enum class RegisteredAlgorithm(private val n: String) {
+public enum class RegisteredAlgorithm(private val n: String) {
   SHA256("sha256"),
   SHA512("sha512");
 
@@ -29,7 +29,7 @@ enum class RegisteredAlgorithm(private val n: String) {
   }
 
   /** Creates a [MessageDigest] instance for this algorithm. */
-  fun hasher(): MessageDigest {
+  public fun hasher(): MessageDigest {
     return when (this) {
       SHA256 -> MessageDigest.getInstance("SHA-256")
       SHA512 -> MessageDigest.getInstance("SHA-512")
@@ -48,14 +48,14 @@ enum class RegisteredAlgorithm(private val n: String) {
  * integrity.
  */
 @Serializable(with = DigestSerializer::class)
-class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
+public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: String) {
   /**
    * Creates a Digest from a string in the format "algorithm:hex".
    *
    * @param content String representation of the digest
    * @throws IllegalArgumentException if the algorithm is missing or not supported
    */
-  constructor(
+  public constructor(
     content: String
   ) : this(
     algorithm =
@@ -74,7 +74,7 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
    * @param algorithm The hash algorithm used
    * @param hex The raw bytes to be hex-encoded
    */
-  constructor(
+  public constructor(
     algorithm: RegisteredAlgorithm,
     hex: ByteArray,
   ) : this(algorithm, hex.joinToString("") { "%02x".format(it) })
@@ -124,7 +124,7 @@ class Digest(val algorithm: RegisteredAlgorithm, val hex: String) {
 /**
  * Serializer for Digest class that converts between Digest objects and their string representation.
  */
-object DigestSerializer : KSerializer<Digest> {
+public object DigestSerializer : KSerializer<Digest> {
   override val descriptor: SerialDescriptor =
     PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)
 

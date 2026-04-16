@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** Credential contains authentication credentials used to access remote registries. */
-data class Credential(
+public data class Credential(
   /** Username is the name of the user for the remote registry. */
   val username: String,
   /** Password is the secret associated with the username. */
@@ -42,7 +42,7 @@ data class Credential(
   val accessToken: String,
 ) {
   /** Returns `true` if all properties are empty. */
-  fun isEmpty(): Boolean {
+  public fun isEmpty(): Boolean {
     return username.isEmpty() &&
       password.isEmpty() &&
       refreshToken.isEmpty() &&
@@ -50,7 +50,7 @@ data class Credential(
   }
 
   /** Returns `true` if any property is not empty. */
-  fun isNotEmpty(): Boolean {
+  public fun isNotEmpty(): Boolean {
     return username.isNotEmpty() ||
       password.isNotEmpty() ||
       refreshToken.isNotEmpty() ||
@@ -181,11 +181,11 @@ private suspend fun HttpClient.fetchOAuth2Token(
  * @property cred Credential used for authentication with registries
  * @property forceAttemptOAuth2 Forces OAuth2 authentication flow even when refresh token is empty
  */
-class OCIAuthPluginConfig {
-  var cred: Credential = Credential("", "", "", "")
+public class OCIAuthPluginConfig {
+  public var cred: Credential = Credential("", "", "", "")
 
   // TODO: figure out what this is for and if we need it
-  var forceAttemptOAuth2 = false
+  public var forceAttemptOAuth2: Boolean = false
 }
 
 /**
@@ -202,7 +202,7 @@ class OCIAuthPluginConfig {
  * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec:
  *   Authentication</a>
  */
-val OCIAuthPlugin =
+public val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
   createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 

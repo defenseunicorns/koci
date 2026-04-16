@@ -30,20 +30,20 @@ private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = appl
  *
  * All methods return fully constructed [Url] objects ready for use with HTTP clients.
  */
-class Router(registryURL: String) {
-  companion object {
+public class Router(registryURL: String) {
+  private companion object {
     private const val V2_PREFIX = "v2/"
   }
 
   private val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
 
   /** Returns the base URL for the registry API (v2 endpoint). */
-  fun base(): Url {
+  public fun base(): Url {
     return base.build()
   }
 
   /** Returns the URL for listing all repositories in the registry. */
-  fun catalog(): Url {
+  public fun catalog(): Url {
     return base.clone().appendPathSegments("_catalog").build()
   }
 
@@ -53,7 +53,7 @@ class Router(registryURL: String) {
    * @param n Number of repositories to return
    * @param lastRepo Optional repository name to resume listing from
    */
-  fun catalog(n: Int, lastRepo: String? = null): Url {
+  public fun catalog(n: Int, lastRepo: String? = null): Url {
     return base.clone().appendPathSegments("_catalog").paginate(n, lastRepo).build()
   }
 
@@ -62,7 +62,7 @@ class Router(registryURL: String) {
    *
    * @param repository Repository name
    */
-  fun tags(repository: String): Url {
+  public fun tags(repository: String): Url {
     return base.clone().appendPathSegments(repository, "tags", "list").build()
   }
 
@@ -72,7 +72,7 @@ class Router(registryURL: String) {
    * @param repository Repository name
    * @param ref Tag or digest reference
    */
-  fun manifest(repository: String, ref: String): Url {
+  public fun manifest(repository: String, ref: String): Url {
     return base.clone().appendPathSegments(repository, "manifests", ref).build()
   }
 
@@ -82,7 +82,7 @@ class Router(registryURL: String) {
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  fun manifest(repository: String, descriptor: Descriptor): Url {
+  public fun manifest(repository: String, descriptor: Descriptor): Url {
     return manifest(repository, descriptor.digest.toString())
   }
 
@@ -92,7 +92,7 @@ class Router(registryURL: String) {
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  fun blob(repository: String, descriptor: Descriptor): Url {
+  public fun blob(repository: String, descriptor: Descriptor): Url {
     return base
       .clone()
       .appendPathSegments(repository, "blobs", descriptor.digest.toString())
@@ -104,7 +104,7 @@ class Router(registryURL: String) {
    *
    * @param repository Repository name
    */
-  fun uploads(repository: String): Url {
+  public fun uploads(repository: String): Url {
     // the final "" allows for a trailing /
     return base.clone().appendPathSegments(repository, "blobs", "uploads", "").build()
   }
@@ -119,7 +119,7 @@ class Router(registryURL: String) {
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
    *   Distribution Spec: Mounting a Blob</a>
    */
-  fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
+  public fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
     return base
       .clone()
       .appendPathSegments(repository, "blobs", "uploads", "")
@@ -140,7 +140,7 @@ class Router(registryURL: String) {
    * @see <a href="https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.2">RFC 7231:
    *   Location</a>
    */
-  fun parseUploadLocation(locationHeader: String): Url {
+  public fun parseUploadLocation(locationHeader: String): Url {
     val uri = URI(locationHeader)
     if (uri.isAbsolute) {
       return URLBuilder().takeFrom(locationHeader).build()

@@ -25,7 +25,7 @@ import kotlinx.serialization.json.JsonElement
  *   Spec: Errors</a>
  */
 @Serializable
-data class FailureResponse(
+public data class FailureResponse(
   val errors: List<ActionableFailure>,
   @Transient
   // TODO: this really the best way to initialize?
@@ -42,7 +42,7 @@ data class FailureResponse(
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes">OCI
  *   Spec: Error Codes</a>
  */
-enum class ErrorCode {
+public enum class ErrorCode {
   UNKNOWN,
   BLOB_UNKNOWN,
   BLOB_UPLOAD_INVALID,
@@ -74,7 +74,7 @@ enum class ErrorCode {
  * @property detail Additional error-specific details (optional)
  */
 @Serializable
-data class ActionableFailure(
+public data class ActionableFailure(
   val code: ErrorCode = ErrorCode.UNKNOWN,
   val message: String,
   val detail: JsonElement? = null,
@@ -87,14 +87,14 @@ data class ActionableFailure(
  * when interacting with OCI registries, including content verification failures, API errors, and
  * authentication issues.
  */
-sealed class OCIException(message: String) : Exception(message) {
+public sealed class OCIException(message: String) : Exception(message) {
   /**
    * Thrown when a manifest with an unsupported media type is encountered.
    *
    * @param endpoint The URL endpoint that returned the unsupported manifest
    * @param mediaType The unsupported content type
    */
-  class ManifestNotSupported(endpoint: Url, mediaType: ContentType?) :
+  public class ManifestNotSupported(endpoint: Url, mediaType: ContentType?) :
     OCIException("Unsupported content type returned from $endpoint: $mediaType")
 
   /**
@@ -103,7 +103,7 @@ sealed class OCIException(message: String) : Exception(message) {
    * @param expected The descriptor with the expected size
    * @param actual The actual size of the content
    */
-  class SizeMismatch(val expected: Descriptor, val actual: Long) :
+  public class SizeMismatch(public val expected: Descriptor, public val actual: Long) :
     OCIException("Size mismatch: expected (${expected.size}) got ($actual)")
 
   /**
@@ -112,7 +112,7 @@ sealed class OCIException(message: String) : Exception(message) {
    * @param expected The descriptor with the expected digest
    * @param actual The actual digest of the content
    */
-  class DigestMismatch(val expected: Descriptor, val actual: Digest) :
+  public class DigestMismatch(public val expected: Descriptor, public val actual: Digest) :
     OCIException("Digest mismatch: expected (${expected.digest}) got ($actual)")
 
   /**
@@ -120,7 +120,7 @@ sealed class OCIException(message: String) : Exception(message) {
    *
    * @param index The index manifest that was searched
    */
-  class PlatformNotFound(val index: Index) :
+  public class PlatformNotFound(public val index: Index) :
     OCIException("in [${index.manifests.map { it.platform }.joinToString()}]")
 
   /**
@@ -129,7 +129,7 @@ sealed class OCIException(message: String) : Exception(message) {
    * @param expected The expected HTTP status code
    * @param response The actual HTTP response
    */
-  class UnexpectedStatus(val expected: HttpStatusCode, response: HttpResponse) :
+  public class UnexpectedStatus(public val expected: HttpStatusCode, response: HttpResponse) :
     OCIException("Expected ($expected) got (${response.status})")
 
   /**
@@ -137,7 +137,7 @@ sealed class OCIException(message: String) : Exception(message) {
    *
    * @param fr The parsed failure response from the registry
    */
-  class FromResponse(val fr: FailureResponse) :
+  public class FromResponse(public val fr: FailureResponse) :
     OCIException(fr.errors.joinToString { "${it.code}: ${it.message}" })
 
   /**
@@ -145,7 +145,7 @@ sealed class OCIException(message: String) : Exception(message) {
    *
    * @param response The HTTP response that should have contained a token
    */
-  class EmptyTokenReturned(val response: HttpResponse) :
+  public class EmptyTokenReturned(public val response: HttpResponse) :
     OCIException(
       "${response.call.request.method} ${response.call.request.url}: empty token returned"
     )
@@ -156,7 +156,7 @@ sealed class OCIException(message: String) : Exception(message) {
    * @param descriptor The descriptor of the content that could not be removed
    * @param reason The reason for the failure
    */
-  class UnableToRemove(val descriptor: Descriptor, val reason: String) :
+  public class UnableToRemove(public val descriptor: Descriptor, public val reason: String) :
     OCIException("Unable to remove $descriptor: $reason")
 
   /**
@@ -164,7 +164,7 @@ sealed class OCIException(message: String) : Exception(message) {
    *
    * @param ref The reference that was being pulled
    */
-  class IncompletePull(ref: Reference) :
+  public class IncompletePull(ref: Reference) :
     OCIException(
       "Pull operation completed, but was unsuccessful in validating $ref was pulled fully"
     )

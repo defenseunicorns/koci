@@ -171,30 +171,6 @@ public final class com/defenseunicorns/koci/api/Koci : java/lang/AutoCloseable {
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class com/defenseunicorns/koci/api/LayoutMarker {
-	public static final field Companion Lcom/defenseunicorns/koci/api/LayoutMarker$Companion;
-	public fun <init> (Ljava/lang/String;)V
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getImageLayoutVersion ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final synthetic class com/defenseunicorns/koci/api/LayoutMarker$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
-	public static final field INSTANCE Lcom/defenseunicorns/koci/api/LayoutMarker$$serializer;
-	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
-	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/defenseunicorns/koci/api/LayoutMarker;
-	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
-	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
-	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/defenseunicorns/koci/api/LayoutMarker;)V
-	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
-	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
-}
-
-public final class com/defenseunicorns/koci/api/LayoutMarker$Companion {
-	public final fun serializer ()Lkotlinx/serialization/KSerializer;
-}
-
 public final class com/defenseunicorns/koci/api/Manifest {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Manifest$Companion;
 	public fun <init> (Ljava/lang/Integer;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Descriptor;Ljava/util/List;Ljava/util/Map;)V

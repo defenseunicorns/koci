@@ -10,7 +10,6 @@ import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.LayoutMarker
 import com.defenseunicorns.koci.api.Manifest
 import com.defenseunicorns.koci.api.OCIException
 import com.defenseunicorns.koci.api.Platform

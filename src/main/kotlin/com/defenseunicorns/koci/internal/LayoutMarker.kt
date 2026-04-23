@@ -3,16 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci.api
+package com.defenseunicorns.koci.internal
 
 import kotlinx.serialization.Serializable
 
 /**
- * LayoutMarker is the structure in the "oci-layout" file ([IMAGE_LAYOUT_FILE]), found in the root
- * of an OCI Image Layout directory.
+ * LayoutMarker is the structure in the "oci-layout" file found in the root of an OCI Image Layout
+ * directory. Internal-only — written once by [Layout.init] to mark the on-disk format version.
  */
 @Serializable
-public class LayoutMarker(public val imageLayoutVersion: String) {
+internal class LayoutMarker(val imageLayoutVersion: String) {
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (other !is LayoutMarker) return false

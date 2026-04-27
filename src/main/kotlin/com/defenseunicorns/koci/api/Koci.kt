@@ -19,10 +19,13 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.headers
+import io.ktor.serialization.kotlinx.json.json
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
 import okio.FileSystem
 import okio.Path.Companion.toPath
@@ -87,6 +90,16 @@ public class Koci(
 
   internal val client: HttpClient =
     HttpClient(OkHttp) {
+      install(ContentNegotiation) {
+        json(
+          Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            coerceInputValues = true
+          }
+        )
+      }
+
       engine {
         config {
           connectionPool(

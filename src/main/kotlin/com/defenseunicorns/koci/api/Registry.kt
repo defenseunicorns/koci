@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 
 /**
  * A reference to a single OCI Distribution-spec registry.
@@ -99,8 +98,7 @@ internal constructor(
     val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
     if (!res.succeeded("registry.catalog")) return emptyList()
     return try {
-      val catalog = res.body<CatalogResponse>()
-      catalog.repositories.map { repo(it) }
+      res.body<CatalogResponse>().repositories.map { repo(it) }
     } catch (_: SerializationException) {
       // TODO: MOBILE-198 Log
       emptyList()

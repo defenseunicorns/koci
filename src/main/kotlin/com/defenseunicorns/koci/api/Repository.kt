@@ -57,8 +57,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromStream
 import okio.source
 
 /**
@@ -177,7 +175,6 @@ internal constructor(
     }
   }
 
-  @OptIn(ExperimentalSerializationApi::class)
   private suspend fun resolveIndex(
     endpoint: Url,
     platformResolver: ((Platform) -> Boolean)?,
@@ -384,21 +381,35 @@ internal constructor(
    * Returns null when [descriptor] is not an index or when the fetch/deserialization fails. The
    * specific failure cause is logged.
    */
-  @OptIn(ExperimentalSerializationApi::class)
   public suspend fun index(descriptor: Descriptor): Index? {
     if (descriptor.mediaType != INDEX_MEDIA_TYPE) return null
-    return try {
-      fetch(descriptor, json::decodeFromStream)
-    } catch (_: SerializationException) {
-      // TODO: MOBILE-198 - Log
-      null
-    }
+    return requestJson(descriptor, INDEX_MEDIA_TYPE, "repository.index")
+  }
+
+  /**
+   * Fetches and deserializes a manifest from the registry.
+   *
+   * Returns null when [descriptor] is not a manifest or when the fetch/deserialization fails.
+   */
+  public suspend fun manifest(descriptor: Descriptor): Manifest? {
+    if (descriptor.mediaType != MANIFEST_MEDIA_TYPE) return null
+    return requestJson(descriptor, MANIFEST_MEDIA_TYPE, "repository.manifest")
   }
 
   /**
    * Generic content fetcher with custom processing.
    *
-   * Returns null if [descriptor] has no digest (no URL can be built) or if the request fails.
+   * Routes to the manifest or blob endpoint based on [descriptor]'s media type, GETs the content,
+   * and hands the raw [InputStream] to [handler] for caller-defined processing. Returns null when
+   * [descriptor] has no digest (no URL can be built) or when the request fails.
+   *
+   * Escape hatch for consumers who need raw bytes — non-JSON blobs, custom hash-verifying stream
+   * processing, streaming directly to disk, etc. For JSON-typed manifest/index access, prefer
+   * [manifest] and [index].
+   *
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs">OCI
+   *   Distribution Spec: Pulling Blobs</a>
    */
   public suspend fun <T> fetch(descriptor: Descriptor, handler: (stream: InputStream) -> T): T? {
     val endpoint =
@@ -422,20 +433,31 @@ internal constructor(
   }
 
   /**
-   * Fetches and deserializes a manifest from the registry.
-   *
-   * Returns null when [descriptor] is not a manifest or when the fetch/deserialization fails.
+   * GETs a manifest/index by descriptor and decodes the JSON body via ktor's ContentNegotiation
+   * (configured permissively in [Koci]). Returns null on missing digest, non-success status, or
+   * malformed JSON.
    */
-  @OptIn(ExperimentalSerializationApi::class)
-  public suspend fun manifest(descriptor: Descriptor): Manifest? {
-    if (descriptor.mediaType != MANIFEST_MEDIA_TYPE) return null
-    return try {
-      fetch(descriptor, json::decodeFromStream)
-    } catch (_: SerializationException) {
-      // TODO: MOBILE-198 - Log
-      null
+  private suspend inline fun <reified T> requestJson(
+    descriptor: Descriptor,
+    mediaType: String,
+    operation: String,
+  ): T? {
+    val endpoint = router.manifest(name, descriptor) ?: return null
+    return client
+      .prepareGet(endpoint) {
+        accept(ContentType.parse(mediaType))
+        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+      }
+      .execute { res ->
+        if (!res.succeeded(operation)) return@execute null
+        try {
+          res.body<T>()
+        } catch (_: SerializationException) {
+          // TODO: MOBILE-198 - Log $operation deserialization failure
+          null
+        }
+      }
     }
-  }
 
   /**
    * Copies a blob to the layout with progress reporting.

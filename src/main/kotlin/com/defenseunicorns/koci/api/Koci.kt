@@ -115,8 +115,6 @@ public class Koci(
           return@handleResponseExceptionWithRequest
         }
       }
-
-      expectSuccess = true
     }
 
   /**

@@ -24,7 +24,6 @@ import com.defenseunicorns.koci.internal.succeeded
 import com.defenseunicorns.koci.internal.toUploadStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.accept
 import io.ktor.client.request.get
 import io.ktor.client.request.head
@@ -91,23 +90,25 @@ internal constructor(
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
 
   /**
-   * Checks if a blob or manifest exists in the repository.
+   * Checks if a blob or manifest exists in the registry.
    *
-   * Uses HEAD request to verify content existence without transferring data. Routes to appropriate
-   * endpoint based on media type (manifest or blob).
+   * Uses HEAD request to verify content existence without transferring data. Routes to the
+   * appropriate endpoint based on media type. Returns false for 404 and any other non-success
+   * status (404 is an expected "not found" outcome and is not logged); IOExceptions propagate from
+   * the underlying client.
    *
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#checking-if-content-exists-in-the-registry">OCI
    *   Distribution Spec: Checking if Content Exists</a>
    */
-  public suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+  public suspend fun exists(descriptor: Descriptor): Boolean {
     val endpoint =
       when (descriptor.mediaType) {
         MANIFEST_MEDIA_TYPE,
         INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
         else -> router.blob(name, descriptor)
-      }
-    client
+      } ?: return false
+    return client
       .head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
       .status
       .isSuccess()
@@ -502,111 +503,119 @@ internal constructor(
   /**
    * Starts or resumes a blob upload session.
    *
-   * Initiates new upload or resumes existing one if previously interrupted. Implements the initial
-   * phase of the blob upload process.
+   * Initiates a new upload (POST /uploads/) or refreshes the offset of an existing upload session
+   * (GET /uploads/<location>). Returns null on any unexpected status (logged). A 404 on the
+   * existing session means it expired server-side; the cached entry is dropped and a new session is
+   * started.
    *
-   * @param descriptor Blob descriptor to upload
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#starting-an-upload">OCI
    *   Distribution Spec: Starting an Upload</a>
    */
-  @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:ThrowsCount")
-  private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus {
-    return when (val prev = uploading[descriptor]) {
-      null -> {
-        val res =
-          client.post(router.uploads(name)) {
-            headers[HttpHeaders.ContentLength] = 0.toString()
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-          }
-        if (res.status != HttpStatusCode.Accepted) {
-          throw OCIException.UnexpectedStatus(HttpStatusCode.Accepted, res)
+  @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount")
+  private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus? {
+    val prev = uploading[descriptor]
+    if (prev == null) {
+      val res =
+        client.post(router.uploads(name)) {
+          headers[HttpHeaders.ContentLength] = 0.toString()
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         }
-        return res.headers.toUploadStatus()
+      if (res.status != HttpStatusCode.Accepted) {
+        // TODO: MOBILE-198 - Log unexpected status from upload init endpoint
+        return null
       }
+      val parsed = res.headers.toUploadStatus()
+      if (parsed == null) {
+        // TODO: MOBILE-198 - Log "upload init response missing Location/Range headers"
+      }
+      return parsed
+    }
 
-      else -> {
-        if (prev.offset > 0) {
-          try {
-            client
-              .get(router.parseUploadLocation(prev.location)) {
-                attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-              }
-              .also { res ->
-                if (res.status != HttpStatusCode.NoContent) {
-                  throw OCIException.UnexpectedStatus(HttpStatusCode.NoContent, res)
-                }
-
-                val curr = res.headers.toUploadStatus()
-                if (curr.offset != prev.offset) {
-                  prev.offset = curr.offset
-                }
-              }
-          } catch (e: OCIException.FromResponse) {
-            if (e.fr.status == HttpStatusCode.NotFound) {
-              uploading.remove(descriptor)
-              return startOrResumeUpload(descriptor)
-            }
-            throw e
-          } catch (e: ClientRequestException) {
-            if (e.response.status == HttpStatusCode.NotFound) {
-              uploading.remove(descriptor)
-              return startOrResumeUpload(descriptor)
-            }
-            throw e
-          }
+    if (prev.offset > 0) {
+      val res =
+        client.get(router.parseUploadLocation(prev.location)) {
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         }
-
-        prev
+      when (res.status) {
+        HttpStatusCode.NotFound -> {
+          uploading.remove(descriptor)
+          return startOrResumeUpload(descriptor)
+        }
+        HttpStatusCode.NoContent -> {
+          val curr = res.headers.toUploadStatus()
+          if (curr == null) {
+            // TODO: MOBILE-198 - Log "upload status response missing Location/Range headers"
+            return null
+          }
+          if (curr.offset != prev.offset) prev.offset = curr.offset
+        }
+        else -> {
+          // TODO: MOBILE-198 - Log unexpected status from upload status endpoint
+          return null
+        }
       }
     }
+
+    return prev
   }
 
   /**
-   * Pushes a blob to the repository with chunked and resumable uploads.
+   * Pushes a blob to the registry with chunked and resumable uploads.
    *
-   * Uses monolithic upload for small blobs and chunked uploads for large ones (>5MB). Supports
-   * resuming interrupted uploads from the last successful byte offset. Verifies content integrity
-   * through digest validation.
+   * Uses a monolithic upload for blobs that fit in a single chunk and a chunked
+   * PATCH-then-final-PUT flow for larger blobs. Resumable across interruptions via the [uploading]
+   * cache. Emits [PullEvent.Progress] while bytes flow and exactly one terminal event
+   * ([PullEvent.Completed] on success, [PullEvent.Failed] otherwise — specific causes logged
+   * internally).
+   *
+   * Reuses [PullEvent] today for shape consistency with [pull]; MOBILE-210 will introduce a unified
+   * progress type.
    *
    * @param stream Input stream containing blob data
    * @param expected Descriptor with expected size and digest
-   * @throws OCIException.DigestMismatch if computed digest doesn't match expected
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs">OCI
    *   Distribution Spec: Pushing Blobs</a>
    */
-  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  public fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
+  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:ReturnCount")
+  public fun push(stream: InputStream, expected: Descriptor): Flow<PullEvent> =
     channelFlow {
-        if (exists(expected).getOrDefault(false)) {
-          send(expected.size)
+        if (exists(expected)) {
+          send(PullEvent.Progress(PROGRESS_COMPLETE))
+          send(PullEvent.Completed)
           withContext(Dispatchers.IO) { stream.close() }
           return@channelFlow
         }
 
-        val start = startOrResumeUpload(expected).also { uploading[expected] = it }
-
+        val start = startOrResumeUpload(expected)
+        if (start == null) {
+          send(PullEvent.Failed)
+          return@channelFlow
+        }
+        uploading[expected] = start
         if (start.minChunkSize == 0L) {
-          start.minChunkSize = 5 * 1024 * 1024
+          start.minChunkSize = DEFAULT_PUSH_CHUNK_SIZE
         }
 
-        when (val bytesLeft = expected.size - start.offset) {
+        val total = expected.size
+
+        when (val bytesLeft = total - start.offset) {
           in 1..start.minChunkSize -> {
-            client
-              .put(start.location) {
+            val res =
+              client.put(start.location) {
                 url { encodedParameters.append("digest", expected.digest.toString()) }
-                headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
+                headers { append(HttpHeaders.ContentLength, total.toString()) }
                 setBody(stream)
                 attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
               }
-              .also { res ->
-                if (res.status != HttpStatusCode.Created) {
-                  throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
-                }
-
-                send(bytesLeft)
-              }
+            if (res.status != HttpStatusCode.Created) {
+              // TODO: MOBILE-198 - Log unexpected status from monolithic upload PUT
+              send(PullEvent.Failed)
+              return@channelFlow
+            }
+            send(PullEvent.Progress(PROGRESS_COMPLETE))
+            send(PullEvent.Completed)
           }
 
           else -> {
@@ -616,52 +625,60 @@ internal constructor(
 
               while (isActive) {
                 val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
-
-                if (chunk.isEmpty()) {
-                  break
-                }
+                if (chunk.isEmpty()) break
 
                 val endRange = offset + chunk.size - 1
-                val currentLocation =
-                  checkNotNull(uploading[expected]?.location) {
-                    "upload location unexpectedly null"
-                  }
+                val currentLocation = uploading[expected]?.location
+                if (currentLocation == null) {
+                  // TODO: MOBILE-198 - Log "upload session lost mid-push for $expected"
+                  send(PullEvent.Failed)
+                  return@channelFlow
+                }
 
-                client
-                  .patch(router.parseUploadLocation(currentLocation)) {
+                val res =
+                  client.patch(router.parseUploadLocation(currentLocation)) {
                     setBody(chunk)
                     headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
                     attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                   }
-                  .also { res ->
-                    if (res.status != HttpStatusCode.Accepted) {
-                      throw OCIException.UnexpectedStatus(HttpStatusCode.Accepted, res)
-                    }
+                if (res.status != HttpStatusCode.Accepted) {
+                  // TODO: MOBILE-198 - Log unexpected status from chunked upload PATCH
+                  send(PullEvent.Failed)
+                  return@channelFlow
+                }
 
-                    val status = res.headers.toUploadStatus()
-                    uploading[expected] = status
-                    offset = status.offset + 1
-
-                    send(offset)
-
-                    yield()
-                  }
+                val status = res.headers.toUploadStatus()
+                if (status == null) {
+                  // TODO: MOBILE-198 - Log "chunked upload PATCH missing Location/Range headers"
+                  send(PullEvent.Failed)
+                  return@channelFlow
+                }
+                uploading[expected] = status
+                offset = status.offset + 1
+                send(PullEvent.Progress(offset.toInt()))
+                yield()
               }
             }
 
-            val final =
-              checkNotNull(uploading[expected]?.location) { "upload location unexpectedly null" }
+            val finalLocation = uploading[expected]?.location
+            if (finalLocation == null) {
+              // TODO: MOBILE-198 - Log "upload session lost before commit for $expected"
+              send(PullEvent.Failed)
+              return@channelFlow
+            }
 
-            client
-              .put(final) {
+            val res =
+              client.put(finalLocation) {
                 url { encodedParameters.append("digest", expected.digest.toString()) }
                 attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
               }
-              .also { res ->
-                if (res.status != HttpStatusCode.Created) {
-                  throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
-                }
-              }
+            if (res.status != HttpStatusCode.Created) {
+              // TODO: MOBILE-198 - Log unexpected status from final upload PUT
+              send(PullEvent.Failed)
+              return@channelFlow
+            }
+            send(PullEvent.Progress(PROGRESS_COMPLETE))
+            send(PullEvent.Completed)
           }
         }
       }
@@ -701,5 +718,6 @@ internal constructor(
   private companion object {
     private const val PROGRESS_COMPLETE = 100
     private const val DEFAULT_LAYER_CONCURRENCY = 6
+    private const val DEFAULT_PUSH_CHUNK_SIZE = 5L * 1024 * 1024
   }
 }

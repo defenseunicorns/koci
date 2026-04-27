@@ -15,19 +15,18 @@ internal data class UploadStatus(val location: String, var offset: Long, var min
  * Extracts upload status from HTTP response headers for resumable uploads.
  *
  * Parses Location and Range headers to determine upload state and handles the optional
- * OCI-Chunk-Min-Length header.
+ * OCI-Chunk-Min-Length header. Returns null when the registry omits or malforms a required header —
+ * callers treat null as a failed upload step and surface it accordingly.
  *
- * @return [UploadStatus] with location URL, byte offset, and minimum chunk size
- * @throws IllegalStateException if required headers are missing or malformed
  * @see <a
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
  *   Distribution Spec: Resuming an Upload</a>
  */
-internal fun Headers.toUploadStatus(): UploadStatus {
-  val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
-  val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
+internal fun Headers.toUploadStatus(): UploadStatus? {
+  val location = this[HttpHeaders.Location] ?: return null
+  val range = this[HttpHeaders.Range] ?: return null
   val re = Regex("^([0-9]+)-([0-9]+)$")
-  val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) { "invalid Range header" }
+  val offset = re.matchEntire(range)?.groupValues?.last() ?: return null
 
   // this header MAY not exist
   val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L

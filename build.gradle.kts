@@ -16,6 +16,7 @@ plugins {
   alias(libs.plugins.detekt)
   alias(libs.plugins.maven.publish)
   alias(libs.plugins.spotless)
+  alias(libs.plugins.binary.validator)
 }
 
 buildscript { dependencies { classpath(libs.kotlinx.serialization.json) } }

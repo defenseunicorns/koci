@@ -10,6 +10,7 @@ kover = "0.9.1"
 detekt = "2.0.0-alpha.1"
 mavenPublish = "0.34.0"
 spotless = "8.0.0"
+binary-validator = "0.18.1"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }
@@ -28,3 +29,4 @@ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+binary-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binary-validator" }

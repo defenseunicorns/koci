@@ -12,7 +12,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 
 /**
  * Single-line helper for any HTTP call that should branch on "did this succeed?".
@@ -37,20 +36,15 @@ internal suspend fun HttpResponse.succeeded(operation: String): Boolean {
 }
 
 /**
- * Permissive parser used only for failure-body decoding. Unknown enum values (e.g. error codes the
- * registry adds that aren't in our [ErrorCode] enum yet) fall back to [ErrorCode.UNKNOWN] via
- * [Json.coerceInputValues] + the default on [ActionableFailure.code]. Unknown JSON keys are
- * ignored so a registry adding new fields doesn't break log enrichment.
+ * Decodes the response body as an OCI spec [FailureResponse] using ktor's `ContentNegotiation`
+ * (configured in [com.defenseunicorns.koci.api.Koci] with `ignoreUnknownKeys` / `coerceInputValues`
+ * so unknown enum codes fall back to [ErrorCode.UNKNOWN]). Returns null when the response is not
+ * JSON or when the body is unparseable.
  */
-private val FailureJson = Json {
-  ignoreUnknownKeys = true
-  coerceInputValues = true
-}
-
 private suspend fun HttpResponse.parseFailureResponse(): FailureResponse? {
   if (contentType() != ContentType.Application.Json) return null
   return try {
-    FailureJson.decodeFromString<FailureResponse>(body<String>())
+    body<FailureResponse>()
   } catch (_: NoTransformationFoundException) {
     null
   } catch (_: SerializationException) {

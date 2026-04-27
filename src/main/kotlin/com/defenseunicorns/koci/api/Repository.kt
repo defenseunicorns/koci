@@ -10,24 +10,38 @@ import com.defenseunicorns.koci.api.config.BackOffPolicy
 import com.defenseunicorns.koci.api.config.PullConfig
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.internal.ACTION_PULL
+import com.defenseunicorns.koci.internal.ACTION_PUSH
 import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.OciConstants.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.internal.OciConstants.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.TagsResponse
+import com.defenseunicorns.koci.internal.UploadStatus
 import com.defenseunicorns.koci.internal.appendScopes
 import com.defenseunicorns.koci.internal.scopeRepository
+import com.defenseunicorns.koci.internal.toUploadStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.accept
 import io.ktor.client.request.get
 import io.ktor.client.request.head
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
 import io.ktor.client.request.prepareGet
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.headers
+import io.ktor.http.isSuccess
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -37,6 +51,9 @@ import kotlinx.coroutines.flow.flattenMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -65,6 +82,32 @@ internal constructor(
 ) {
 
   @Volatile private var supportsRange: Boolean? = null
+
+  /** Tracks in-progress blob uploads for resumable operations. */
+  private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
+
+  /**
+   * Checks if a blob or manifest exists in the repository.
+   *
+   * Uses HEAD request to verify content existence without transferring data. Routes to appropriate
+   * endpoint based on media type (manifest or blob).
+   *
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#checking-if-content-exists-in-the-registry">OCI
+   *   Distribution Spec: Checking if Content Exists</a>
+   */
+  public suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
+    val endpoint =
+      when (descriptor.mediaType) {
+        MANIFEST_MEDIA_TYPE,
+        INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
+        else -> router.blob(name, descriptor)
+      }
+    client
+      .head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
+      .status
+      .isSuccess()
+  }
 
   /**
    * Lists all tags in the repository. Retrieves available tags for content discovery.
@@ -406,6 +449,174 @@ internal constructor(
         }
       }
   }
+
+  /**
+   * Starts or resumes a blob upload session.
+   *
+   * Initiates new upload or resumes existing one if previously interrupted. Implements the initial
+   * phase of the blob upload process.
+   *
+   * @param descriptor Blob descriptor to upload
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#starting-an-upload">OCI
+   *   Distribution Spec: Starting an Upload</a>
+   */
+  @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount", "detekt:ThrowsCount")
+  private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus {
+    return when (val prev = uploading[descriptor]) {
+      null -> {
+        val res =
+          client.post(router.uploads(name)) {
+            headers[HttpHeaders.ContentLength] = 0.toString()
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+          }
+        if (res.status != HttpStatusCode.Accepted) {
+          throw OCIException.UnexpectedStatus(HttpStatusCode.Accepted, res)
+        }
+        return res.headers.toUploadStatus()
+      }
+
+      else -> {
+        if (prev.offset > 0) {
+          try {
+            client
+              .get(router.parseUploadLocation(prev.location)) {
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+              }
+              .also { res ->
+                if (res.status != HttpStatusCode.NoContent) {
+                  throw OCIException.UnexpectedStatus(HttpStatusCode.NoContent, res)
+                }
+
+                val curr = res.headers.toUploadStatus()
+                if (curr.offset != prev.offset) {
+                  prev.offset = curr.offset
+                }
+              }
+          } catch (e: OCIException.FromResponse) {
+            if (e.fr.status == HttpStatusCode.NotFound) {
+              uploading.remove(descriptor)
+              return startOrResumeUpload(descriptor)
+            }
+            throw e
+          } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.NotFound) {
+              uploading.remove(descriptor)
+              return startOrResumeUpload(descriptor)
+            }
+            throw e
+          }
+        }
+
+        prev
+      }
+    }
+  }
+
+  /**
+   * Pushes a blob to the repository with chunked and resumable uploads.
+   *
+   * Uses monolithic upload for small blobs and chunked uploads for large ones (>5MB). Supports
+   * resuming interrupted uploads from the last successful byte offset. Verifies content integrity
+   * through digest validation.
+   *
+   * @param stream Input stream containing blob data
+   * @param expected Descriptor with expected size and digest
+   * @throws OCIException.DigestMismatch if computed digest doesn't match expected
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs">OCI
+   *   Distribution Spec: Pushing Blobs</a>
+   */
+  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
+  public fun push(stream: InputStream, expected: Descriptor): Flow<Long> =
+    channelFlow {
+        if (exists(expected).getOrDefault(false)) {
+          send(expected.size)
+          withContext(Dispatchers.IO) { stream.close() }
+          return@channelFlow
+        }
+
+        val start = startOrResumeUpload(expected).also { uploading[expected] = it }
+
+        if (start.minChunkSize == 0L) {
+          start.minChunkSize = 5 * 1024 * 1024
+        }
+
+        when (val bytesLeft = expected.size - start.offset) {
+          in 1..start.minChunkSize -> {
+            client
+              .put(start.location) {
+                url { encodedParameters.append("digest", expected.digest.toString()) }
+                headers { append(HttpHeaders.ContentLength, expected.size.toString()) }
+                setBody(stream)
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+              }
+              .also { res ->
+                if (res.status != HttpStatusCode.Created) {
+                  throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
+                }
+
+                send(bytesLeft)
+              }
+          }
+
+          else -> {
+            var offset = start.offset
+            stream.use { s ->
+              if (offset > 0) withContext(Dispatchers.IO) { s.skipNBytes(offset + 1) }
+
+              while (isActive) {
+                val chunk = withContext(Dispatchers.IO) { s.readNBytes(start.minChunkSize.toInt()) }
+
+                if (chunk.isEmpty()) {
+                  break
+                }
+
+                val endRange = offset + chunk.size - 1
+                val currentLocation =
+                  checkNotNull(uploading[expected]?.location) {
+                    "upload location unexpectedly null"
+                  }
+
+                client
+                  .patch(router.parseUploadLocation(currentLocation)) {
+                    setBody(chunk)
+                    headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
+                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+                  }
+                  .also { res ->
+                    if (res.status != HttpStatusCode.Accepted) {
+                      throw OCIException.UnexpectedStatus(HttpStatusCode.Accepted, res)
+                    }
+
+                    val status = res.headers.toUploadStatus()
+                    uploading[expected] = status
+                    offset = status.offset + 1
+
+                    send(offset)
+
+                    yield()
+                  }
+              }
+            }
+
+            val final =
+              checkNotNull(uploading[expected]?.location) { "upload location unexpectedly null" }
+
+            client
+              .put(final) {
+                url { encodedParameters.append("digest", expected.digest.toString()) }
+                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+              }
+              .also { res ->
+                if (res.status != HttpStatusCode.Created) {
+                  throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
+                }
+              }
+          }
+        }
+      }
+      .onCompletion { cause -> if (cause == null) uploading.remove(expected) }
 
   /**
    * This endpoint may also support RFC7233 compliant range requests. Support can be detected by

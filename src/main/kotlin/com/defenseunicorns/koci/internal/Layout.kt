@@ -11,7 +11,6 @@ import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Koci
 import com.defenseunicorns.koci.api.Manifest
-import com.defenseunicorns.koci.api.OCIException
 import com.defenseunicorns.koci.api.Platform
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.RegisteredAlgorithm
@@ -93,28 +92,26 @@ internal class Layout(
   }
 
   /**
-   * Checks if a blob exists in the layout and verifies its integrity.
+   * Classifies whether [descriptor] is already present on disk and, if so, whether it verifies.
    *
-   * Performs size and digest verification to ensure the content matches the descriptor's metadata.
-   *
-   * @param descriptor The descriptor of the blob to check
-   * @throws OCIException.SizeMismatch if the blob's size doesn't match the descriptor
-   * @throws OCIException.DigestMismatch if the blob's digest doesn't match the descriptor
+   * The returned [ExistenceCheck] drives the pull path's resume-vs-discard logic.
    */
-  suspend fun exists(descriptor: Descriptor): Result<Boolean> = runCatching {
-    val blobPath = blob(descriptor)
+  suspend fun exists(descriptor: Descriptor): ExistenceCheck {
+    val blobPath = blob(descriptor) ?: return ExistenceCheck.Absent
 
     val exists = withContext(dispatcher) { fileSystem.exists(blobPath) }
-    if (!exists) return@runCatching false
+    if (!exists) return ExistenceCheck.Absent
+
+    val expectedDigest = descriptor.digest ?: return ExistenceCheck.Absent
 
     val size = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
     if (size != descriptor.size) {
-      throw OCIException.SizeMismatch(descriptor, size)
+      return ExistenceCheck.PartialBySize(size)
     }
 
     val digest =
       withContext(dispatcher) {
-        val md = descriptor.digest.algorithm.hasher()
+        val md = expectedDigest.algorithm.hasher()
         fileSystem.source(blobPath).buffer().use { source ->
           val buf = Buffer()
           while (true) {
@@ -123,86 +120,91 @@ internal class Layout(
             md.update(buf.readByteArray())
           }
         }
-        Digest(descriptor.digest.algorithm, md.digest())
+        Digest(expectedDigest.algorithm, md.digest())
       }
 
-    if (digest != descriptor.digest) {
-      throw OCIException.DigestMismatch(descriptor, digest)
+    if (digest != expectedDigest) {
+      return ExistenceCheck.Corrupted(digest)
     }
 
-    true
+    return ExistenceCheck.Present
   }
 
   /**
    * Pushes content to the layout from an Okio [Source].
    *
-   * Writes the content to disk, verifying its size and digest match the descriptor. Supports
-   * resumable uploads by calculating the digest of existing content plus new content.
-   *
-   * @param descriptor The descriptor of the content being pushed
-   * @param source The source containing the content
-   * @return Flow emitting the number of bytes written in each chunk
-   * @throws OCIException.SizeMismatch if the final size doesn't match the descriptor
-   * @throws OCIException.DigestMismatch if the final digest doesn't match the descriptor
+   * Writes the content to disk, verifying its size and digest match the descriptor. Emits
+   * [PushEvent.Progress] per chunk; the terminal event is either [PushEvent.Completed],
+   * [PushEvent.SizeMismatch], or [PushEvent.DigestMismatch]. If [descriptor] has no digest the Flow
+   * completes silently without emitting.
    */
-  @Suppress("detekt:CyclomaticComplexMethod")
-  fun push(descriptor: Descriptor, source: Source): Flow<Int> = channelFlow {
+  @Suppress("detekt:CyclomaticComplexMethod", "detekt:LongMethod")
+  fun push(descriptor: Descriptor, source: Source): Flow<PushEvent> = channelFlow {
+    val expectedDigest = descriptor.digest ?: return@channelFlow
+    val blobPath = blob(descriptor) ?: return@channelFlow
+
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
     refCount.incrementAndGet()
 
     try {
       mu.withLock {
-        val ok = exists(descriptor).getOrDefault(false)
+        val state = exists(descriptor)
 
-        if (!ok) {
-          val blobPath = blob(descriptor)
-          val md = descriptor.digest.algorithm.hasher()
+        if (state is ExistenceCheck.Present) {
+          send(PushEvent.Completed)
+          return@withLock
+        }
 
-          // If resuming a download, start calculating the hash from the data on disk.
-          // It is up to the caller to properly resume the source at the proper location,
-          // otherwise a DigestMismatch will occur.
-          val blobExists = withContext(dispatcher) { fileSystem.exists(blobPath) }
-          if (blobExists) {
-            withContext(dispatcher) {
-              fileSystem.source(blobPath).buffer().use { existing ->
-                val buf = Buffer()
-                while (true) {
-                  val read = existing.read(buf, HASH_BUFFER_SIZE)
-                  if (read == -1L) break
-                  md.update(buf.readByteArray())
-                }
-              }
-            }
-          }
+        val md = expectedDigest.algorithm.hasher()
 
+        // If resuming a download, start calculating the hash from the data on disk.
+        // It is up to the caller to properly resume the source at the proper location,
+        // otherwise a DigestMismatch will occur.
+        val blobExists = withContext(dispatcher) { fileSystem.exists(blobPath) }
+        if (blobExists) {
           withContext(dispatcher) {
-            fileSystem.appendingSink(blobPath).buffer().use { sink ->
+            fileSystem.source(blobPath).buffer().use { existing ->
               val buf = Buffer()
               while (true) {
-                val bytesRead = source.read(buf, WRITE_BUFFER_SIZE)
-                if (bytesRead == -1L) break
-                val data = buf.readByteArray()
-                md.update(data)
-                sink.write(data)
-                sink.flush()
-
-                send(data.size)
-                yield()
+                val read = existing.read(buf, HASH_BUFFER_SIZE)
+                if (read == -1L) break
+                md.update(buf.readByteArray())
               }
             }
           }
+        }
 
-          val length = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
-          if (length != descriptor.size) {
-            throw OCIException.SizeMismatch(descriptor, length)
-          }
+        withContext(dispatcher) {
+          fileSystem.appendingSink(blobPath).buffer().use { sink ->
+            val buf = Buffer()
+            while (true) {
+              val bytesRead = source.read(buf, WRITE_BUFFER_SIZE)
+              if (bytesRead == -1L) break
+              val data = buf.readByteArray()
+              md.update(data)
+              sink.write(data)
+              sink.flush()
 
-          val digest = Digest(descriptor.digest.algorithm, md.digest())
-          if (digest != descriptor.digest) {
-            withContext(dispatcher) { fileSystem.delete(blobPath) }
-            throw OCIException.DigestMismatch(descriptor, digest)
+              send(PushEvent.Progress(data.size))
+              yield()
+            }
           }
         }
+
+        val length = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
+        if (length != descriptor.size) {
+          send(PushEvent.SizeMismatch(descriptor, length))
+          return@withLock
+        }
+
+        val digest = Digest(expectedDigest.algorithm, md.digest())
+        if (digest != expectedDigest) {
+          withContext(dispatcher) { fileSystem.delete(blobPath) }
+          send(PushEvent.DigestMismatch(descriptor, digest))
+          return@withLock
+        }
+
+        send(PushEvent.Completed)
       }
     } finally {
       val pair = pushing[descriptor]
@@ -216,35 +218,38 @@ internal class Layout(
   }
 
   /**
-   * Retrieves content from the layout as an Okio [Source].
+   * Retrieves content from the layout as an Okio [Source], or null if [descriptor] has no digest.
    *
    * The caller is responsible for closing the returned source.
    *
    * @param descriptor The descriptor of the content to fetch
    */
-  suspend fun fetch(descriptor: Descriptor): Source =
-    withContext(dispatcher) { fileSystem.source(blob(descriptor)) }
+  suspend fun fetch(descriptor: Descriptor): Source? {
+    val blobPath = blob(descriptor) ?: return null
+    return withContext(dispatcher) { fileSystem.source(blobPath) }
+  }
 
   /**
    * Resolves a descriptor from the layout's index using a predicate function.
    *
-   * @param predicate Function that returns true for the desired descriptor
+   * Returns null if no descriptor matches.
    */
-  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Result<Descriptor> =
-    runCatching {
-      index.manifests.first { predicate(it) }
+  suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Descriptor? {
+    for (manifest in index.manifests) {
+      if (predicate(manifest)) return manifest
     }
+    return null
+  }
 
   /**
    * Resolves a reference to a descriptor, optionally filtering by platform.
    *
-   * @param reference The reference to resolve
-   * @param platformResolver Optional function to select a specific platform
+   * Returns null if no matching descriptor is found.
    */
   suspend fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
-  ): Result<Descriptor> = resolve { desc ->
+  ): Descriptor? = resolve { desc ->
     val refMatches = desc.annotations?.annotationRefName == reference.toString()
     val platformMatches =
       if (platformResolver != null && desc.platform != null) {
@@ -259,17 +264,11 @@ internal class Layout(
    * Tags a descriptor with a reference.
    *
    * Associates a reference with a descriptor in the layout's index. If the reference already
-   * exists, it will be reassigned to the new descriptor.
-   *
-   * @param descriptor The descriptor to tag
-   * @param reference The reference to associate with the descriptor
+   * exists, it will be reassigned to the new descriptor. Internal contract: callers pass
+   * descriptors fetched from a registry and references built from trusted components, so no
+   * validation happens here.
    */
-  suspend fun tag(descriptor: Descriptor, reference: Reference) = runCatching {
-    require(descriptor.mediaType.isNotEmpty())
-    require(descriptor.mediaType == MANIFEST_MEDIA_TYPE || descriptor.mediaType == INDEX_MEDIA_TYPE)
-    require(descriptor.size > 0)
-    reference.validate()
-
+  suspend fun tag(descriptor: Descriptor, reference: Reference) {
     val copy =
       descriptor.copy(
         annotations =
@@ -293,39 +292,34 @@ internal class Layout(
     withContext(dispatcher) { syncIndex() }
   }
 
-  /**
-   * Removes a reference and its associated content from the layout.
-   *
-   * @param reference The reference to remove
-   */
-  suspend fun remove(reference: Reference): Result<Boolean> =
-    resolve(reference).map { descriptor -> remove(descriptor).getOrThrow() }
+  /** Removes a reference and its associated content from the layout. */
+  suspend fun remove(reference: Reference): RemoveOutcome {
+    val descriptor = resolve(reference) ?: return RemoveOutcome.Absent
+    return remove(descriptor)
+  }
 
   /**
    * Removes a descriptor and its associated content from the layout.
    *
    * For manifests and indexes, recursively removes all referenced content that isn't used by other
-   * artifacts. Updates the index to remove references to the removed content.
-   *
-   * @param descriptor The descriptor to remove
-   * @throws OCIException.UnableToRemove if the content is referenced by another artifact
+   * artifacts. Returns [RemoveOutcome.StillReferenced] if the content is referenced elsewhere.
    */
-  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod")
-  suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
+  @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:ReturnCount")
+  suspend fun remove(descriptor: Descriptor): RemoveOutcome {
+    val blobPath = blob(descriptor) ?: return RemoveOutcome.Absent
+
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
     refCount.incrementAndGet()
 
     try {
       mu.withLock {
-        val blobPath = blob(descriptor)
         val exists = withContext(dispatcher) { fileSystem.exists(blobPath) }
-
-        if (!exists) return@runCatching true
+        if (!exists) return RemoveOutcome.Absent
 
         return when (descriptor.mediaType) {
           INDEX_MEDIA_TYPE -> {
             val indexToRemove: Index =
-              fileSystem.source(blob(descriptor)).buffer().use { source ->
+              fileSystem.source(blobPath).buffer().use { source ->
                 json.decodeFromString(source.readUtf8())
               }
 
@@ -333,46 +327,45 @@ internal class Layout(
             withContext(dispatcher) { syncIndex() }
 
             for (manifestDesc in indexToRemove.manifests) {
-              remove(manifestDesc).getOrThrow()
+              val nested = remove(manifestDesc)
+              if (nested is RemoveOutcome.StillReferenced) return nested
             }
 
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            Result.success(true)
+            RemoveOutcome.Removed
           }
 
           MANIFEST_MEDIA_TYPE -> {
-            val manifests = index.manifests.filter { it.digest != descriptor.digest }
+            val otherManifests = index.manifests.filter { it.digest != descriptor.digest }
 
             index.manifests.removeAll { it.digest == descriptor.digest }
             withContext(dispatcher) { syncIndex() }
 
-            val allOtherLayers = expand(manifests)
+            val allOtherLayers = expand(otherManifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              throw OCIException.UnableToRemove(
-                descriptor,
-                "manifest is referenced by another artifact",
-              )
+              return RemoveOutcome.StillReferenced(descriptor)
             }
 
             val manifest: Manifest =
-              fileSystem.source(blob(descriptor)).buffer().use { source ->
+              fileSystem.source(blobPath).buffer().use { source ->
                 json.decodeFromString(source.readUtf8())
               }
 
             (manifest.layers + manifest.config).forEach { layer ->
               if (!allOtherLayers.contains(layer)) {
-                remove(layer).getOrThrow()
+                val nested = remove(layer)
+                if (nested is RemoveOutcome.StillReferenced) return nested
               }
             }
 
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            Result.success(true)
+            RemoveOutcome.Removed
           }
 
           else -> {
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            Result.success(true)
+            RemoveOutcome.Removed
           }
         }
       }
@@ -398,26 +391,27 @@ internal class Layout(
    * Prunes all layers on disk that are not referenced by any manifest or index in the layout's
    * index.
    *
-   * This is a "stop the world" style function and MUST NOT run during any other operations. It
-   * should be used to clean up zombie layers that might be left on disk if a remove operation is
-   * interrupted.
+   * Must not run during any other layout operations. If called while pushes are in flight, returns
+   * an empty list rather than proceeding with a racy scan — caller can retry once pushes complete.
    */
-  suspend fun gc(): Result<List<Digest>> = runCatching {
-    check(pushing.isEmpty()) { "there are downloads in progress" }
+  suspend fun gc(): List<Digest> {
+    if (pushing.isNotEmpty()) return emptyList()
 
-    val referencedDigests = expand(index.manifests).map { it.digest }.toSet()
+    val referencedDigests = expand(index.manifests).mapNotNull { it.digest }.toSet()
     val blobsOnDisk = mutableListOf<Digest>()
 
     withContext(dispatcher) {
       for (algo in RegisteredAlgorithm.entries) {
         val algoDir = root / IMAGE_BLOBS_DIR / algo.toString()
         if (fileSystem.exists(algoDir)) {
-          fileSystem.list(algoDir).forEach { path -> blobsOnDisk.add(Digest(algo, path.name)) }
+          fileSystem.list(algoDir).forEach { path ->
+            Digest.parse("$algo:${path.name}")?.let { blobsOnDisk.add(it) }
+          }
         }
       }
     }
 
-    withContext(dispatcher) {
+    return withContext(dispatcher) {
       blobsOnDisk
         .filter { it !in referencedDigests }
         .mapNotNull { zombieDigest ->
@@ -443,11 +437,12 @@ internal class Layout(
   private suspend fun expand(descriptors: List<Descriptor>): Set<Descriptor> {
     return descriptors
       .flatMap { desc ->
+        val path = blob(desc)
         when (desc.mediaType) {
           INDEX_MEDIA_TYPE -> {
-            if (withContext(dispatcher) { fileSystem.exists(blob(desc)) }) {
+            if (path != null && withContext(dispatcher) { fileSystem.exists(path) }) {
               val i: Index =
-                fileSystem.source(blob(desc)).buffer().use { source ->
+                fileSystem.source(path).buffer().use { source ->
                   json.decodeFromString(source.readUtf8())
                 }
               listOf(desc) + i.manifests + expand(i.manifests)
@@ -457,9 +452,9 @@ internal class Layout(
           }
 
           MANIFEST_MEDIA_TYPE -> {
-            if (withContext(dispatcher) { fileSystem.exists(blob(desc)) }) {
+            if (path != null && withContext(dispatcher) { fileSystem.exists(path) }) {
               val m: Manifest =
-                fileSystem.source(blob(desc)).buffer().use { source ->
+                fileSystem.source(path).buffer().use { source ->
                   json.decodeFromString(source.readUtf8())
                 }
               listOf(desc, m.config) + expand(m.layers)
@@ -474,8 +469,10 @@ internal class Layout(
       .toSet()
   }
 
-  private fun blob(descriptor: Descriptor): Path =
-    root / IMAGE_BLOBS_DIR / descriptor.digest.algorithm.toString() / descriptor.digest.hex
+  private fun blob(descriptor: Descriptor): Path? {
+    val digest = descriptor.digest ?: return null
+    return root / IMAGE_BLOBS_DIR / digest.algorithm.toString() / digest.hex
+  }
 
   companion object {
     private const val HASH_BUFFER_SIZE = 32L * 1024

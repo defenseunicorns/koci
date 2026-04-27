@@ -72,26 +72,25 @@ internal class Router(registryURL: String) {
   }
 
   /**
-   * Returns the URL for accessing a manifest by descriptor.
+   * Returns the URL for accessing a manifest by descriptor, or null if [descriptor] has no digest.
    *
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  fun manifest(repository: String, descriptor: Descriptor): Url {
-    return manifest(repository, descriptor.digest.toString())
+  fun manifest(repository: String, descriptor: Descriptor): Url? {
+    val digest = descriptor.digest ?: return null
+    return manifest(repository, digest.toString())
   }
 
   /**
-   * Returns the URL for accessing a blob by descriptor.
+   * Returns the URL for accessing a blob by descriptor, or null if [descriptor] has no digest.
    *
    * @param repository Repository name
    * @param descriptor Content descriptor containing the digest
    */
-  fun blob(repository: String, descriptor: Descriptor): Url {
-    return base
-      .clone()
-      .appendPathSegments(repository, "blobs", descriptor.digest.toString())
-      .build()
+  fun blob(repository: String, descriptor: Descriptor): Url? {
+    val digest = descriptor.digest ?: return null
+    return base.clone().appendPathSegments(repository, "blobs", digest.toString()).build()
   }
 
   /**
@@ -114,12 +113,13 @@ internal class Router(registryURL: String) {
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
    *   Distribution Spec: Mounting a Blob</a>
    */
-  fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url {
+  fun blobMount(repository: String, sourceRepository: String, descriptor: Descriptor): Url? {
+    val digest = descriptor.digest ?: return null
     return base
       .clone()
       .appendPathSegments(repository, "blobs", "uploads", "")
       .apply {
-        parameters.append("mount", descriptor.digest.toString())
+        parameters.append("mount", digest.toString())
         parameters.append("from", sourceRepository)
       }
       .build()

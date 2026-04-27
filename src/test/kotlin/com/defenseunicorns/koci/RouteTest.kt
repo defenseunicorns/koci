@@ -13,11 +13,14 @@ import com.defenseunicorns.koci.internal.Router
 import io.ktor.http.URLBuilder
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.fail
 
 @Suppress("detekt:MaxLineLength")
 class RouteTest {
   private val base = URLBuilder(host = "127.0.0.1", port = 5000).build().toString()
   private val router = Router(base)
+
+  private fun digest(s: String): Digest = Digest.parse(s) ?: fail("bad digest fixture: $s")
 
   @Test
   fun `root has v2 API prefix`() {
@@ -63,19 +66,16 @@ class RouteTest {
         .toString(),
     )
 
+    val desc =
+      Descriptor(
+        mediaType = MANIFEST_MEDIA_TYPE.toString(),
+        digest = digest("sha256:12120425f07de11a1b899e418d4b0ea174c8d4d572d45bdb640f93bc7ca06a3d"),
+        size = 0, // dummy size
+      )
+    val url = router.manifest("library/registry", desc) ?: fail("router returned null")
     assertEquals(
       "http://127.0.0.1:5000/v2/library/registry/manifests/sha256:12120425f07de11a1b899e418d4b0ea174c8d4d572d45bdb640f93bc7ca06a3d",
-      router
-        .manifest(
-          "library/registry",
-          Descriptor(
-            mediaType = MANIFEST_MEDIA_TYPE.toString(),
-            digest =
-              Digest("sha256:12120425f07de11a1b899e418d4b0ea174c8d4d572d45bdb640f93bc7ca06a3d"),
-            size = 0, // dummy size
-          ),
-        )
-        .toString(),
+      url.toString(),
     )
   }
 
@@ -84,15 +84,13 @@ class RouteTest {
     val desc =
       Descriptor(
         mediaType = "application/vnd.zarf.layer.v1.blob",
-        digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
+        digest = digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
         size = 911,
         annotations = mutableMapOf(ANNOTATION_TITLE to "zarf.yaml"),
       )
 
-    assertEquals(
-      "http://127.0.0.1:5000/v2/dos-games/blobs/${desc.digest}",
-      router.blob("dos-games", desc).toString(),
-    )
+    val url = router.blob("dos-games", desc) ?: fail("router returned null")
+    assertEquals("http://127.0.0.1:5000/v2/dos-games/blobs/${desc.digest}", url.toString())
   }
 
   @Test
@@ -115,7 +113,7 @@ class RouteTest {
     val desc =
       Descriptor(
         mediaType = "application/vnd.oci.image.layer.v1.tar+gzip",
-        digest = Digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
+        digest = digest("sha256:a658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149"),
         size = 1024,
         annotations = mutableMapOf(),
       )
@@ -126,11 +124,11 @@ class RouteTest {
     val expectedUrl =
       "http://127.0.0.1:5000/v2/target-repo/blobs/uploads/?mount=sha256%3Aa658f2ea6b48ffbd284dc14d82f412a89f30851d0fb7ad01c86f245f0a5ab149&from=source-repo"
 
-    val actualUrl = router.blobMount(targetRepo, sourceRepo, desc).toString()
+    val actualUrl = router.blobMount(targetRepo, sourceRepo, desc) ?: fail("router returned null")
 
     assertEquals(
       expectedUrl,
-      actualUrl,
+      actualUrl.toString(),
       "The URL for blob mounting should be constructed correctly",
     )
   }

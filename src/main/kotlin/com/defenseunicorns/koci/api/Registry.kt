@@ -14,6 +14,7 @@ import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.internal.appendScopes
+import com.defenseunicorns.koci.internal.failureResponseOrNull
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -86,18 +87,26 @@ internal constructor(
   /**
    * Lists all repositories in the registry.
    *
-   * Performs a GET request to the /v2/_catalog endpoint as specified in the OCI spec. Returns a
-   * single page of repository names.
+   * On any failure (HTTP error, parse error, OCI spec error response) returns [emptyList];
+   * IOExceptions propagate from the underlying client.
    *
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Repositories</a>
    */
-  public suspend fun catalog(): Result<List<Repository>> = runCatching {
+  public suspend fun catalog(): List<Repository> {
     val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-    val catalog = res.body<CatalogResponse>()
-
-    catalog.repositories.map { repo(it) }
+    if (res.failureResponseOrNull() != null) {
+      // TODO: Log
+      return emptyList()
+    }
+    return try {
+      val catalog = res.body<CatalogResponse>()
+      catalog.repositories.map { repo(it) }
+    } catch (_: kotlinx.serialization.SerializationException) {
+      // TODO: Log
+      emptyList()
+    }
   }
 
   /**
@@ -161,7 +170,7 @@ internal constructor(
   public fun list(n: Int = MAX_REPOS): Flow<List<String>> =
     catalog(n)
       .flatMapMerge(concurrency = pull.concurrency) { repositories -> repositories.asFlow() }
-      .map { repo -> repo.tags().getOrThrow() }
+      .map { repo -> repo.tags() }
 
   override fun toString(): String = "Registry(url=$url)"
 

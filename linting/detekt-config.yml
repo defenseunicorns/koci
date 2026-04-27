@@ -230,3 +230,6 @@ libraries:
   LibraryEntitiesShouldNotBePublic:
     active: true
     excludes: ["**/api/**"]
+  ForbiddenPublicDataClass:
+    active: true
+    excludes: ["**/api/**"]

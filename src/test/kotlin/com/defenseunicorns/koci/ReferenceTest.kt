@@ -9,10 +9,11 @@ import com.defenseunicorns.koci.api.Reference
 import io.ktor.http.Url
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.assertDoesNotThrow
+import kotlin.test.fail
 
 class ReferenceTest {
   @Test
@@ -52,7 +53,7 @@ class ReferenceTest {
       )
 
     for ((tc, want) in testCases) {
-      val got = Reference.parse(tc).getOrThrow()
+      val got = Reference.parse(tc) ?: fail("expected $tc to parse")
       assertEquals(want.first, got)
       assertTrue(got.isNotEmpty())
       assertFalse(got.isEmpty())
@@ -60,9 +61,9 @@ class ReferenceTest {
       assertEquals(want.second, got.toString())
 
       if (got.reference.startsWith("sha256")) {
-        assertDoesNotThrow { got.digest() }
+        assertNotNull(got.digest())
       } else {
-        assertFailsWith<IllegalArgumentException> { got.digest() }
+        assertNull(got.digest())
       }
     }
 
@@ -81,52 +82,34 @@ class ReferenceTest {
   }
 
   @Test
-  @Suppress("detekt:LongMethod")
   fun bad() {
-    data class Invalid(val string: String, val reference: Reference, val message: String)
+    data class Invalid(val string: String, val reference: Reference)
 
     // adapted from https://github.com/containers/image/blob/main/docker/reference/reference_test.go
     val testCases =
       listOf(
-        Invalid("", Reference("", "", ""), "registry cannot be empty"),
-        Invalid(":justtag", Reference("", "", "justtag"), "registry cannot be empty"),
-        Invalid(
-          "@sha256:${"f".repeat(64)}",
-          Reference("", "", "@sha256:${"f".repeat(64)}"),
-          "registry cannot be empty",
-        ),
+        Invalid("", Reference("", "", "")),
+        Invalid(":justtag", Reference("", "", "justtag")),
+        Invalid("@sha256:${"f".repeat(64)}", Reference("", "", "@sha256:${"f".repeat(64)}")),
         Invalid(
           "docker.io/validname@invaliddigest:${"f".repeat(128)}",
           Reference("docker.io", "validname", "invaliddigest:${"f".repeat(128)}"),
-          "invaliddigest is not one of the registered algorithms",
         ),
         Invalid(
           "docker.io/validname@sha256:${"f".repeat(63)}",
           Reference("docker.io", "validname", "sha256:${"f".repeat(63)}"),
-          "sha256 algorithm specified but hex length is not 64",
         ),
         Invalid(
           "docker.io/validname@sha512:${"f".repeat(127)}",
           Reference("docker.io", "validname", "sha512:${"f".repeat(127)}"),
-          "sha512 algorithm specified but hex length is not 128",
         ),
-        Invalid(
-          "docker.io/Uppercase:tag",
-          Reference("docker.io", "Uppercase", "tag"),
-          "invalid repository",
-        ),
-        Invalid(
-          "docker.io/${"a/".repeat(120)}",
-          Reference("docker.io", "a/".repeat(120), ""),
-          "invalid repository",
-        ),
+        Invalid("docker.io/Uppercase:tag", Reference("docker.io", "Uppercase", "tag")),
+        Invalid("docker.io/${"a/".repeat(120)}", Reference("docker.io", "a/".repeat(120), "")),
       )
 
     for (tc in testCases) {
-      assertFailsWith<IllegalArgumentException> { Reference.parse(tc.string).getOrThrow() }
-        .also { assertEquals(tc.message, it.message) }
-      assertFailsWith<IllegalArgumentException> { tc.reference.validate() }
-        .also { assertEquals(tc.message, it.message) }
+      assertNull(Reference.parse(tc.string), "expected '${tc.string}' to be rejected")
+      assertFalse(tc.reference.validate(), "expected $tc.reference to be invalid")
     }
   }
 }

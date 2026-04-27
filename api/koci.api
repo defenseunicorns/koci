@@ -77,14 +77,17 @@ public final class com/defenseunicorns/koci/api/Descriptor$Companion {
 }
 
 public final class com/defenseunicorns/koci/api/Digest {
-	public fun <init> (Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;Ljava/lang/String;)V
-	public fun <init> (Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;[B)V
-	public fun <init> (Ljava/lang/String;)V
+	public static final field Companion Lcom/defenseunicorns/koci/api/Digest$Companion;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAlgorithm ()Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;
 	public final fun getHex ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/Digest$Companion {
+	public final fun parse (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/Digest;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
 public final class com/defenseunicorns/koci/api/ErrorCode : java/lang/Enum {
@@ -202,56 +205,6 @@ public final class com/defenseunicorns/koci/api/Manifest$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
-public abstract class com/defenseunicorns/koci/api/OCIException : java/lang/Exception {
-	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$DigestMismatch : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;Lcom/defenseunicorns/koci/api/Digest;)V
-	public final fun getActual ()Lcom/defenseunicorns/koci/api/Digest;
-	public final fun getExpected ()Lcom/defenseunicorns/koci/api/Descriptor;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$EmptyTokenReturned : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lio/ktor/client/statement/HttpResponse;)V
-	public final fun getResponse ()Lio/ktor/client/statement/HttpResponse;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$FromResponse : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/FailureResponse;)V
-	public final fun getFr ()Lcom/defenseunicorns/koci/api/FailureResponse;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$IncompletePull : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/Reference;)V
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$ManifestNotSupported : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lio/ktor/http/Url;Lio/ktor/http/ContentType;)V
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$PlatformNotFound : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/Index;)V
-	public final fun getIndex ()Lcom/defenseunicorns/koci/api/Index;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$SizeMismatch : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;J)V
-	public final fun getActual ()J
-	public final fun getExpected ()Lcom/defenseunicorns/koci/api/Descriptor;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$UnableToRemove : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;Ljava/lang/String;)V
-	public final fun getDescriptor ()Lcom/defenseunicorns/koci/api/Descriptor;
-	public final fun getReason ()Ljava/lang/String;
-}
-
-public final class com/defenseunicorns/koci/api/OCIException$UnexpectedStatus : com/defenseunicorns/koci/api/OCIException {
-	public fun <init> (Lio/ktor/http/HttpStatusCode;Lio/ktor/client/statement/HttpResponse;)V
-	public final fun getExpected ()Lio/ktor/http/HttpStatusCode;
-}
-
 public final class com/defenseunicorns/koci/api/Platform {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Platform$Companion;
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;)V
@@ -281,6 +234,99 @@ public final class com/defenseunicorns/koci/api/Platform$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public abstract interface class com/defenseunicorns/koci/api/PullEvent {
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$Completed : com/defenseunicorns/koci/api/PullEvent {
+	public static final field INSTANCE Lcom/defenseunicorns/koci/api/PullEvent$Completed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$DigestMismatch : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;Lcom/defenseunicorns/koci/api/Digest;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public final fun component2 ()Lcom/defenseunicorns/koci/api/Digest;
+	public final fun copy (Lcom/defenseunicorns/koci/api/Descriptor;Lcom/defenseunicorns/koci/api/Digest;)Lcom/defenseunicorns/koci/api/PullEvent$DigestMismatch;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$DigestMismatch;Lcom/defenseunicorns/koci/api/Descriptor;Lcom/defenseunicorns/koci/api/Digest;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$DigestMismatch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActual ()Lcom/defenseunicorns/koci/api/Digest;
+	public final fun getExpected ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$Incomplete : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Reference;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Reference;
+	public final fun copy (Lcom/defenseunicorns/koci/api/Reference;)Lcom/defenseunicorns/koci/api/PullEvent$Incomplete;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$Incomplete;Lcom/defenseunicorns/koci/api/Reference;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$Incomplete;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRef ()Lcom/defenseunicorns/koci/api/Reference;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$ManifestNotSupported : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lio/ktor/http/Url;Lio/ktor/http/ContentType;)V
+	public final fun component1 ()Lio/ktor/http/Url;
+	public final fun component2 ()Lio/ktor/http/ContentType;
+	public final fun copy (Lio/ktor/http/Url;Lio/ktor/http/ContentType;)Lcom/defenseunicorns/koci/api/PullEvent$ManifestNotSupported;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$ManifestNotSupported;Lio/ktor/http/Url;Lio/ktor/http/ContentType;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$ManifestNotSupported;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndpoint ()Lio/ktor/http/Url;
+	public final fun getMediaType ()Lio/ktor/http/ContentType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$PlatformNotFound : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Index;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Index;
+	public final fun copy (Lcom/defenseunicorns/koci/api/Index;)Lcom/defenseunicorns/koci/api/PullEvent$PlatformNotFound;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$PlatformNotFound;Lcom/defenseunicorns/koci/api/Index;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$PlatformNotFound;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIndex ()Lcom/defenseunicorns/koci/api/Index;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$Progress : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/defenseunicorns/koci/api/PullEvent$Progress;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$Progress;IILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$Progress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPercent ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$RegistryError : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lcom/defenseunicorns/koci/api/FailureResponse;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/FailureResponse;
+	public final fun copy (Lcom/defenseunicorns/koci/api/FailureResponse;)Lcom/defenseunicorns/koci/api/PullEvent$RegistryError;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$RegistryError;Lcom/defenseunicorns/koci/api/FailureResponse;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$RegistryError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getResponse ()Lcom/defenseunicorns/koci/api/FailureResponse;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/PullEvent$SizeMismatch : com/defenseunicorns/koci/api/PullEvent {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;J)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public final fun component2 ()J
+	public final fun copy (Lcom/defenseunicorns/koci/api/Descriptor;J)Lcom/defenseunicorns/koci/api/PullEvent$SizeMismatch;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$SizeMismatch;Lcom/defenseunicorns/koci/api/Descriptor;JILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$SizeMismatch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActual ()J
+	public final fun getExpected ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/defenseunicorns/koci/api/Reference {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Reference$Companion;
 	public fun <init> (Lio/ktor/http/Url;Ljava/lang/String;Ljava/lang/String;)V
@@ -294,11 +340,11 @@ public final class com/defenseunicorns/koci/api/Reference {
 	public final fun isEmpty ()Z
 	public final fun isNotEmpty ()Z
 	public fun toString ()Ljava/lang/String;
-	public final fun validate ()V
+	public final fun validate ()Z
 }
 
 public final class com/defenseunicorns/koci/api/Reference$Companion {
-	public final fun parse-IoAF18A (Ljava/lang/String;)Ljava/lang/Object;
+	public final fun parse (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/Reference;
 }
 
 public final class com/defenseunicorns/koci/api/RegisteredAlgorithm : java/lang/Enum {
@@ -313,8 +359,8 @@ public final class com/defenseunicorns/koci/api/RegisteredAlgorithm : java/lang/
 
 public final class com/defenseunicorns/koci/api/Registry {
 	public final fun catalog (ILjava/lang/String;)Lkotlinx/coroutines/flow/Flow;
+	public final fun catalog (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun catalog$default (Lcom/defenseunicorns/koci/api/Registry;ILjava/lang/String;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
-	public final fun catalog-IoAF18A (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getUrl ()Ljava/lang/String;
 	public final fun list (I)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun list$default (Lcom/defenseunicorns/koci/api/Registry;IILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
@@ -324,18 +370,65 @@ public final class com/defenseunicorns/koci/api/Registry {
 }
 
 public final class com/defenseunicorns/koci/api/Repository {
-	public final fun exists-gIAlu-s (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun fetch (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getName ()Ljava/lang/String;
-	public final fun index-gIAlu-s (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun manifest-gIAlu-s (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun index (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun manifest (Lcom/defenseunicorns/koci/api/Descriptor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun pull (Lcom/defenseunicorns/koci/api/Descriptor;)Lkotlinx/coroutines/flow/Flow;
 	public final fun pull (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun pull$default (Lcom/defenseunicorns/koci/api/Repository;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
-	public final fun push (Ljava/io/InputStream;Lcom/defenseunicorns/koci/api/Descriptor;)Lkotlinx/coroutines/flow/Flow;
-	public final fun resolve-0E7RQCE (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun resolve-0E7RQCE$default (Lcom/defenseunicorns/koci/api/Repository;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun tags-IoAF18A (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun resolve (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun resolve$default (Lcom/defenseunicorns/koci/api/Repository;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun tags (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/defenseunicorns/koci/api/ResolveOutcome {
+}
+
+public final class com/defenseunicorns/koci/api/ResolveOutcome$ManifestNotSupported : com/defenseunicorns/koci/api/ResolveOutcome {
+	public fun <init> (Lio/ktor/http/Url;Lio/ktor/http/ContentType;)V
+	public final fun component1 ()Lio/ktor/http/Url;
+	public final fun component2 ()Lio/ktor/http/ContentType;
+	public final fun copy (Lio/ktor/http/Url;Lio/ktor/http/ContentType;)Lcom/defenseunicorns/koci/api/ResolveOutcome$ManifestNotSupported;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/ResolveOutcome$ManifestNotSupported;Lio/ktor/http/Url;Lio/ktor/http/ContentType;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/ResolveOutcome$ManifestNotSupported;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndpoint ()Lio/ktor/http/Url;
+	public final fun getMediaType ()Lio/ktor/http/ContentType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/ResolveOutcome$PlatformNotFound : com/defenseunicorns/koci/api/ResolveOutcome {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Index;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Index;
+	public final fun copy (Lcom/defenseunicorns/koci/api/Index;)Lcom/defenseunicorns/koci/api/ResolveOutcome$PlatformNotFound;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/ResolveOutcome$PlatformNotFound;Lcom/defenseunicorns/koci/api/Index;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/ResolveOutcome$PlatformNotFound;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIndex ()Lcom/defenseunicorns/koci/api/Index;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/ResolveOutcome$RegistryError : com/defenseunicorns/koci/api/ResolveOutcome {
+	public fun <init> (Lcom/defenseunicorns/koci/api/FailureResponse;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/FailureResponse;
+	public final fun copy (Lcom/defenseunicorns/koci/api/FailureResponse;)Lcom/defenseunicorns/koci/api/ResolveOutcome$RegistryError;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/ResolveOutcome$RegistryError;Lcom/defenseunicorns/koci/api/FailureResponse;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/ResolveOutcome$RegistryError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getResponse ()Lcom/defenseunicorns/koci/api/FailureResponse;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/ResolveOutcome$Resolved : com/defenseunicorns/koci/api/ResolveOutcome {
+	public fun <init> (Lcom/defenseunicorns/koci/api/Descriptor;)V
+	public final fun component1 ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public final fun copy (Lcom/defenseunicorns/koci/api/Descriptor;)Lcom/defenseunicorns/koci/api/ResolveOutcome$Resolved;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/ResolveOutcome$Resolved;Lcom/defenseunicorns/koci/api/Descriptor;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/ResolveOutcome$Resolved;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescriptor ()Lcom/defenseunicorns/koci/api/Descriptor;
+	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 

@@ -33,6 +33,7 @@ import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -63,7 +64,7 @@ private suspend fun HttpClient.fetchDistributionToken(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    // TODO: Log non-200 from token endpoint
+    // TODO: MOBILE-198 - Log non-200 from token endpoint
     return null
   }
 
@@ -129,20 +130,20 @@ private suspend fun HttpClient.fetchOAuth2Token(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    // TODO: Log non-200 from oauth2 token endpoint
+    // TODO: MOBILE-198 - Log non-200 from oauth2 token endpoint
     return null
   }
 
   val tokenResponse =
     try {
       res.body<OAuth2TokenResponse>()
-    } catch (_: kotlinx.serialization.SerializationException) {
-      // TODO: Log malformed oauth2 token response
+    } catch (_: SerializationException) {
+      // TODO: MOBILE-198 - Log malformed oauth2 token response
       return null
     }
 
   if (tokenResponse.accessToken.isNotEmpty()) return tokenResponse.accessToken
-  // TODO: Log empty oauth2 token response
+  // TODO: MOBILE-198 - Log empty oauth2 token response
   return null
 }
 

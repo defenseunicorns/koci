@@ -5,21 +5,17 @@
 
 package com.defenseunicorns.koci.internal
 
-import com.defenseunicorns.koci.api.Descriptor
-import com.defenseunicorns.koci.api.Digest
-
 /**
  * Events emitted by [Layout.push].
  *
- * Mirrors the shape of [com.defenseunicorns.koci.api.PullEvent] for the internal push path; the
- * Repository layer translates these to public PullEvent variants for the caller.
+ * Mirrors [com.defenseunicorns.koci.api.PullEvent]'s shape so [Repository.copy] can map directly
+ * one-to-one. Specific failure reasons (size mismatch / digest mismatch) are logged inside push
+ * before [Failed] is emitted.
  */
 internal sealed interface PushEvent {
   data class Progress(val bytes: Int) : PushEvent
 
   data object Completed : PushEvent
 
-  data class DigestMismatch(val expected: Descriptor, val actual: Digest) : PushEvent
-
-  data class SizeMismatch(val expected: Descriptor, val actual: Long) : PushEvent
+  data object Failed : PushEvent
 }

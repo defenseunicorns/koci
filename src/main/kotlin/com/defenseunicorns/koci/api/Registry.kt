@@ -14,7 +14,7 @@ import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.internal.appendScopes
-import com.defenseunicorns.koci.internal.failureResponseOrNull
+import com.defenseunicorns.koci.internal.succeeded
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 /**
@@ -96,15 +97,12 @@ internal constructor(
    */
   public suspend fun catalog(): List<Repository> {
     val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-    if (res.failureResponseOrNull() != null) {
-      // TODO: Log
-      return emptyList()
-    }
+    if (!res.succeeded("registry.catalog")) return emptyList()
     return try {
       val catalog = res.body<CatalogResponse>()
       catalog.repositories.map { repo(it) }
-    } catch (_: kotlinx.serialization.SerializationException) {
-      // TODO: Log
+    } catch (_: SerializationException) {
+      // TODO: MOBILE-198 Log
       emptyList()
     }
   }

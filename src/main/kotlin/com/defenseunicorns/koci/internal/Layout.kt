@@ -92,22 +92,19 @@ internal class Layout(
   }
 
   /**
-   * Classifies whether [descriptor] is already present on disk and, if so, whether it verifies.
+   * Returns true iff the blob is on disk and verifies (size and digest match the descriptor).
    *
-   * The returned [ExistenceCheck] drives the pull path's resume-vs-discard logic.
+   * False covers absent, partially-downloaded, and corrupted-content cases. Callers who need to
+   * distinguish "partial — can resume" from "absent or bad" use [partialBytesOnDisk].
    */
-  suspend fun exists(descriptor: Descriptor): ExistenceCheck {
-    val blobPath = blob(descriptor) ?: return ExistenceCheck.Absent
+  suspend fun exists(descriptor: Descriptor): Boolean {
+    val blobPath = blob(descriptor) ?: return false
+    val expectedDigest = descriptor.digest ?: return false
 
-    val exists = withContext(dispatcher) { fileSystem.exists(blobPath) }
-    if (!exists) return ExistenceCheck.Absent
-
-    val expectedDigest = descriptor.digest ?: return ExistenceCheck.Absent
+    if (!withContext(dispatcher) { fileSystem.exists(blobPath) }) return false
 
     val size = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
-    if (size != descriptor.size) {
-      return ExistenceCheck.PartialBySize(size)
-    }
+    if (size != descriptor.size) return false
 
     val digest =
       withContext(dispatcher) {
@@ -123,20 +120,29 @@ internal class Layout(
         Digest(expectedDigest.algorithm, md.digest())
       }
 
-    if (digest != expectedDigest) {
-      return ExistenceCheck.Corrupted(digest)
-    }
+    return digest == expectedDigest
+  }
 
-    return ExistenceCheck.Present
+  /**
+   * If a partial blob exists on disk that can serve as a resume prefix for [descriptor], returns
+   * its on-disk size; otherwise null.
+   *
+   * Returns null when the blob is absent, fully present, or has size >= the descriptor's size. Used
+   * by `Repository.copy` to decide whether to issue a `Range` request — the only consumer.
+   */
+  suspend fun partialBytesOnDisk(descriptor: Descriptor): Long? {
+    val blobPath = blob(descriptor) ?: return null
+    if (!withContext(dispatcher) { fileSystem.exists(blobPath) }) return null
+    val size = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
+    return if (size in 1 until descriptor.size) size else null
   }
 
   /**
    * Pushes content to the layout from an Okio [Source].
    *
    * Writes the content to disk, verifying its size and digest match the descriptor. Emits
-   * [PushEvent.Progress] per chunk; the terminal event is either [PushEvent.Completed],
-   * [PushEvent.SizeMismatch], or [PushEvent.DigestMismatch]. If [descriptor] has no digest the Flow
-   * completes silently without emitting.
+   * [PushEvent.Progress] per chunk; the terminal event is [PushEvent.Completed] on success or
+   * [PushEvent.Failed] otherwise (size or digest mismatch logged inside before the terminal event).
    */
   @Suppress("detekt:CyclomaticComplexMethod", "detekt:LongMethod")
   fun push(descriptor: Descriptor, source: Source): Flow<PushEvent> = channelFlow {
@@ -148,9 +154,7 @@ internal class Layout(
 
     try {
       mu.withLock {
-        val state = exists(descriptor)
-
-        if (state is ExistenceCheck.Present) {
+        if (exists(descriptor)) {
           send(PushEvent.Completed)
           return@withLock
         }
@@ -159,7 +163,7 @@ internal class Layout(
 
         // If resuming a download, start calculating the hash from the data on disk.
         // It is up to the caller to properly resume the source at the proper location,
-        // otherwise a DigestMismatch will occur.
+        // otherwise a digest mismatch will occur and we'll log + emit Failed.
         val blobExists = withContext(dispatcher) { fileSystem.exists(blobPath) }
         if (blobExists) {
           withContext(dispatcher) {
@@ -193,14 +197,18 @@ internal class Layout(
 
         val length = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
         if (length != descriptor.size) {
-          send(PushEvent.SizeMismatch(descriptor, length))
+          // TODO: MOBILE-198 - Log size mismatch — expected=${descriptor.size}, actual=$length,
+          // descriptor=$descriptor
+          send(PushEvent.Failed)
           return@withLock
         }
 
         val digest = Digest(expectedDigest.algorithm, md.digest())
         if (digest != expectedDigest) {
           withContext(dispatcher) { fileSystem.delete(blobPath) }
-          send(PushEvent.DigestMismatch(descriptor, digest))
+          // TODO: MOBILE-198 - Log digest mismatch — expected=$expectedDigest, actual=$digest,
+          // descriptor=$descriptor
+          send(PushEvent.Failed)
           return@withLock
         }
 
@@ -221,19 +229,13 @@ internal class Layout(
    * Retrieves content from the layout as an Okio [Source], or null if [descriptor] has no digest.
    *
    * The caller is responsible for closing the returned source.
-   *
-   * @param descriptor The descriptor of the content to fetch
    */
   suspend fun fetch(descriptor: Descriptor): Source? {
     val blobPath = blob(descriptor) ?: return null
     return withContext(dispatcher) { fileSystem.source(blobPath) }
   }
 
-  /**
-   * Resolves a descriptor from the layout's index using a predicate function.
-   *
-   * Returns null if no descriptor matches.
-   */
+  /** Resolves a descriptor from the layout's index using a predicate; null if no match. */
   suspend fun resolve(predicate: suspend (Descriptor) -> Boolean): Descriptor? {
     for (manifest in index.manifests) {
       if (predicate(manifest)) return manifest
@@ -241,11 +243,7 @@ internal class Layout(
     return null
   }
 
-  /**
-   * Resolves a reference to a descriptor, optionally filtering by platform.
-   *
-   * Returns null if no matching descriptor is found.
-   */
+  /** Resolves a reference to a descriptor, optionally filtering by platform; null if no match. */
   suspend fun resolve(
     reference: Reference,
     platformResolver: ((Platform) -> Boolean)? = null,
@@ -263,10 +261,8 @@ internal class Layout(
   /**
    * Tags a descriptor with a reference.
    *
-   * Associates a reference with a descriptor in the layout's index. If the reference already
-   * exists, it will be reassigned to the new descriptor. Internal contract: callers pass
-   * descriptors fetched from a registry and references built from trusted components, so no
-   * validation happens here.
+   * Internal contract: callers pass descriptors fetched from a registry and references built from
+   * trusted components, so no validation happens here.
    */
   suspend fun tag(descriptor: Descriptor, reference: Reference) {
     val copy =
@@ -293,8 +289,8 @@ internal class Layout(
   }
 
   /** Removes a reference and its associated content from the layout. */
-  suspend fun remove(reference: Reference): RemoveOutcome {
-    val descriptor = resolve(reference) ?: return RemoveOutcome.Absent
+  suspend fun remove(reference: Reference): Boolean {
+    val descriptor = resolve(reference) ?: return true
     return remove(descriptor)
   }
 
@@ -302,11 +298,13 @@ internal class Layout(
    * Removes a descriptor and its associated content from the layout.
    *
    * For manifests and indexes, recursively removes all referenced content that isn't used by other
-   * artifacts. Returns [RemoveOutcome.StillReferenced] if the content is referenced elsewhere.
+   * artifacts. Returns true on successful removal (or when the blob was already absent). Returns
+   * false when the descriptor (or any nested descriptor for indexes) is still referenced by another
+   * artifact; the still-referenced descriptor is logged.
    */
   @Suppress("detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:ReturnCount")
-  suspend fun remove(descriptor: Descriptor): RemoveOutcome {
-    val blobPath = blob(descriptor) ?: return RemoveOutcome.Absent
+  suspend fun remove(descriptor: Descriptor): Boolean {
+    val blobPath = blob(descriptor) ?: return true
 
     val (mu, refCount) = pushing.computeIfAbsent(descriptor) { Pair(Mutex(), AtomicInteger(0)) }
     refCount.incrementAndGet()
@@ -314,7 +312,7 @@ internal class Layout(
     try {
       mu.withLock {
         val exists = withContext(dispatcher) { fileSystem.exists(blobPath) }
-        if (!exists) return RemoveOutcome.Absent
+        if (!exists) return true
 
         return when (descriptor.mediaType) {
           INDEX_MEDIA_TYPE -> {
@@ -327,12 +325,11 @@ internal class Layout(
             withContext(dispatcher) { syncIndex() }
 
             for (manifestDesc in indexToRemove.manifests) {
-              val nested = remove(manifestDesc)
-              if (nested is RemoveOutcome.StillReferenced) return nested
+              if (!remove(manifestDesc)) return false
             }
 
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            RemoveOutcome.Removed
+            true
           }
 
           MANIFEST_MEDIA_TYPE -> {
@@ -344,7 +341,8 @@ internal class Layout(
             val allOtherLayers = expand(otherManifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              return RemoveOutcome.StillReferenced(descriptor)
+              // TODO: MOBILE-198 - Log "manifest still referenced by another artifact: $descriptor"
+              return false
             }
 
             val manifest: Manifest =
@@ -354,18 +352,17 @@ internal class Layout(
 
             (manifest.layers + manifest.config).forEach { layer ->
               if (!allOtherLayers.contains(layer)) {
-                val nested = remove(layer)
-                if (nested is RemoveOutcome.StillReferenced) return nested
+                if (!remove(layer)) return false
               }
             }
 
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            RemoveOutcome.Removed
+            true
           }
 
           else -> {
             withContext(dispatcher) { fileSystem.delete(blobPath) }
-            RemoveOutcome.Removed
+            true
           }
         }
       }

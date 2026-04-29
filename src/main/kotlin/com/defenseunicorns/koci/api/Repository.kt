@@ -79,6 +79,7 @@ internal constructor(
   internal val router: Router,
   internal val client: HttpClient,
   internal val store: Layout,
+  internal val json: Json,
 ) {
 
   @Volatile private var supportsRange: Boolean? = null
@@ -116,12 +117,12 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Tags</a>
    *
-   * TODO: Implement pagination support as described in the specification
+   * TODO: MOBILE-215 Implement pagination support as described in the specification
    */
   public suspend fun tags(): Result<List<String>> = runCatching {
     val res =
       client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
-    val tags: TagsResponse = Json.decodeFromString(res.body())
+    val tags = res.body<TagsResponse>()
 
     tags.tags
   }
@@ -171,7 +172,7 @@ internal constructor(
               }
 
               else -> {
-                val index = Json.decodeFromStream<Index>(res.body())
+                val index = res.body<Index>()
 
                 try {
                   index.manifests.first { desc ->
@@ -324,7 +325,7 @@ internal constructor(
   @OptIn(ExperimentalSerializationApi::class)
   public suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
     require(descriptor.mediaType == INDEX_MEDIA_TYPE)
-    fetch(descriptor, Json::decodeFromStream)
+    fetch(descriptor, json::decodeFromStream)
   }
 
   /**
@@ -373,7 +374,7 @@ internal constructor(
   @OptIn(ExperimentalSerializationApi::class)
   public suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
     require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
-    fetch(descriptor, Json::decodeFromStream)
+    fetch(descriptor, json::decodeFromStream)
   }
 
   /**

@@ -39,6 +39,12 @@ public class Descriptor(
    * This should only be used when referring to a manifest.
    */
   public val platform: Platform? = null,
+
+  /**
+   * contains the type of an artifact when the descriptor points to an artifact when the descriptor
+   * references an image manifest
+   */
+  public val artifactType: String? = null,
 ) {
   public fun copy(
     mediaType: String = this.mediaType,
@@ -84,9 +90,9 @@ public class Descriptor(
      * if no media type is specified, "application/octet-stream" will be used
      */
     public fun fromInputStream(
+      stream: InputStream,
       mediaType: String = Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
-      stream: InputStream,
     ): Descriptor {
       val md = algorithm.hasher()
       var size = 0L

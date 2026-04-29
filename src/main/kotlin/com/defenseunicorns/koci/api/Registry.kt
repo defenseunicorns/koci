@@ -47,6 +47,7 @@ internal constructor(
   internal val client: HttpClient,
   internal val router: Router,
   internal val store: Layout,
+  internal val json: Json,
 ) {
   /**
    * Returns a [Repository] bound to [name] within this registry (e.g. `"myorg/myimage"`).
@@ -66,6 +67,7 @@ internal constructor(
       router = router,
       client = client,
       store = store,
+      json = json,
     )
 
   /**
@@ -93,7 +95,7 @@ internal constructor(
    */
   public suspend fun catalog(): Result<List<Repository>> = runCatching {
     val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-    val catalog: CatalogResponse = Json.decodeFromString(res.body())
+    val catalog = res.body<CatalogResponse>()
 
     catalog.repositories.map { repo(it) }
   }
@@ -110,6 +112,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Pagination</a>
    */
+  // TODO: MOBILE-217
   public fun catalog(n: Int, lastRepo: String? = null): Flow<List<Repository>> = flow {
     var endpoint: Url? = router.catalog(n.coerceAtMost(MAX_REPOS), lastRepo)
 
@@ -119,23 +122,24 @@ internal constructor(
       // If the header is not present, the client can assume that all results have been received.
       val linkHeader = response.headers[HttpHeaders.Link]
 
+      // TODO: MOBILE-214
       endpoint =
         linkHeader?.let {
           // TODO: change from regex to a full spec-compliant parser
           // https://datatracker.ietf.org/doc/html/rfc5988#section-5
           val regex = Regex("<(.+)>;\\s+rel=\"next\"")
 
-          // TODO: Log the regex error
+          // TODO: MOBILE-198 Log the regex error
           val next = regex.find(linkHeader)?.groups?.get(1)?.value ?: return@flow
 
           val url = Url(next)
 
-          // TODO: Log failure
+          // TODO: MOBILE-198 Log failure
           val nextN = url.parameters["n"]?.toInt() ?: return@flow
           router.catalog(nextN, url.parameters["last"])
         }
 
-      val catalog: CatalogResponse = Json.decodeFromString(response.body())
+      val catalog = response.body<CatalogResponse>()
       val repos = catalog.repositories.map { repo(it) }
       emit(repos)
     }

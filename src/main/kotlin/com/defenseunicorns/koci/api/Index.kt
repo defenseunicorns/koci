@@ -16,7 +16,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public class Index(
-  public val schemaVersion: Int? = null,
+  public val schemaVersion: Int = 2,
   /** mediaType specifies the type of this document data structure e.g. [INDEX_MEDIA_TYPE] */
   public val mediaType: String? = null,
   /** manifests references platform specific manifests. */
@@ -24,6 +24,9 @@ public class Index(
   public val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
   /** annotations contains arbitrary metadata for the image index. */
   public val annotations: Annotations? = null,
+
+  /** specifies a descriptor of another manifest */
+  public val subject: Descriptor? = null,
 ) {
   override fun equals(other: Any?): Boolean {
     if (this === other) return true

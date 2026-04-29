@@ -63,6 +63,7 @@ public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: S
         "sha256" -> RegisteredAlgorithm.SHA256
         "sha512" -> RegisteredAlgorithm.SHA512
         "" -> throw IllegalArgumentException("missing algorithm")
+        // TODO: MOBILE-213
         else -> throw IllegalArgumentException("$algo is not one of the registered algorithms")
       },
     hex = content.substringAfter(":"),

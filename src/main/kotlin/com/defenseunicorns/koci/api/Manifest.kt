@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 public class Manifest(
   /** schemaVersion is the image manifest schema that this image follows */
-  public val schemaVersion: Int? = null,
+  public val schemaVersion: Int = 2,
   /** mediaType specifies the type of this document data structure e.g. [MANIFEST_MEDIA_TYPE] */
   public val mediaType: String? = null,
   /**

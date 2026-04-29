@@ -182,14 +182,16 @@ public class Reference(
      * Regex pattern for validating tags according to OCI spec. Tags must start with a word
      * character followed by up to 127 word, dot, or hyphen characters.
      */
-    private val TagRegex: Regex = Regex("^\\w[\\w.-]{0,127}")
+    private val TagRegex: Regex = Regex("^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}")
 
     /**
      * Regex pattern for validating repository names according to OCI spec. Repository names must
      * follow a specific pattern with lowercase alphanumeric characters, separators, and optional
      * path components.
+     *
+     * [Reference](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests)
      */
     private val RepositoryRegex: Regex =
-      Regex("^[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-*)[a-z0-9]+)*)*$")
+      Regex("^[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*")
   }
 }

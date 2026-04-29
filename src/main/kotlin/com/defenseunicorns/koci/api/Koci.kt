@@ -20,7 +20,6 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineDispatcher
@@ -53,10 +52,10 @@ import okio.Path.Companion.toPath
  * For scoped lifetimes (tests, CLI tools, short-lived jobs), prefer `use { }`:
  * ```kotlin
  * Koci(root = "/tmp/oci-store").use { koci ->
- *   val ghcr = koci.registry("https://ghcr.io", auth = Registry.Auth.Basic(user, pass))
- *   val repo = ghcr.repo("myorg/myimage")
+ *   val exampleRegistry = koci.registry("https://example-registry.com", auth = Registry.Auth.Basic("user", "pass"))
+ *   val exampleRepo = exampleRegistry.repo("myorg/myimage")
  *   // ...
- * } // client closed here; ghcr/repo must not be used after this point
+ * } // client closed here; this registry cannot be used after this point
  * ```
  *
  * ## Using with DI
@@ -85,20 +84,18 @@ public class Koci(
   dispatcher: CoroutineDispatcher = Dispatchers.IO,
   connectionPool: ConnectionPoolConfig = ConnectionPoolConfig(),
 ) : AutoCloseable {
+  private val json = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+  }
+
   internal val layout: Layout =
-    Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher)
+    Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher, json = json)
 
   internal val client: HttpClient =
     HttpClient(OkHttp) {
-      install(ContentNegotiation) {
-        json(
-          Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-            coerceInputValues = true
-          }
-        )
-      }
+      install(ContentNegotiation) { json(json) }
 
       engine {
         config {
@@ -110,11 +107,6 @@ public class Koci(
             )
           )
         }
-      }
-
-      headers {
-        // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support
-        append(DOCKER_HEADER_KEY, DOCKER_HEADER_VALUE)
       }
 
       HttpResponseValidator {
@@ -166,6 +158,7 @@ public class Koci(
       client = scopedClient,
       router = Router(url),
       store = layout,
+      json = json,
     )
   }
 
@@ -178,9 +171,4 @@ public class Koci(
   }
 
   override fun toString(): String = "Koci(root=${layout.root})"
-
-  private companion object {
-    private const val DOCKER_HEADER_KEY = "Docker-Distribution-API-Version"
-    private const val DOCKER_HEADER_VALUE = "registry/2.0"
-  }
 }

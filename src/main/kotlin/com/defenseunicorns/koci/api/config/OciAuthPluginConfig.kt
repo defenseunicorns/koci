@@ -34,7 +34,6 @@ import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -68,8 +67,7 @@ private suspend fun HttpClient.fetchDistributionToken(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: DistributionTokenResponse = json.decodeFromString(res.body())
+  val tokenResponse = res.body<DistributionTokenResponse>()
 
   if (tokenResponse.accessToken != null) {
     return tokenResponse.accessToken
@@ -138,8 +136,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
     throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
   }
 
-  val json = Json { ignoreUnknownKeys = true }
-  val tokenResponse: OAuth2TokenResponse = json.decodeFromString(res.body())
+  val tokenResponse = res.body<OAuth2TokenResponse>()
 
   if (tokenResponse.accessToken.isNotEmpty()) {
     return tokenResponse.accessToken
@@ -178,6 +175,7 @@ internal class OCIAuthPluginConfig {
  * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec:
  *   Authentication</a>
  */
+// TODO: MOBILE-218
 internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
   createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()

@@ -56,9 +56,10 @@ import okio.buffer
  */
 @Suppress("detekt:TooManyFunctions")
 internal class Layout(
-  val root: Path,
+  internal val root: Path,
   internal val fileSystem: FileSystem,
   internal val dispatcher: CoroutineDispatcher,
+  internal val json: Json,
 ) {
   internal val index: Index
   internal val pushing = ConcurrentHashMap<Descriptor, Pair<Mutex, AtomicInteger>>()
@@ -73,20 +74,20 @@ internal class Layout(
 
     if (!fileSystem.exists(layoutFilePath)) {
       fileSystem.sink(layoutFilePath).buffer().use { sink ->
-        sink.writeUtf8(Json.encodeToString(LayoutMarker.serializer(), LayoutMarker("1.0.0")))
+        sink.writeUtf8(json.encodeToString(LayoutMarker.serializer(), LayoutMarker("1.0.0")))
       }
     }
 
     index =
       if (fileSystem.exists(indexPath)) {
         fileSystem.source(indexPath).buffer().use { source ->
-          Json.decodeFromString(source.readUtf8())
+          json.decodeFromString(source.readUtf8())
         }
       } else {
         Index()
       }
 
-    // TODO: do this for all supported algorithms
+    // TODO: MOBILE-219 do this for all supported algorithms
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha256")
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha512")
   }
@@ -285,7 +286,7 @@ internal class Layout(
     if (prevIndex != -1) {
       val prev = index.manifests[prevIndex]
       index.manifests[prevIndex] =
-        prev.copy(annotations = prev.annotations?.minus("org.opencontainers.image.ref.name"))
+        prev.copy(annotations = prev.annotations?.minus(ANNOTATION_REF_NAME))
     }
 
     index.manifests.add(copy)
@@ -325,7 +326,7 @@ internal class Layout(
           INDEX_MEDIA_TYPE -> {
             val indexToRemove: Index =
               fileSystem.source(blob(descriptor)).buffer().use { source ->
-                Json.decodeFromString(source.readUtf8())
+                json.decodeFromString(source.readUtf8())
               }
 
             index.manifests.removeAll { it.digest == descriptor.digest }
@@ -356,7 +357,7 @@ internal class Layout(
 
             val manifest: Manifest =
               fileSystem.source(blob(descriptor)).buffer().use { source ->
-                Json.decodeFromString(source.readUtf8())
+                json.decodeFromString(source.readUtf8())
               }
 
             (manifest.layers + manifest.config).forEach { layer ->
@@ -434,7 +435,7 @@ internal class Layout(
   /** Synchronizes the in-memory index to disk. */
   internal fun syncIndex() {
     fileSystem.sink(root / IMAGE_INDEX_FILE).buffer().use { sink ->
-      sink.writeUtf8(Json.encodeToString(index))
+      sink.writeUtf8(json.encodeToString(index))
     }
   }
 
@@ -447,7 +448,7 @@ internal class Layout(
             if (withContext(dispatcher) { fileSystem.exists(blob(desc)) }) {
               val i: Index =
                 fileSystem.source(blob(desc)).buffer().use { source ->
-                  Json.decodeFromString(source.readUtf8())
+                  json.decodeFromString(source.readUtf8())
                 }
               listOf(desc) + i.manifests + expand(i.manifests)
             } else {
@@ -459,7 +460,7 @@ internal class Layout(
             if (withContext(dispatcher) { fileSystem.exists(blob(desc)) }) {
               val m: Manifest =
                 fileSystem.source(blob(desc)).buffer().use { source ->
-                  Json.decodeFromString(source.readUtf8())
+                  json.decodeFromString(source.readUtf8())
                 }
               listOf(desc, m.config) + expand(m.layers)
             } else {

@@ -189,6 +189,7 @@ public sealed class OCIException(message: String) : Exception(message) {
  * @throws OCIException.FromResponse if the response contains a valid error payload
  */
 internal suspend fun attemptThrow4XX(response: HttpResponse) {
+  // TODO: MOBILE-198 Log properly
   require(response.status.value in HTTP_4XX_RANGE) {
     "Attempted to throw when status was not >=400 && <=499"
   }

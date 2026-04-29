@@ -8,9 +8,9 @@ package com.defenseunicorns.koci.api
 /** Credential contains authentication credentials used to access remote registries. */
 internal class Credential(
   /** Username is the name of the user for the remote registry. */
-  val username: String,
+  val username: String = "",
   /** Password is the secret associated with the username. */
-  val password: String,
+  val password: String = "",
   /**
    * RefreshToken is a bearer token to be sent to the authorization service for fetching access
    * tokens.
@@ -19,7 +19,7 @@ internal class Credential(
    *
    * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
    */
-  val refreshToken: String,
+  val refreshToken: String = "",
   /**
    * AccessToken is a bearer token to be sent to the registry.
    *
@@ -27,7 +27,7 @@ internal class Credential(
    *
    * [Reference](https://docs.docker.com/registry/spec/auth/token/)
    */
-  val accessToken: String,
+  val accessToken: String = "",
 ) {
   /** Returns `true` if all properties are empty. */
   internal fun isEmpty(): Boolean {

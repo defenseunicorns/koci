@@ -23,11 +23,11 @@ public sealed class AuthConfig {
     override fun toString(): String = "AuthConfig.Bearer(token=***)"
   }
 
-  // TODO: Stop gap until we can clean up auth
+  // TODO: MOBILE-216 Stop gap until we can clean up auth
   internal fun toCredential(): Credential =
     when (this) {
-      None -> Credential("", "", "", "")
-      is Basic -> Credential(user, pass, "", "")
-      is Bearer -> Credential("", "", "", token)
+      None -> Credential()
+      is Basic -> Credential(username = user, password = pass)
+      is Bearer -> Credential(accessToken = token)
     }
 }

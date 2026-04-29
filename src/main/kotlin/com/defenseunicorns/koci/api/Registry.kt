@@ -48,7 +48,6 @@ internal constructor(
   internal val client: HttpClient,
   internal val router: Router,
   internal val store: Layout,
-  internal val json: Json,
 ) {
   /**
    * Returns a [Repository] bound to [name] within this registry (e.g. `"myorg/myimage"`).
@@ -68,7 +67,6 @@ internal constructor(
       router = router,
       client = client,
       store = store,
-      json = json,
     )
 
   /**

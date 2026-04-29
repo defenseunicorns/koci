@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import okio.source
 
@@ -79,7 +78,6 @@ internal constructor(
   internal val router: Router,
   internal val client: HttpClient,
   internal val store: Layout,
-  internal val json: Json,
 ) {
 
   @Volatile private var supportsRange: Boolean? = null
@@ -457,7 +455,7 @@ internal constructor(
           null
         }
       }
-    }
+  }
 
   /**
    * Copies a blob to the layout with progress reporting.

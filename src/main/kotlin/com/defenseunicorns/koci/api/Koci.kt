@@ -106,15 +106,6 @@ public class Koci(
           )
         }
       }
-
-      HttpResponseValidator {
-        handleResponseExceptionWithRequest { exception, _ ->
-          val clientException =
-            exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
-          attemptThrow4XX(clientException.response)
-          return@handleResponseExceptionWithRequest
-        }
-      }
     }
 
   /**
@@ -154,7 +145,6 @@ public class Koci(
       client = scopedClient,
       router = Router(url),
       store = layout,
-      json = json,
     )
   }
 

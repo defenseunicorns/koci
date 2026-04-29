@@ -42,12 +42,13 @@ public final class com/defenseunicorns/koci/api/AnnotationsKt {
 
 public final class com/defenseunicorns/koci/api/Descriptor {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Descriptor$Companion;
-	public fun <init> (Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;)V
-	public synthetic fun <init> (Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun copy (Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;)Lcom/defenseunicorns/koci/api/Descriptor;
 	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/Descriptor;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Digest;JLjava/util/List;Ljava/util/Map;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Platform;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/Descriptor;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Ljava/util/Map;
+	public final fun getArtifactType ()Ljava/lang/String;
 	public final fun getData ()Ljava/lang/String;
 	public final fun getDigest ()Lcom/defenseunicorns/koci/api/Digest;
 	public final fun getMediaType ()Ljava/lang/String;
@@ -70,8 +71,8 @@ public final synthetic class com/defenseunicorns/koci/api/Descriptor$$serializer
 }
 
 public final class com/defenseunicorns/koci/api/Descriptor$Companion {
-	public final fun fromInputStream (Ljava/lang/String;Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;Ljava/io/InputStream;)Lcom/defenseunicorns/koci/api/Descriptor;
-	public static synthetic fun fromInputStream$default (Lcom/defenseunicorns/koci/api/Descriptor$Companion;Ljava/lang/String;Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;Ljava/io/InputStream;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/Descriptor;
+	public final fun fromInputStream (Ljava/io/InputStream;Ljava/lang/String;Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;)Lcom/defenseunicorns/koci/api/Descriptor;
+	public static synthetic fun fromInputStream$default (Lcom/defenseunicorns/koci/api/Descriptor$Companion;Ljava/io/InputStream;Ljava/lang/String;Lcom/defenseunicorns/koci/api/RegisteredAlgorithm;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/Descriptor;
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
@@ -136,13 +137,14 @@ public final class com/defenseunicorns/koci/api/FailureResponse$Companion {
 public final class com/defenseunicorns/koci/api/Index {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Index$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/Integer;Ljava/lang/String;Ljava/util/concurrent/CopyOnWriteArrayList;Ljava/util/Map;)V
-	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/String;Ljava/util/concurrent/CopyOnWriteArrayList;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ILjava/lang/String;Ljava/util/concurrent/CopyOnWriteArrayList;Ljava/util/Map;Lcom/defenseunicorns/koci/api/Descriptor;)V
+	public synthetic fun <init> (ILjava/lang/String;Ljava/util/concurrent/CopyOnWriteArrayList;Ljava/util/Map;Lcom/defenseunicorns/koci/api/Descriptor;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Ljava/util/Map;
 	public final fun getManifests ()Ljava/util/concurrent/CopyOnWriteArrayList;
 	public final fun getMediaType ()Ljava/lang/String;
-	public final fun getSchemaVersion ()Ljava/lang/Integer;
+	public final fun getSchemaVersion ()I
+	public final fun getSubject ()Lcom/defenseunicorns/koci/api/Descriptor;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -173,14 +175,14 @@ public final class com/defenseunicorns/koci/api/Koci : java/lang/AutoCloseable {
 
 public final class com/defenseunicorns/koci/api/Manifest {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Manifest$Companion;
-	public fun <init> (Ljava/lang/Integer;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Descriptor;Ljava/util/List;Ljava/util/Map;)V
-	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/String;Lcom/defenseunicorns/koci/api/Descriptor;Ljava/util/List;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ILjava/lang/String;Lcom/defenseunicorns/koci/api/Descriptor;Ljava/util/List;Ljava/util/Map;)V
+	public synthetic fun <init> (ILjava/lang/String;Lcom/defenseunicorns/koci/api/Descriptor;Ljava/util/List;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Ljava/util/Map;
 	public final fun getConfig ()Lcom/defenseunicorns/koci/api/Descriptor;
 	public final fun getLayers ()Ljava/util/List;
 	public final fun getMediaType ()Ljava/lang/String;
-	public final fun getSchemaVersion ()Ljava/lang/Integer;
+	public final fun getSchemaVersion ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

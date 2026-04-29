@@ -71,7 +71,7 @@ private suspend fun HttpClient.fetchDistributionToken(
   val tokenResponse =
     try {
       res.body<DistributionTokenResponse>()
-    } catch (_: kotlinx.serialization.SerializationException) {
+    } catch (_: SerializationException) {
       // TODO: MOBILE-198 Log malformed token response
       return null
     }

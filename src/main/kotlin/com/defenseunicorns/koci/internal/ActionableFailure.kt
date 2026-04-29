@@ -18,11 +18,8 @@ import kotlinx.serialization.json.JsonElement
  *   Spec: Error Codes</a>
  */
 @Serializable
-internal class ActionableFailure(
+internal data class ActionableFailure(
   val code: ErrorCode = ErrorCode.UNKNOWN,
   val message: String,
   val detail: JsonElement? = null,
-) {
-  override fun toString(): String =
-    "ActionableFailure(code=$code, message=$message, detail=$detail)"
-}
+)

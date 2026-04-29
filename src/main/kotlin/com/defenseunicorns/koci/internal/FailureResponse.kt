@@ -19,4 +19,4 @@ import kotlinx.serialization.Serializable
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes">OCI
  *   Spec: Errors</a>
  */
-@Serializable internal class FailureResponse(val errors: List<ActionableFailure>)
+@Serializable internal data class FailureResponse(val errors: List<ActionableFailure>)

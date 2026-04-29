@@ -3,11 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.api
 
-import io.ktor.client.call.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.client.call.body
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -25,12 +29,13 @@ import kotlinx.serialization.json.JsonElement
  *   Spec: Errors</a>
  */
 @Serializable
-public data class FailureResponse(
-  val errors: List<ActionableFailure>,
+public class FailureResponse(public val errors: List<ActionableFailure>) {
   @Transient
-  // TODO: this really the best way to initialize?
-  var status: HttpStatusCode = HttpStatusCode(0, ErrorCode.UNKNOWN.toString()),
-)
+  public var status: HttpStatusCode = HttpStatusCode(0, ErrorCode.UNKNOWN.toString())
+    internal set
+
+  override fun toString(): String = "FailureResponse(errors=$errors, status=$status)"
+}
 
 /**
  * Standard error codes defined by the OCI spec.
@@ -74,11 +79,14 @@ public enum class ErrorCode {
  * @property detail Additional error-specific details (optional)
  */
 @Serializable
-public data class ActionableFailure(
-  val code: ErrorCode = ErrorCode.UNKNOWN,
-  val message: String,
-  val detail: JsonElement? = null,
-)
+public class ActionableFailure(
+  public val code: ErrorCode = ErrorCode.UNKNOWN,
+  public val message: String,
+  public val detail: JsonElement? = null,
+) {
+  override fun toString(): String =
+    "ActionableFailure(code=$code, message=$message, detail=$detail)"
+}
 
 /**
  * Base exception class for OCI-related errors.
@@ -181,7 +189,8 @@ public sealed class OCIException(message: String) : Exception(message) {
  * @throws OCIException.FromResponse if the response contains a valid error payload
  */
 internal suspend fun attemptThrow4XX(response: HttpResponse) {
-  require(response.status.value in 400..499) {
+  // TODO: MOBILE-198 Log properly
+  require(response.status.value in HTTP_4XX_RANGE) {
     "Attempted to throw when status was not >=400 && <=499"
   }
 
@@ -195,3 +204,5 @@ internal suspend fun attemptThrow4XX(response: HttpResponse) {
     }
   }
 }
+
+private val HTTP_4XX_RANGE = 400..499

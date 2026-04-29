@@ -1,66 +1,89 @@
 /*
- * Copyright 2024-2026 Defense Unicorns
+ * Copyright 2026 Defense Unicorns
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.api
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import com.defenseunicorns.koci.api.config.AuthConfig
+import com.defenseunicorns.koci.api.config.BackOffPolicy
+import com.defenseunicorns.koci.api.config.PullConfig
+import com.defenseunicorns.koci.api.config.PushConfig
+import com.defenseunicorns.koci.internal.ACTION_PULL
+import com.defenseunicorns.koci.internal.ACTION_PUSH
+import com.defenseunicorns.koci.internal.Layout
+import com.defenseunicorns.koci.internal.OciConstants.INDEX_MEDIA_TYPE
+import com.defenseunicorns.koci.internal.OciConstants.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.internal.Router
+import com.defenseunicorns.koci.internal.TagsResponse
+import com.defenseunicorns.koci.internal.UploadStatus
+import com.defenseunicorns.koci.internal.appendScopes
+import com.defenseunicorns.koci.internal.scopeRepository
+import com.defenseunicorns.koci.internal.toUploadStatus
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.request.accept
+import io.ktor.client.request.get
+import io.ktor.client.request.head
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.prepareGet
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.http.headers
+import io.ktor.http.isSuccess
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flattenMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
+import okio.source
 
 /**
- * Extracts upload status from HTTP response headers for resumable uploads.
+ * A reference to a single repository within a [Registry].
  *
- * Parses Location and Range headers to determine upload state and handles the optional
- * OCI-Chunk-Min-Length header.
+ * Construct via [Registry.repo] — the constructor is internal. Dependencies are threaded in
+ * explicitly (no parent [Registry] reference) so the repository can be unit-tested without standing
+ * up a full registry graph.
  *
- * @return [UploadStatus] with location URL, byte offset, and minimum chunk size
- * @throws IllegalStateException if required headers are missing or malformed
- * @see <a
- *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
- *   Distribution Spec: Resuming an Upload</a>
+ * Shares the registry's (and transitively the [Koci]'s) HTTP client; becomes unusable once that
+ * [Koci] has been closed.
  */
-public fun Headers.toUploadStatus(): UploadStatus {
-  val location = checkNotNull(this[HttpHeaders.Location]) { "missing Location header" }
-  val range = checkNotNull(this[HttpHeaders.Range]) { "missing Range header" }
-  val re = Regex("^([0-9]+)-([0-9]+)\$")
-  val offset = checkNotNull(re.matchEntire(range)?.groupValues?.last()) { "invalid Range header" }
-
-  // this header MAY not exist
-  val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
-
-  return UploadStatus(location, offset.toLong(), minChunk)
-}
-
-/**
- * OCI spec compliant repository client.
- *
- * Supports all required operations including pulling/pushing blobs and manifests, content
- * verification, resumable uploads, cross-repository mounting, and tag management.
- *
- * @property client HTTP client for registry communication
- * @property router URL routing for registry endpoints
- * @property name Repository name as retrieved from a reference (e.g., "[host]/[name]:[tag]")
- * @see <a href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md">OCI spec</a>
- */
-@Suppress("detekt:TooManyFunctions")
-public class Repository(
-  private val client: HttpClient,
-  private val router: Router,
-  private val name: String,
+public class Repository
+internal constructor(
+  public val name: String,
+  private val auth: AuthConfig,
+  private val pull: PullConfig,
+  private val push: PushConfig,
+  private val backOffPolicy: BackOffPolicy,
+  internal val router: Router,
+  internal val client: HttpClient,
+  internal val store: Layout,
+  internal val json: Json,
 ) {
+
+  @Volatile private var supportsRange: Boolean? = null
+
   /** Tracks in-progress blob uploads for resumable operations. */
   private val uploading = ConcurrentHashMap<Descriptor, UploadStatus>()
 
@@ -79,13 +102,29 @@ public class Repository(
       when (descriptor.mediaType) {
         MANIFEST_MEDIA_TYPE,
         INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
-
         else -> router.blob(name, descriptor)
       }
     client
       .head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
       .status
       .isSuccess()
+  }
+
+  /**
+   * Lists all tags in the repository. Retrieves available tags for content discovery.
+   *
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
+   *   Distribution Spec: Listing Tags</a>
+   *
+   * TODO: MOBILE-215 Implement pagination support as described in the specification
+   */
+  public suspend fun tags(): Result<List<String>> = runCatching {
+    val res =
+      client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
+    val tags = res.body<TagsResponse>()
+
+    tags.tags
   }
 
   /**
@@ -133,7 +172,7 @@ public class Repository(
               }
 
               else -> {
-                val index = Json.decodeFromStream<Index>(res.body())
+                val index = res.body<Index>()
 
                 try {
                   index.manifests.first { desc ->
@@ -166,35 +205,127 @@ public class Repository(
   }
 
   /**
-   * Removes a blob or manifest from the repository.
+   * Pulls an image by tag and stores it in the provided layout.
    *
-   * Routes to appropriate endpoint based on media type. Note that per OCI spec, registries MAY
-   * implement deletion or MAY disable it entirely.
+   * Resolves tag to descriptor, then pulls manifest and all referenced blobs. For multi-platform
+   * images, uses platformResolver to select specific platform.
    *
-   * @param descriptor Content descriptor to remove
+   * @param tag Tag to pull
+   * @param platformResolver Optional function to select platform from index
    * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-blobs">OCI
-   *   Distribution Spec: Deleting Blobs</a>
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#deleting-manifests">OCI
-   *   Distribution Spec: Deleting Manifests</a>
-   *
-   * TODO: Similarly, a registry MAY implement tag deletion, while others MAY allow deletion only by
-   *   manifest.
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
+   *   Distribution Spec: Pulling Manifests</a>
    */
-  public suspend fun remove(descriptor: Descriptor): Result<Boolean> = runCatching {
-    val endpoint =
-      when (descriptor.mediaType) {
-        MANIFEST_MEDIA_TYPE,
-        INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
+  public fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Flow<Int> =
+    channelFlow {
+      resolve(tag, platformResolver)
+        .map { desc ->
+          pull(desc)
+            .onCompletion { cause ->
+              if (cause == null) {
+                val ref = Reference(registry = router.base(), repository = name, reference = tag)
+                val ok = store.exists(desc).getOrThrow()
+                if (!ok) {
+                  throw OCIException.IncompletePull(ref)
+                }
+                // if pull was successful, tag the resolved desc w/ the image's ref
+                store.tag(desc, ref).getOrThrow()
+              }
+            }
+            .collect { progress -> send(progress) }
+        }
+        .getOrThrow()
+    }
 
-        else -> router.blob(name, descriptor)
+  /**
+   * Pulls content by descriptor and stores it in the provided layout.
+   *
+   * Handles different content types appropriately (manifests, indices, blobs). For manifests and
+   * indices, pulls all referenced content recursively.
+   *
+   * @param descriptor Content descriptor to pull
+   */
+  @OptIn(ExperimentalCoroutinesApi::class)
+  public fun pull(descriptor: Descriptor): Flow<Int> = channelFlow {
+    when (descriptor.mediaType) {
+      INDEX_MEDIA_TYPE -> {
+        if (store.exists(descriptor).getOrDefault(false)) {
+          send(PROGRESS_COMPLETE)
+          return@channelFlow
+        }
+        val index = index(descriptor).getOrThrow()
+        val total = index.manifests.size
+        var completedPulls = 0
+        index.manifests.forEach { manifestDescriptor ->
+          pull(manifestDescriptor).collect { manifestProgress ->
+            val currentManifestContribution = manifestProgress.toDouble() / PROGRESS_COMPLETE
+            val overallProgress =
+              ((completedPulls + currentManifestContribution) / total * PROGRESS_COMPLETE)
+                .roundToInt()
+            send(overallProgress)
+          }
+          completedPulls += 1
+        }
+        copy(descriptor, store).collect()
+        send(PROGRESS_COMPLETE)
       }
 
-    client
-      .delete(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_DELETE)) }
-      .status
-      .isSuccess()
+      MANIFEST_MEDIA_TYPE -> {
+        if (store.exists(descriptor).getOrDefault(false)) {
+          send(PROGRESS_COMPLETE)
+          return@channelFlow
+        }
+        val manifest = manifest(descriptor).getOrThrow()
+        val layersToFetch = manifest.layers.toMutableList() + manifest.config
+        val total = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
+
+        val acc = AtomicInteger(0)
+
+        layersToFetch
+          .asFlow()
+          .map { layer ->
+            flow {
+              copy(layer, store).collect { progress ->
+                val curr = acc.addAndGet(progress)
+                emit((curr.toDouble() * PROGRESS_COMPLETE / total).roundToInt())
+              }
+            }
+          }
+          // TODO: figure out best API to expose concurrency settings
+          .flattenMerge(concurrency = DEFAULT_LAYER_CONCURRENCY)
+          .onCompletion { cause ->
+            if (cause == null) {
+              copy(descriptor, store).collect { progress ->
+                val curr = acc.addAndGet(progress)
+                emit((curr.toDouble() * PROGRESS_COMPLETE / total).roundToInt())
+              }
+            }
+          }
+          .collect { progress -> send(progress) }
+      }
+
+      else -> {
+        copy(descriptor, store).collect { progress -> send(progress) }
+      }
+    }
+  }
+
+  /**
+   * Fetches and deserializes an index manifest (multi-platform manifest).
+   *
+   * Retrieves an index manifest and deserializes it into an [Index] object for accessing
+   * platform-specific manifests in multi-platform images.
+   *
+   * @param descriptor Index descriptor with digest and mediaType
+   * @throws IllegalArgumentException if descriptor mediaType is not an index
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
+   *   Distribution Spec: Pulling Manifests</a>
+   */
+  @OptIn(ExperimentalSerializationApi::class)
+  public suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
+    require(descriptor.mediaType == INDEX_MEDIA_TYPE)
+    fetch(descriptor, json::decodeFromStream)
   }
 
   /**
@@ -231,7 +362,7 @@ public class Repository(
   /**
    * Fetches and deserializes a manifest from the registry.
    *
-   * Retrieves a manifest and deserializes it into a Manifest object for programmatic access to
+   * Retrieves a manifest and deserializes it into a [Manifest] object for programmatic access to
    * layers, config, and annotations.
    *
    * @param descriptor Manifest descriptor with digest and mediaType
@@ -243,182 +374,7 @@ public class Repository(
   @OptIn(ExperimentalSerializationApi::class)
   public suspend fun manifest(descriptor: Descriptor): Result<Manifest> = runCatching {
     require(descriptor.mediaType == MANIFEST_MEDIA_TYPE)
-    fetch(descriptor, Json::decodeFromStream)
-  }
-
-  /**
-   * Fetches and deserializes an index manifest (multi-platform manifest).
-   *
-   * Retrieves an index manifest and deserializes it into an Index object for accessing
-   * platform-specific manifests in multi-platform images.
-   *
-   * @param descriptor Index descriptor with digest and mediaType
-   * @throws IllegalArgumentException if descriptor mediaType is not an index
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
-   *   Distribution Spec: Pulling Manifests</a>
-   */
-  @OptIn(ExperimentalSerializationApi::class)
-  public suspend fun index(descriptor: Descriptor): Result<Index> = runCatching {
-    require(descriptor.mediaType == INDEX_MEDIA_TYPE)
-    fetch(descriptor, Json::decodeFromStream)
-  }
-
-  /**
-   * Lists all tags in the repository. Retrieves available tags for content discovery.
-   *
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
-   *   Distribution Spec: Listing Tags</a>
-   *
-   * TODO: Implement pagination support as described in the specification
-   */
-  public suspend fun tags(): Result<TagsResponse> = runCatching {
-    val res =
-      client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
-    Json.decodeFromString(res.body())
-  }
-
-  /**
-   * Pulls an image by tag and stores it in the provided layout.
-   *
-   * Resolves tag to descriptor, then pulls manifest and all referenced blobs. For multi-platform
-   * images, uses platformResolver to select specific platform.
-   *
-   * @param tag Tag to pull
-   * @param store Layout to store content in
-   * @param platformResolver Optional function to select platform from index
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests">OCI
-   *   Distribution Spec: Pulling Manifests</a>
-   */
-  public fun pull(
-    tag: String,
-    store: Layout,
-    platformResolver: ((Platform) -> Boolean)? = null,
-  ): Flow<Int> = channelFlow {
-    resolve(tag, platformResolver)
-      .map { desc ->
-        pull(desc, store)
-          .onCompletion { cause ->
-            if (cause == null) {
-              val ref = Reference(registry = router.base(), repository = name, reference = tag)
-              val ok = store.exists(desc).getOrThrow()
-              if (!ok) {
-                throw OCIException.IncompletePull(ref)
-              }
-              // if pull was successful, tag the resolved desc w/ the image's ref
-              store.tag(desc, ref).getOrThrow()
-            }
-          }
-          .collect { progress -> send(progress) }
-      }
-      .getOrThrow()
-  }
-
-  /**
-   * Pulls content by descriptor and stores it in the provided layout.
-   *
-   * Handles different content types appropriately (manifests, indices, blobs). For manifests and
-   * indices, pulls all referenced content recursively.
-   *
-   * @param descriptor Content descriptor to pull
-   * @param store Layout to store content in
-   */
-  @OptIn(ExperimentalCoroutinesApi::class)
-  public fun pull(descriptor: Descriptor, store: Layout): Flow<Int> = channelFlow {
-    when (descriptor.mediaType) {
-      INDEX_MEDIA_TYPE -> {
-        if (store.exists(descriptor).getOrDefault(false)) {
-          send(100)
-          return@channelFlow
-        }
-        val index = index(descriptor).getOrThrow()
-        val total = index.manifests.size
-        var completedPulls = 0
-        index.manifests.forEach { manifestDescriptor ->
-          pull(manifestDescriptor, store).collect { manifestProgress ->
-            val currentManifestContribution = manifestProgress.toDouble() / 100.0
-            val overallProgress =
-              ((completedPulls + currentManifestContribution) / total * 100).roundToInt()
-            send(overallProgress)
-          }
-          completedPulls += 1
-        }
-        copy(descriptor, store).collect()
-        send(100)
-      }
-
-      MANIFEST_MEDIA_TYPE -> {
-        if (store.exists(descriptor).getOrDefault(false)) {
-          send(100)
-          return@channelFlow
-        }
-        val manifest = manifest(descriptor).getOrThrow()
-        val layersToFetch = manifest.layers.toMutableList() + manifest.config
-        val total = layersToFetch.sumOf { it.size } + manifest.config.size + descriptor.size
-
-        val acc = AtomicInteger(0)
-
-        layersToFetch
-          .asFlow()
-          .map { layer ->
-            flow {
-              copy(layer, store).collect { progress ->
-                val curr = acc.addAndGet(progress)
-                emit((curr.toDouble() * 100 / total).roundToInt())
-              }
-            }
-          }
-          .flattenMerge(concurrency = 6) // TODO: figure out best API to expose concurrency settings
-          .onCompletion { cause ->
-            if (cause == null) {
-              copy(descriptor, store).collect { progress ->
-                val curr = acc.addAndGet(progress)
-                emit((curr.toDouble() * 100 / total).roundToInt())
-              }
-            }
-          }
-          .collect { progress -> send(progress) }
-      }
-
-      else -> {
-        copy(descriptor, store).collect { progress -> send(progress) }
-      }
-    }
-  }
-
-  @Volatile private var supportsRange: Boolean? = null
-
-  /**
-   * This endpoint may also support RFC7233 compliant range requests. Support can be detected by
-   * issuing a HEAD request. If the header `Accept-Ranges: bytes` is returned, range requests can be
-   * used to fetch partial content.
-   */
-  private suspend fun supportsRange(descriptor: Descriptor): Boolean {
-    supportsRange?.let {
-      return it
-    }
-
-    require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
-    require(descriptor.mediaType != INDEX_MEDIA_TYPE)
-
-    val response =
-      runCatching {
-          client.head(router.blob(name, descriptor)) {
-            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-          }
-        }
-        .getOrNull()
-    val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
-
-    return synchronized(this) {
-      supportsRange
-        ?: run {
-          supportsRange = rangeSupported
-          rangeSupported
-        }
-    }
+    fetch(descriptor, json::decodeFromStream)
   }
 
   /**
@@ -490,7 +446,7 @@ public class Repository(
       }
       .execute { response ->
         response.body<InputStream>().use { stream ->
-          store.push(descriptor, stream).collect { prog -> send(prog) }
+          store.push(descriptor, stream.source()).collect { prog -> send(prog) }
         }
       }
   }
@@ -541,14 +497,12 @@ public class Repository(
           } catch (e: OCIException.FromResponse) {
             if (e.fr.status == HttpStatusCode.NotFound) {
               uploading.remove(descriptor)
-
               return startOrResumeUpload(descriptor)
             }
             throw e
           } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.NotFound) {
               uploading.remove(descriptor)
-
               return startOrResumeUpload(descriptor)
             }
             throw e
@@ -666,114 +620,40 @@ public class Repository(
       .onCompletion { cause -> if (cause == null) uploading.remove(expected) }
 
   /**
-   * Tags a manifest or index in the repository.
-   *
-   * Pushes content to registry and associates it with a tag. Handles content type negotiation based
-   * on whether content is a manifest or index. Tags must match regex: [TagRegex].
-   *
-   * @param content Manifest or index content to tag
-   * @param tag Tag to associate with the content
-   * @throws IllegalArgumentException if tag format is invalid
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests">OCI
-   *   Distribution Spec: Pushing Manifests</a>
+   * This endpoint may also support RFC7233 compliant range requests. Support can be detected by
+   * issuing a HEAD request. If the header `Accept-Ranges: bytes` is returned, range requests can be
+   * used to fetch partial content.
    */
-  public suspend fun tag(content: Versioned, ref: String): Result<Descriptor> = runCatching {
-    requireNotNull(TagRegex.matchEntire(ref)) { "$ref does not satisfy $TagRegex" }
-    val (ct, txt) =
-      when (content) {
-        is Manifest -> {
-          val ct =
-            when (val mt = content.mediaType) {
-              null -> MANIFEST_MEDIA_TYPE
-              else -> mt
-            }
-          val txt = Json.encodeToString(Manifest.serializer(), content)
-          ct to txt
-        }
-
-        is Index -> {
-          val ct =
-            when (val mt = content.mediaType) {
-              null -> INDEX_MEDIA_TYPE
-              else -> mt
-            }
-          val txt = Json.encodeToString(Index.serializer(), content)
-          ct to txt
-        }
-      }
-
-    val res =
-      client.put(router.manifest(name, ref)) {
-        contentType(ContentType.parse(ct))
-        setBody(txt)
-        attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-      }
-
-    if (res.status != HttpStatusCode.Created) {
-      throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
+  private suspend fun supportsRange(descriptor: Descriptor): Boolean {
+    supportsRange?.let {
+      return it
     }
 
-    // get digest from Location header
-    val dg = Url(res.headers[HttpHeaders.Location]!!).segments.last()
+    require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
+    require(descriptor.mediaType != INDEX_MEDIA_TYPE)
 
-    Descriptor(ct, Digest(dg), txt.length.toLong())
+    val response =
+      runCatching {
+          client.head(router.blob(name, descriptor)) {
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+          }
+        }
+        .getOrNull()
+    val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
+
+    return synchronized(this) {
+      supportsRange
+        ?: run {
+          supportsRange = rangeSupported
+          rangeSupported
+        }
+    }
   }
 
-  /**
-   * Mounts a blob from another repository.
-   *
-   * Reuses blobs that already exist in registry without downloading and re-uploading. Handles both
-   * successful mounts and fallback to creating an upload session when mounting is not supported or
-   * fails.
-   *
-   * @param descriptor Blob descriptor to mount (must not be a manifest or index)
-   * @param sourceRepository Source repository from which to mount the blob
-   * @throws IllegalArgumentException if descriptor is a manifest or index
-   * @see <a
-   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
-   *   Distribution Spec: Mounting a Blob</a>
-   */
-  public suspend fun mount(descriptor: Descriptor, sourceRepository: String): Result<Boolean> =
-    runCatching {
-      require(descriptor.mediaType != MANIFEST_MEDIA_TYPE)
-      require(descriptor.mediaType != INDEX_MEDIA_TYPE)
+  override fun toString(): String = "Repository(name=$name)"
 
-      // If the blob is already being uploaded, don't try to mount it
-      if (uploading.containsKey(descriptor)) {
-        return@runCatching false
-      }
-
-      if (exists(descriptor).getOrDefault(false)) {
-        return@runCatching true
-      }
-
-      val mountUrl = router.blobMount(name, sourceRepository, descriptor)
-      val res =
-        client.post(mountUrl) {
-          headers[HttpHeaders.ContentLength] = "0"
-          attributes.appendScopes(
-            scopeRepository(name, ACTION_PULL, ACTION_PUSH),
-            scopeRepository(sourceRepository, ACTION_PULL),
-          )
-        }
-
-      when (res.status) {
-        HttpStatusCode.Created -> {
-          val locationHeader = res.headers[HttpHeaders.Location]
-          requireNotNull(locationHeader) {
-            "Registry did not provide a Location header in the mount response"
-          }
-          true
-        }
-
-        HttpStatusCode.Accepted -> {
-          val uploadStatus = res.headers.toUploadStatus()
-          uploading[descriptor] = uploadStatus
-          false
-        }
-
-        else -> throw OCIException.UnexpectedStatus(HttpStatusCode.Created, res)
-      }
-    }
+  private companion object {
+    private const val PROGRESS_COMPLETE = 100
+    private const val DEFAULT_LAYER_CONCURRENCY = 6
+  }
 }

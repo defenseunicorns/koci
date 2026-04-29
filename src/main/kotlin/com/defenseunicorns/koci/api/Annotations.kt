@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.api
 
 /**
  * Annotations is a simple map of strings.
@@ -13,20 +13,20 @@ package com.defenseunicorns.koci
  */
 public typealias Annotations = Map<String, String>
 
-public const val ANNOTATION_CREATED: String = "org.opencontainers.image.created"
-public const val ANNOTATION_AUTHORS: String = "org.opencontainers.image.authors"
-public const val ANNOTATION_URL: String = "org.opencontainers.image.url"
-public const val ANNOTATION_DOCUMENTATION: String = "org.opencontainers.image.documentation"
-public const val ANNOTATION_SOURCE: String = "org.opencontainers.image.source"
-public const val ANNOTATION_VERSION: String = "org.opencontainers.image.version"
-public const val ANNOTATION_REVISION: String = "org.opencontainers.image.revision"
-public const val ANNOTATION_VENDOR: String = "org.opencontainers.image.vendor"
-public const val ANNOTATION_LICENSES: String = "org.opencontainers.image.licenses"
-public const val ANNOTATION_REF_NAME: String = "org.opencontainers.image.ref.name"
-public const val ANNOTATION_TITLE: String = "org.opencontainers.image.title"
-public const val ANNOTATION_DESCRIPTION: String = "org.opencontainers.image.description"
-public const val ANNOTATION_BASE_DIGEST: String = "org.opencontainers.image.base.digest"
-public const val ANNOTATION_BASE_NAME: String = "org.opencontainers.image.base.name"
+internal const val ANNOTATION_CREATED: String = "org.opencontainers.image.created"
+internal const val ANNOTATION_AUTHORS: String = "org.opencontainers.image.authors"
+internal const val ANNOTATION_URL: String = "org.opencontainers.image.url"
+internal const val ANNOTATION_DOCUMENTATION: String = "org.opencontainers.image.documentation"
+internal const val ANNOTATION_SOURCE: String = "org.opencontainers.image.source"
+internal const val ANNOTATION_VERSION: String = "org.opencontainers.image.version"
+internal const val ANNOTATION_REVISION: String = "org.opencontainers.image.revision"
+internal const val ANNOTATION_VENDOR: String = "org.opencontainers.image.vendor"
+internal const val ANNOTATION_LICENSES: String = "org.opencontainers.image.licenses"
+internal const val ANNOTATION_REF_NAME: String = "org.opencontainers.image.ref.name"
+internal const val ANNOTATION_TITLE: String = "org.opencontainers.image.title"
+internal const val ANNOTATION_DESCRIPTION: String = "org.opencontainers.image.description"
+internal const val ANNOTATION_BASE_DIGEST: String = "org.opencontainers.image.base.digest"
+internal const val ANNOTATION_BASE_NAME: String = "org.opencontainers.image.base.name"
 
 public val Annotations.annotationCreated: String?
   get() = this[ANNOTATION_CREATED]

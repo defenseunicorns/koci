@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.defenseunicorns.koci
+package com.defenseunicorns.koci.api
 
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
@@ -50,7 +50,7 @@ public enum class RegisteredAlgorithm(private val n: String) {
 @Serializable(with = DigestSerializer::class)
 public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: String) {
   /**
-   * Creates a Digest from a string in the format "algorithm:hex".
+   * Creates a [Digest] from a string in the format "algorithm:hex".
    *
    * @param content String representation of the digest
    * @throws IllegalArgumentException if the algorithm is missing or not supported
@@ -63,13 +63,14 @@ public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: S
         "sha256" -> RegisteredAlgorithm.SHA256
         "sha512" -> RegisteredAlgorithm.SHA512
         "" -> throw IllegalArgumentException("missing algorithm")
+        // TODO: MOBILE-213
         else -> throw IllegalArgumentException("$algo is not one of the registered algorithms")
       },
     hex = content.substringAfter(":"),
   )
 
   /**
-   * Creates a Digest from an algorithm and raw bytes.
+   * Creates a [Digest] from an algorithm and raw bytes.
    *
    * @param algorithm The hash algorithm used
    * @param hex The raw bytes to be hex-encoded
@@ -86,11 +87,15 @@ public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: S
 
     when (algorithm) {
       RegisteredAlgorithm.SHA256 -> {
-        require(hex.length == 64) { "$algorithm algorithm specified but hex length is not 64" }
+        require(hex.length == SHA256_HEX_LENGTH) {
+          "$algorithm algorithm specified but hex length is not $SHA256_HEX_LENGTH"
+        }
       }
 
       RegisteredAlgorithm.SHA512 -> {
-        require(hex.length == 128) { "$algorithm algorithm specified but hex length is not 128" }
+        require(hex.length == SHA512_HEX_LENGTH) {
+          "$algorithm algorithm specified but hex length is not $SHA512_HEX_LENGTH"
+        }
       }
     }
   }
@@ -119,12 +124,24 @@ public class Digest(public val algorithm: RegisteredAlgorithm, public val hex: S
     result = 31 * result + hex.hashCode()
     return result
   }
+
+  private companion object {
+    /**
+     * Regex pattern for validating digest strings according to OCI spec. Digests must be in the
+     * format algorithm:hex where algorithm is a lowercase identifier and hex is a base64-encoded
+     * string.
+     */
+    private val DigestRegex: Regex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
+
+    private const val SHA256_HEX_LENGTH = 64
+    private const val SHA512_HEX_LENGTH = 128
+  }
 }
 
 /**
- * Serializer for Digest class that converts between Digest objects and their string representation.
+ * Serializer for [Digest] that converts between [Digest] objects and their string representation.
  */
-public object DigestSerializer : KSerializer<Digest> {
+internal object DigestSerializer : KSerializer<Digest> {
   override val descriptor: SerialDescriptor =
     PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)
 

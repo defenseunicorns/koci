@@ -5,6 +5,13 @@
 
 package com.defenseunicorns.koci
 
+import com.defenseunicorns.koci.internal.ACTION_DELETE
+import com.defenseunicorns.koci.internal.ACTION_PULL
+import com.defenseunicorns.koci.internal.ACTION_PUSH
+import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
+import com.defenseunicorns.koci.internal.cleanActions
+import com.defenseunicorns.koci.internal.cleanScopes
+import com.defenseunicorns.koci.internal.scopeRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

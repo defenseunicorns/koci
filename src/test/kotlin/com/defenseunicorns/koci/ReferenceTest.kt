@@ -5,8 +5,13 @@
 
 package com.defenseunicorns.koci
 
-import io.ktor.http.*
-import kotlin.test.*
+import com.defenseunicorns.koci.api.Reference
+import io.ktor.http.Url
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.assertDoesNotThrow
 
 class ReferenceTest {

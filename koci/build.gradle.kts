@@ -1,26 +1,16 @@
-import dev.detekt.gradle.Detekt
-import java.net.URI
 import kotlinx.kover.gradle.plugin.dsl.AggregationType
 import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import kotlinx.kover.gradle.plugin.dsl.GroupingEntityType
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
   alias(libs.plugins.jetbrains.kotlin.jvm)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.kover)
-  alias(libs.plugins.detekt)
-  alias(libs.plugins.maven.publish)
-  alias(libs.plugins.spotless)
   alias(libs.plugins.binary.validator)
+  id("com.defenseunicorns.koci.lint")
+  id("com.defenseunicorns.koci.publishing")
 }
-
-buildscript { dependencies { classpath(libs.kotlinx.serialization.json) } }
 
 group = "com.defenseunicorns"
 
@@ -38,8 +28,6 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.okio)
-
-  detektPlugins(libs.detekt.library.rules)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
@@ -59,47 +47,6 @@ tasks.test {
   }
 }
 
-spotless {
-  val ktFiles = "**/*.kt"
-  val ktsFiles = "**/*.kts"
-
-  kotlin {
-    target(ktFiles, ktsFiles)
-
-    trimTrailingWhitespace()
-    leadingSpacesToTabs(2)
-    endWithNewline()
-
-    // Google style is blockIndent = 2, continuationIndent = 2, manageTrailingCommas = true
-    // renovate: datasource=github-tags depName=facebook/ktfmt
-    ktfmt("0.58").googleStyle().configure {
-      it.setMaxWidth(100)
-      it.setRemoveUnusedImports(true)
-    }
-  }
-
-  // Excludes kts files from license check
-  format("kt-license") {
-    target(ktFiles)
-    licenseHeaderFile("$rootDir/linting/LICENSE_TEMPLATE", "^((package|import)\\b)").apply {
-      updateYearWithLatest(true)
-    }
-  }
-}
-
-detekt {
-  buildUponDefaultConfig = true
-  config.setFrom("$rootDir/linting/detekt-config.yml")
-  baseline = file("$rootDir/linting/detekt-baseline.xml")
-}
-
-tasks.withType<Detekt> {
-  reports {
-    html.required.set(true)
-    sarif.required.set(true)
-  }
-}
-
 kover {
   reports {
     total {
@@ -108,54 +55,6 @@ kover {
         aggregationForGroup = AggregationType.COVERED_PERCENTAGE
         format = "<entity> line coverage: <value>%"
         coverageUnits = CoverageUnit.LINE
-      }
-    }
-  }
-}
-
-val releasePleaseManifest = file("../.release-please-manifest.json")
-
-version =
-  Json.decodeFromString<JsonElement>(releasePleaseManifest.readText())
-    .jsonObject["."]
-    ?.jsonPrimitive
-    ?.content!!
-
-mavenPublishing {
-  publishToMavenCentral(automaticRelease = true)
-  signAllPublications()
-
-  pom {
-    name = project.name
-    description = "Kotlin implementation of the OCI Distribution client specification"
-    url = "https://github.com/defenseunicorns/koci"
-
-    licenses {
-      license {
-        name = "The Apache License, Version 2.0"
-        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
-        distribution = "repo"
-      }
-    }
-
-    developers { developer { name = "Defense Unicorns" } }
-
-    scm {
-      connection = "scm:git:git://github.com/defenseunicorns/koci.git"
-      developerConnection = "scm:git:ssh://github.com/defenseunicorns/koci.git"
-      url = "https://github.com/defenseunicorns/koci"
-    }
-  }
-}
-
-publishing {
-  repositories {
-    maven {
-      name = "GitHubPackages"
-      url = URI("https://maven.pkg.github.com/defenseunicorns/koci")
-      credentials {
-        username = System.getenv("GITHUB_ACTOR")
-        password = System.getenv("GITHUB_TOKEN")
       }
     }
   }

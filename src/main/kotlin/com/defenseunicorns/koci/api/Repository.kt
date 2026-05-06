@@ -11,6 +11,7 @@ import com.defenseunicorns.koci.api.config.PullConfig
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.internal.ACTION_PULL
 import com.defenseunicorns.koci.internal.ACTION_PUSH
+import com.defenseunicorns.koci.internal.HttpWrapper
 import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.OciConstants.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.internal.OciConstants.MANIFEST_MEDIA_TYPE
@@ -20,20 +21,14 @@ import com.defenseunicorns.koci.internal.TagsResponse
 import com.defenseunicorns.koci.internal.UploadStatus
 import com.defenseunicorns.koci.internal.appendScopes
 import com.defenseunicorns.koci.internal.scopeRepository
-import com.defenseunicorns.koci.internal.succeeded
 import com.defenseunicorns.koci.internal.toUploadStatus
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.accept
-import io.ktor.client.request.get
-import io.ktor.client.request.head
-import io.ktor.client.request.patch
-import io.ktor.client.request.post
-import io.ktor.client.request.prepareGet
-import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.request.url
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.http.contentType
@@ -55,7 +50,6 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import kotlinx.serialization.SerializationException
 import okio.source
 
 /**
@@ -76,7 +70,7 @@ internal constructor(
   private val push: PushConfig,
   private val backOffPolicy: BackOffPolicy,
   internal val router: Router,
-  internal val client: HttpClient,
+  internal val caller: HttpWrapper,
   internal val store: Layout,
 ) {
 
@@ -104,10 +98,17 @@ internal constructor(
         INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
         else -> router.blob(name, descriptor)
       } ?: return false
-    return client
-      .head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
-      .status
-      .isSuccess()
+    val outcome =
+      caller.call(
+        operation = "repository.exists",
+        buildRequest = {
+          method = HttpMethod.Head
+          url(endpoint)
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        },
+        mapResponse = { res -> res.status.isSuccess() },
+      )
+    return outcome ?: false
   }
 
   /**
@@ -123,15 +124,21 @@ internal constructor(
    * TODO: MOBILE-215 Implement pagination support as described in the specification
    */
   public suspend fun tags(): List<String> {
-    val res =
-      client.get(router.tags(name)) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
-    if (!res.succeeded("repository.tags")) return emptyList()
-    return try {
-      res.body<TagsResponse>().tags
-    } catch (_: SerializationException) {
-      // TODO: MOBILE-198 Log
-      emptyList()
-    }
+    val outcome =
+      caller.call(
+        operation = "repository.tags",
+        buildRequest = {
+          url(router.tags(name))
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        },
+        mapResponse = { res ->
+          when (res.status.isSuccess()) {
+            true -> res.body<TagsResponse>().tags
+            false -> emptyList()
+          }
+        },
+      )
+    return outcome ?: emptyList()
   }
 
   /**
@@ -154,22 +161,29 @@ internal constructor(
     platformResolver: ((Platform) -> Boolean)? = null,
   ): Descriptor? {
     val endpoint = router.manifest(name, tag)
-    val response =
-      client.head(endpoint) {
-        accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-        accept(ContentType.parse(INDEX_MEDIA_TYPE))
-        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-      }
-    if (!response.succeeded("repository.resolve.head")) return null
+    val headOutcome =
+      caller.call(
+        operation = "repository.resolve.head",
+        buildRequest = {
+          method = HttpMethod.Head
+          url(endpoint)
+          accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+          accept(ContentType.parse(INDEX_MEDIA_TYPE))
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        },
+        mapResponse = { res ->
+          when (res.status.isSuccess()) {
+            true -> res.contentType()?.toString()
+            false -> null
+          }
+        },
+      )
+    val contentType = headOutcome ?: return null
 
-    return when (response.contentType()?.toString()) {
+    return when (contentType) {
       INDEX_MEDIA_TYPE -> resolveIndex(endpoint, platformResolver)
       MANIFEST_MEDIA_TYPE -> resolveManifest(endpoint)
-      else -> {
-        // TODO: MOBILE-198 - Log "unsupported manifest content type from $endpoint:
-        // ${response.contentType()}"
-        null
-      }
+      else -> null
     }
   }
 
@@ -177,45 +191,53 @@ internal constructor(
     endpoint: Url,
     platformResolver: ((Platform) -> Boolean)?,
   ): Descriptor? =
-    client
-      .prepareGet(endpoint) {
+    caller.call(
+      operation = "repository.resolve.index",
+      buildRequest = {
+        url(endpoint)
         accept(ContentType.parse(INDEX_MEDIA_TYPE))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-      }
-      .execute { res ->
-        if (!res.succeeded("repository.resolve.index")) return@execute null
-        if (platformResolver == null) {
-          Descriptor.fromInputStream(
-            mediaType = INDEX_MEDIA_TYPE,
-            stream = res.body() as InputStream,
-          )
-        } else {
-          val index = res.body<Index>()
-          val selected =
-            index.manifests.firstOrNull { desc ->
-              desc.platform != null && platformResolver(desc.platform)
+      },
+      mapResponse = { res ->
+        when (res.status.isSuccess()) {
+          false -> null
+          true ->
+            when (platformResolver) {
+              null ->
+                Descriptor.fromInputStream(
+                  mediaType = INDEX_MEDIA_TYPE,
+                  stream = res.body() as InputStream,
+                )
+              else -> {
+                val index = res.body<Index>()
+                index.manifests.firstOrNull { desc ->
+                  desc.platform != null && platformResolver(desc.platform)
+                }
+              }
             }
-          if (selected == null) {
-            // TODO: MOBILE-198 - Log "no platform matched in index ${index.manifests.map {
-            // it.platform }}"
-          }
-          selected
         }
-      }
+      },
+    )
 
   private suspend fun resolveManifest(endpoint: Url): Descriptor? =
-    client
-      .prepareGet(endpoint) {
+    caller.call(
+      operation = "repository.resolve.manifest",
+      buildRequest = {
+        url(endpoint)
         accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-      }
-      .execute { res ->
-        if (!res.succeeded("repository.resolve.manifest")) return@execute null
-        Descriptor.fromInputStream(
-          mediaType = MANIFEST_MEDIA_TYPE,
-          stream = res.body() as InputStream,
-        )
-      }
+      },
+      mapResponse = { res ->
+        when (res.status.isSuccess()) {
+          true ->
+            Descriptor.fromInputStream(
+              mediaType = MANIFEST_MEDIA_TYPE,
+              stream = res.body() as InputStream,
+            )
+          false -> null
+        }
+      },
+    )
 
   /**
    * Pulls an image by tag and stores it in the layout.
@@ -399,7 +421,7 @@ internal constructor(
    *
    * Routes to the manifest or blob endpoint based on [descriptor]'s media type, GETs the content,
    * and hands the raw [InputStream] to [handler] for caller-defined processing. Returns null when
-   * [descriptor] has no digest (no URL can be built) or when the request fails.
+   * [descriptor] has no digest (no URL can be built) or when the request fails (cause logged).
    *
    * Escape hatch for consumers who need raw bytes — non-JSON blobs, custom hash-verifying stream
    * processing, streaming directly to disk, etc. For JSON-typed manifest/index access, prefer
@@ -416,18 +438,23 @@ internal constructor(
         INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
         else -> router.blob(name, descriptor)
       } ?: return null
-    return client
-      .prepareGet(endpoint) {
+    return caller.call(
+      operation = "repository.fetch",
+      buildRequest = {
+        url(endpoint)
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         when (descriptor.mediaType) {
           MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
           INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
         }
-      }
-      .execute { res ->
-        if (!res.succeeded("repository.fetch")) return@execute null
-        res.body<InputStream>().use { stream -> handler(stream) }
-      }
+      },
+      mapResponse = { res ->
+        when (res.status.isSuccess()) {
+          true -> res.body<InputStream>().use { stream -> handler(stream) }
+          false -> null
+        }
+      },
+    )
   }
 
   /**
@@ -441,20 +468,20 @@ internal constructor(
     operation: String,
   ): T? {
     val endpoint = router.manifest(name, descriptor) ?: return null
-    return client
-      .prepareGet(endpoint) {
+    return caller.call(
+      operation = operation,
+      buildRequest = {
+        url(endpoint)
         accept(ContentType.parse(mediaType))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-      }
-      .execute { res ->
-        if (!res.succeeded(operation)) return@execute null
-        try {
-          res.body<T>()
-        } catch (_: SerializationException) {
-          // TODO: MOBILE-198 - Log $operation deserialization failure
-          null
+      },
+      mapResponse = { res ->
+        when (res.status.isSuccess()) {
+          true -> res.body<T>()
+          false -> null
         }
-      }
+      },
+    )
   }
 
   /**
@@ -473,10 +500,14 @@ internal constructor(
     }
 
     val resumeFrom = store.partialBytesOnDisk(descriptor)
-    val canResume = resumeFrom != null && supportsRange(descriptor)
-    if (!canResume) {
-      // Clear any bad state (corrupted or partial-without-range-support) before fresh fetch.
-      store.remove(descriptor)
+    val resumeStart =
+      when (resumeFrom != null && supportsRange(descriptor)) {
+        true -> resumeFrom
+        false -> null
+      }
+    when (resumeStart) {
+      null -> store.remove(descriptor) // Clear corrupted / partial-without-range-support state.
+      else -> send(PullEvent.Progress(resumeStart.toInt()))
     }
 
     val endpoint =
@@ -490,34 +521,40 @@ internal constructor(
       return@channelFlow
     }
 
-    client
-      .prepareGet(endpoint) {
-        attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-        when (descriptor.mediaType) {
-          MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-          INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
-        }
-        if (canResume) {
-          val start = resumeFrom!!
-          send(PullEvent.Progress(start.toInt()))
-          headers.append("Range", "bytes=$start-${descriptor.size - 1}")
-        }
-      }
-      .execute { response ->
-        if (!response.succeeded("repository.copy")) {
-          send(PullEvent.Failed)
-          return@execute
-        }
-        response.body<InputStream>().use { stream ->
-          store.push(descriptor, stream.source()).collect { pushEvent ->
-            when (pushEvent) {
-              is PushEvent.Progress -> send(PullEvent.Progress(pushEvent.bytes))
-              is PushEvent.Completed -> send(PullEvent.Completed)
-              is PushEvent.Failed -> send(PullEvent.Failed)
-            }
+    val outcome =
+      caller.call(
+        operation = "repository.copy",
+        buildRequest = {
+          url(endpoint)
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+          when (descriptor.mediaType) {
+            MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
+            INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
           }
-        }
-      }
+          if (resumeStart != null) {
+            headers.append("Range", "bytes=$resumeStart-${descriptor.size - 1}")
+          }
+        },
+        mapResponse = { response ->
+          when (response.status.isSuccess()) {
+            true ->
+              response.body<InputStream>().use { stream ->
+                store.push(descriptor, stream.source()).collect { pushEvent ->
+                  when (pushEvent) {
+                    is PushEvent.Progress -> send(PullEvent.Progress(pushEvent.bytes))
+                    is PushEvent.Completed -> send(PullEvent.Completed)
+                    is PushEvent.Failed -> send(PullEvent.Failed)
+                  }
+                }
+              }
+            false -> send(PullEvent.Failed)
+          }
+        },
+      )
+
+    if (outcome == null) {
+      send(PullEvent.Failed)
+    }
   }
 
   /**
@@ -532,48 +569,51 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#starting-an-upload">OCI
    *   Distribution Spec: Starting an Upload</a>
    */
-  @Suppress("detekt:NestedBlockDepth", "detekt:ReturnCount")
+  @Suppress("detekt:ReturnCount")
   private suspend fun startOrResumeUpload(descriptor: Descriptor): UploadStatus? {
     val prev = uploading[descriptor]
     if (prev == null) {
-      val res =
-        client.post(router.uploads(name)) {
+      return caller.call(
+        operation = "repository.upload.init",
+        buildRequest = {
+          method = HttpMethod.Post
+          url(router.uploads(name))
           headers[HttpHeaders.ContentLength] = 0.toString()
           attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-        }
-      if (res.status != HttpStatusCode.Accepted) {
-        // TODO: MOBILE-198 - Log unexpected status from upload init endpoint
-        return null
-      }
-      val parsed = res.headers.toUploadStatus()
-      if (parsed == null) {
-        // TODO: MOBILE-198 - Log "upload init response missing Location/Range headers"
-      }
-      return parsed
+        },
+        mapResponse = { res ->
+          when (res.status) {
+            HttpStatusCode.Accepted -> res.headers.toUploadStatus()
+            else -> null
+          }
+        },
+      )
     }
 
     if (prev.offset > 0) {
-      val res =
-        client.get(router.parseUploadLocation(prev.location)) {
-          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
-        }
-      when (res.status) {
+      val outcome =
+        caller.call(
+          operation = "repository.upload.status",
+          buildRequest = {
+            url(router.parseUploadLocation(prev.location))
+            attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+          },
+          mapResponse = { res -> res.status to res.headers.toUploadStatus() },
+        )
+      val resume = outcome ?: return null
+
+      when (resume.first) {
         HttpStatusCode.NotFound -> {
           uploading.remove(descriptor)
           return startOrResumeUpload(descriptor)
         }
         HttpStatusCode.NoContent -> {
-          val curr = res.headers.toUploadStatus()
-          if (curr == null) {
-            // TODO: MOBILE-198 - Log "upload status response missing Location/Range headers"
-            return null
+          val curr = resume.second ?: return null
+          if (curr.offset != prev.offset) {
+            prev.offset = curr.offset
           }
-          if (curr.offset != prev.offset) prev.offset = curr.offset
         }
-        else -> {
-          // TODO: MOBILE-198 - Log unexpected status from upload status endpoint
-          return null
-        }
+        else -> return null
       }
     }
 
@@ -622,15 +662,20 @@ internal constructor(
 
         when (val bytesLeft = total - start.offset) {
           in 1..start.minChunkSize -> {
-            val res =
-              client.put(start.location) {
-                url { encodedParameters.append("digest", expected.digest.toString()) }
-                headers { append(HttpHeaders.ContentLength, total.toString()) }
-                setBody(stream)
-                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-              }
-            if (res.status != HttpStatusCode.Created) {
-              // TODO: MOBILE-198 - Log unexpected status from monolithic upload PUT
+            val outcome =
+              caller.call(
+                operation = "repository.push.monolithic",
+                buildRequest = {
+                  method = HttpMethod.Put
+                  url(start.location)
+                  url { encodedParameters.append("digest", expected.digest.toString()) }
+                  headers { append(HttpHeaders.ContentLength, total.toString()) }
+                  setBody(stream)
+                  attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+                },
+                mapResponse = { res -> res.status },
+              )
+            if (outcome != HttpStatusCode.Created) {
               send(PullEvent.Failed)
               return@channelFlow
             }
@@ -655,26 +700,29 @@ internal constructor(
                   return@channelFlow
                 }
 
-                val res =
-                  client.patch(router.parseUploadLocation(currentLocation)) {
-                    setBody(chunk)
-                    headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
-                    attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-                  }
-                if (res.status != HttpStatusCode.Accepted) {
-                  // TODO: MOBILE-198 - Log unexpected status from chunked upload PATCH
+                val outcome =
+                  caller.call(
+                    operation = "repository.push.chunk",
+                    buildRequest = {
+                      method = HttpMethod.Patch
+                      url(router.parseUploadLocation(currentLocation))
+                      setBody(chunk)
+                      headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
+                      attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+                    },
+                    mapResponse = { res ->
+                      when (res.status) {
+                        HttpStatusCode.Accepted -> res.headers.toUploadStatus()
+                        else -> null
+                      }
+                    },
+                  )
+                if (outcome == null) {
                   send(PullEvent.Failed)
                   return@channelFlow
                 }
-
-                val status = res.headers.toUploadStatus()
-                if (status == null) {
-                  // TODO: MOBILE-198 - Log "chunked upload PATCH missing Location/Range headers"
-                  send(PullEvent.Failed)
-                  return@channelFlow
-                }
-                uploading[expected] = status
-                offset = status.offset + 1
+                uploading[expected] = outcome
+                offset = outcome.offset + 1
                 send(PullEvent.Progress(offset.toInt()))
                 yield()
               }
@@ -687,13 +735,18 @@ internal constructor(
               return@channelFlow
             }
 
-            val res =
-              client.put(finalLocation) {
-                url { encodedParameters.append("digest", expected.digest.toString()) }
-                attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
-              }
-            if (res.status != HttpStatusCode.Created) {
-              // TODO: MOBILE-198 - Log unexpected status from final upload PUT
+            val outcome =
+              caller.call(
+                operation = "repository.push.commit",
+                buildRequest = {
+                  method = HttpMethod.Put
+                  url(finalLocation)
+                  url { encodedParameters.append("digest", expected.digest.toString()) }
+                  attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+                },
+                mapResponse = { res -> res.status },
+              )
+            if (outcome != HttpStatusCode.Created) {
               send(PullEvent.Failed)
               return@channelFlow
             }
@@ -716,13 +769,17 @@ internal constructor(
 
     val endpoint = router.blob(name, descriptor) ?: return false
 
-    val response =
-      try {
-        client.head(endpoint) { attributes.appendScopes(scopeRepository(name, ACTION_PULL)) }
-      } catch (_: Exception) {
-        null
-      }
-    val rangeSupported = response?.headers?.get("Accept-Ranges") == "bytes"
+    val outcome =
+      caller.call(
+        operation = "repository.supportsRange",
+        buildRequest = {
+          method = HttpMethod.Head
+          url(endpoint)
+          attributes.appendScopes(scopeRepository(name, ACTION_PULL))
+        },
+        mapResponse = { res -> res.headers["Accept-Ranges"] == "bytes" },
+      )
+    val rangeSupported = outcome ?: false
 
     return synchronized(this) {
       supportsRange

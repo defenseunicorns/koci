@@ -12,6 +12,7 @@ import com.defenseunicorns.koci.api.config.OCIAuthPlugin
 import com.defenseunicorns.koci.api.config.PullConfig
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.api.config.TimeoutConfig
+import com.defenseunicorns.koci.internal.HttpWrapper
 import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.Router
 import io.ktor.client.HttpClient
@@ -142,7 +143,7 @@ public class Koci(
       pull = pull,
       push = push,
       backOffPolicy = backOffPolicy,
-      client = scopedClient,
+      caller = HttpWrapper(scopedClient),
       router = Router(url),
       store = layout,
     )

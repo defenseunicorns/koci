@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
 import okio.source
 
 /**
@@ -756,6 +757,59 @@ internal constructor(
         }
       }
       .onCompletion { cause -> if (cause == null) uploading.remove(expected) }
+
+  /**
+   * Tags a [Manifest] under [ref].
+   *
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests">OCI
+   *   Distribution Spec: Pushing Manifests</a>
+   */
+  public suspend fun tag(content: Manifest, ref: String): Descriptor? =
+    tag(
+      ref,
+      content.mediaType ?: MANIFEST_MEDIA_TYPE,
+      Json.encodeToString(Manifest.serializer(), content),
+    )
+
+  /**
+   * Tags an [Index] under [ref].
+   *
+   * @see <a
+   *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests">OCI
+   *   Distribution Spec: Pushing Manifests</a>
+   */
+  public suspend fun tag(content: Index, ref: String): Descriptor? =
+    tag(
+      ref,
+      content.mediaType ?: INDEX_MEDIA_TYPE,
+      Json.encodeToString(Index.serializer(), content),
+    )
+
+  private suspend fun tag(ref: String, mediaType: String, body: String): Descriptor? {
+    if (Reference.TagRegex.matchEntire(ref) == null) return null
+    return caller.call(
+      operation = "repository.tag",
+      buildRequest = {
+        method = HttpMethod.Put
+        url(router.manifest(name, ref))
+        contentType(ContentType.parse(mediaType))
+        setBody(body)
+        attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
+      },
+      mapResponse = { res ->
+        when (res.status) {
+          HttpStatusCode.Created -> {
+            val location = res.headers[HttpHeaders.Location] ?: return@call null
+            val digestSegment = Url(location).segments.lastOrNull() ?: return@call null
+            val digest = Digest.parse(digestSegment) ?: return@call null
+            Descriptor(mediaType = mediaType, digest = digest, size = body.length.toLong())
+          }
+          else -> null
+        }
+      },
+    )
+  }
 
   /**
    * This endpoint may also support RFC7233 compliant range requests. Support can be detected by

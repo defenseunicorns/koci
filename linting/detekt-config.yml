@@ -83,6 +83,8 @@ complexity:
     active: true
   TooManyFunctions:
     active: false
+  LargeClass:
+    active: false
 coroutines:
   active: true
   GlobalCoroutineUsage:

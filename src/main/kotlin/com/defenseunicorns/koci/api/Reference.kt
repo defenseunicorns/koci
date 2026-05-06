@@ -178,7 +178,7 @@ public class Reference(
      * Regex pattern for validating tags according to OCI spec. Tags must start with a word
      * character followed by up to 127 word, dot, or hyphen characters.
      */
-    private val TagRegex: Regex = Regex("^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}")
+    internal val TagRegex: Regex = Regex("^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}")
 
     /**
      * Regex pattern for validating repository names according to OCI spec. Repository names must

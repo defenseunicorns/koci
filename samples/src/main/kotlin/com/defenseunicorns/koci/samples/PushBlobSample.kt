@@ -11,14 +11,6 @@ import com.defenseunicorns.koci.api.PullEvent
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 
-/**
- * Pushes an arbitrary blob to a local registry. The [Descriptor] describes the blob being pushed
- * (size + sha256 digest); `Descriptor.fromInputStream` computes both by streaming the bytes through
- * a hashing source.
- *
- * The local docker-compose registry on `:5000` is a convenient target. Authenticated registries
- * take an `AuthConfig` — see `AuthSample.kt`.
- */
 fun main(): Unit = runBlocking {
   val payload = "hello from koci".toByteArray()
 
@@ -27,7 +19,6 @@ fun main(): Unit = runBlocking {
 
     val descriptor =
       Descriptor.fromInputStream(stream = payload.inputStream(), mediaType = "text/plain")
-        ?: error("could not compute descriptor")
 
     repo.push(stream = payload.inputStream(), expected = descriptor).collect { event ->
       when (event) {

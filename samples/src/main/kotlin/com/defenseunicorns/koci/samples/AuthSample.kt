@@ -11,29 +11,30 @@ import com.defenseunicorns.koci.api.config.TimeoutConfig
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.runBlocking
 
-/**
- * Wires up an authenticated `Registry`. [AuthConfig] is a sealed type with three variants:
- * [AuthConfig.None] (anonymous, the default), [AuthConfig.Basic] (username + password), and
- * [AuthConfig.Bearer] (a pre-acquired token).
- *
- * Auth is registry-scoped — once installed on the shared HTTP client it applies to every
- * `Repository` derived from this `Registry`.
- */
 fun main(): Unit = runBlocking {
+  val url = prompt("Registry URL (e.g. https://registry.example.com): ")
+  val user = prompt("Username: ")
+  val pass = promptSecret("Password: ")
+
   Koci(root = "/tmp/koci-auth-sample").use { koci ->
-    val basic =
+    val registry =
       koci.registry(
-        url = "https://registry.example.com",
-        auth = AuthConfig.Basic(user = "alice", pass = System.getenv("REGISTRY_PASSWORD") ?: ""),
+        url = url,
+        auth = AuthConfig.Basic(user = user, pass = pass),
         timeouts = TimeoutConfig(requestTimeout = 30.seconds),
       )
-    println("basic auth ping: ${basic.ping()}")
-
-    val bearer =
-      koci.registry(
-        url = "https://registry.example.com",
-        auth = AuthConfig.Bearer(token = System.getenv("REGISTRY_TOKEN") ?: ""),
-      )
-    println("bearer auth ping: ${bearer.ping()}")
+    println("basic auth ping: ${registry.ping()}")
   }
+}
+
+private fun prompt(label: String): String {
+  print(label)
+  System.out.flush()
+  return readlnOrNull().orEmpty().trim()
+}
+
+private fun promptSecret(label: String): String {
+  val console = System.console()
+  if (console != null) return console.readPassword(label).contentToString()
+  return prompt(label)
 }

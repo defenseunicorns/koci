@@ -10,14 +10,6 @@ import com.defenseunicorns.koci.api.PullEvent
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 
-/**
- * Pulls a single platform variant out of a multi-arch index by passing a `platformResolver`
- * predicate. The first manifest whose `Platform` matches is the one fetched; if nothing matches,
- * the pull emits [PullEvent.Failed].
- *
- * Demonstrates: filtering an OCI index by architecture/os without manually resolving the index
- * descriptor first.
- */
 fun main(): Unit = runBlocking {
   Koci(root = "/tmp/koci-platform-sample").use { koci ->
     val repo = koci.registry("https://ghcr.io").repo("linuxcontainers/alpine")

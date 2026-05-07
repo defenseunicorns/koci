@@ -20,7 +20,6 @@ import io.ktor.client.call.body
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -88,7 +87,7 @@ internal constructor(
       caller.call(
         operation = "registry.ping",
         buildRequest = { url(router.base()) },
-        mapResponse = { res -> res.status.isSuccess() },
+        onSuccess = { true },
       )
     return outcome ?: false
   }
@@ -111,12 +110,7 @@ internal constructor(
           url(router.catalog())
           attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
         },
-        mapResponse = { res ->
-          when (res.status.isSuccess()) {
-            true -> res.body<CatalogResponse>().repositories.map { repo(it) }
-            false -> emptyList()
-          }
-        },
+        onSuccess = { res -> res.body<CatalogResponse>().repositories.map { repo(it) } },
       )
     return outcome ?: emptyList()
   }
@@ -147,15 +141,10 @@ internal constructor(
             url(current)
             attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
           },
-          mapResponse = { res ->
-            when (res.status.isSuccess()) {
-              true -> {
-                val next = parseNextLink(res.headers[HttpHeaders.Link])
-                val repos = res.body<CatalogResponse>().repositories.map { repo(it) }
-                repos to next
-              }
-              false -> null
-            }
+          onSuccess = { res ->
+            val next = parseNextLink(res.headers[HttpHeaders.Link])
+            val repos = res.body<CatalogResponse>().repositories.map { repo(it) }
+            repos to next
           },
         )
       val page = outcome ?: return@flow

@@ -34,7 +34,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.http.headers
-import io.ktor.http.isSuccess
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -109,7 +108,7 @@ internal constructor(
           url(endpoint)
           attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         },
-        mapResponse = { res -> res.status.isSuccess() },
+        onSuccess = { true },
       )
     return outcome ?: false
   }
@@ -134,12 +133,7 @@ internal constructor(
           url(router.tags(name))
           attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         },
-        mapResponse = { res ->
-          when (res.status.isSuccess()) {
-            true -> res.body<TagsResponse>().tags
-            false -> emptyList()
-          }
-        },
+        onSuccess = { res -> res.body<TagsResponse>().tags },
       )
     return outcome ?: emptyList()
   }
@@ -174,12 +168,7 @@ internal constructor(
           accept(ContentType.parse(INDEX_MEDIA_TYPE))
           attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         },
-        mapResponse = { res ->
-          when (res.status.isSuccess()) {
-            true -> res.contentType()?.toString()
-            false -> null
-          }
-        },
+        onSuccess = { res -> res.contentType()?.toString() },
       )
     val contentType = headOutcome ?: return null
 
@@ -201,23 +190,19 @@ internal constructor(
         accept(ContentType.parse(INDEX_MEDIA_TYPE))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
       },
-      mapResponse = { res ->
-        when (res.status.isSuccess()) {
-          false -> null
-          true ->
-            when (platformResolver) {
-              null ->
-                Descriptor.fromInputStream(
-                  mediaType = INDEX_MEDIA_TYPE,
-                  stream = res.body() as InputStream,
-                )
-              else -> {
-                val index = res.body<Index>()
-                index.manifests.firstOrNull { desc ->
-                  desc.platform != null && platformResolver(desc.platform)
-                }
-              }
+      onSuccess = { res ->
+        when (platformResolver) {
+          null ->
+            Descriptor.fromInputStream(
+              mediaType = INDEX_MEDIA_TYPE,
+              stream = res.body() as InputStream,
+            )
+          else -> {
+            val index = res.body<Index>()
+            index.manifests.firstOrNull { desc ->
+              desc.platform != null && platformResolver(desc.platform)
             }
+          }
         }
       },
     )
@@ -230,15 +215,11 @@ internal constructor(
         accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
       },
-      mapResponse = { res ->
-        when (res.status.isSuccess()) {
-          true ->
-            Descriptor.fromInputStream(
-              mediaType = MANIFEST_MEDIA_TYPE,
-              stream = res.body() as InputStream,
-            )
-          false -> null
-        }
+      onSuccess = { res ->
+        Descriptor.fromInputStream(
+          mediaType = MANIFEST_MEDIA_TYPE,
+          stream = res.body() as InputStream,
+        )
       },
     )
 
@@ -451,12 +432,7 @@ internal constructor(
           INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
         }
       },
-      mapResponse = { res ->
-        when (res.status.isSuccess()) {
-          true -> res.body<InputStream>().use { stream -> handler(stream) }
-          false -> null
-        }
-      },
+      onSuccess = { res -> res.body<InputStream>().use { stream -> handler(stream) } },
     )
   }
 
@@ -478,12 +454,7 @@ internal constructor(
         accept(ContentType.parse(mediaType))
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
       },
-      mapResponse = { res ->
-        when (res.status.isSuccess()) {
-          true -> res.body<T>()
-          false -> null
-        }
-      },
+      onSuccess = { res -> res.body<T>() },
     )
   }
 
@@ -538,19 +509,15 @@ internal constructor(
             headers.append("Range", "bytes=$resumeStart-${descriptor.size - 1}")
           }
         },
-        mapResponse = { response ->
-          when (response.status.isSuccess()) {
-            true ->
-              response.body<InputStream>().use { stream ->
-                store.push(descriptor, stream.source()).collect { pushEvent ->
-                  when (pushEvent) {
-                    is PushEvent.Progress -> send(PullEvent.Progress(pushEvent.bytes))
-                    is PushEvent.Completed -> send(PullEvent.Completed)
-                    is PushEvent.Failed -> send(PullEvent.Failed)
-                  }
-                }
+        onSuccess = { response ->
+          response.body<InputStream>().use { stream ->
+            store.push(descriptor, stream.source()).collect { pushEvent ->
+              when (pushEvent) {
+                is PushEvent.Progress -> send(PullEvent.Progress(pushEvent.bytes))
+                is PushEvent.Completed -> send(PullEvent.Completed)
+                is PushEvent.Failed -> send(PullEvent.Failed)
               }
-            false -> send(PullEvent.Failed)
+            }
           }
         },
       )
@@ -584,7 +551,7 @@ internal constructor(
           headers[HttpHeaders.ContentLength] = 0.toString()
           attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         },
-        mapResponse = { res ->
+        onSuccess = { res ->
           when (res.status) {
             HttpStatusCode.Accepted -> res.headers.toUploadStatus()
             else -> null
@@ -601,7 +568,8 @@ internal constructor(
             url(router.parseUploadLocation(prev.location))
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
           },
-          mapResponse = { res -> res.status to res.headers.toUploadStatus() },
+          onError = { failure -> failure.status to null },
+          onSuccess = { res -> res.status to res.headers.toUploadStatus() },
         )
       val resume = outcome ?: return null
 
@@ -676,7 +644,7 @@ internal constructor(
                   setBody(stream)
                   attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 },
-                mapResponse = { res -> res.status },
+                onSuccess = { res -> res.status },
               )
             if (outcome != HttpStatusCode.Created) {
               send(PullEvent.Failed)
@@ -713,7 +681,7 @@ internal constructor(
                       headers { append(HttpHeaders.ContentRange, "$offset-$endRange") }
                       attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                     },
-                    mapResponse = { res ->
+                    onSuccess = { res ->
                       when (res.status) {
                         HttpStatusCode.Accepted -> res.headers.toUploadStatus()
                         else -> null
@@ -747,7 +715,7 @@ internal constructor(
                   url { encodedParameters.append("digest", expected.digest.toString()) }
                   attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
                 },
-                mapResponse = { res -> res.status },
+                onSuccess = { res -> res.status },
               )
             if (outcome != HttpStatusCode.Created) {
               send(PullEvent.Failed)
@@ -791,7 +759,7 @@ internal constructor(
         setBody(body)
         attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
       },
-      mapResponse = { res ->
+      onSuccess = { res ->
         when (res.status) {
           HttpStatusCode.Created -> {
             val location = res.headers[HttpHeaders.Location] ?: return@call null
@@ -825,7 +793,7 @@ internal constructor(
           url(endpoint)
           attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         },
-        mapResponse = { res -> res.headers["Accept-Ranges"] == "bytes" },
+        onSuccess = { res -> res.headers["Accept-Ranges"] == "bytes" },
       )
     val rangeSupported = outcome ?: false
 

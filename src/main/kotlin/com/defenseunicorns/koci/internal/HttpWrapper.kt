@@ -6,17 +6,24 @@
 package com.defenseunicorns.koci.internal
 
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.prepareRequest
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.serialization.Serializable
 
 /**
  * Single ingress for every HTTP request koci makes against an upstream registry.
  *
- * The wrapper has exactly one job: run the request and turn engine-level exceptions (transport
- * failure, timeout, engine closed, decode threw) into `null`. Status-code branching is the call
- * site's job — a non-2xx response is still a response, and [mapResponse] sees it.
+ * The wrapper turns engine-level exceptions (transport failure, timeout, engine closed, decode
+ * threw) into `null`, then splits status-code branching once: 2xx goes to [onSuccess], everything
+ * else is parsed into a [FailureResponse], logged, and handed to [onError] (which defaults to
+ * producing `null`). Internal call sites that want to act on specific [ErrorCode]s override
+ * [onError]; everyone else gets log-and-null for free.
  *
  * The single catch logs once with [operation] as the tag — that's the place MOBILE-198 will plug
  * into. [CancellationException] is rethrown so coroutine cancellation propagates correctly.
@@ -24,22 +31,58 @@ import kotlin.coroutines.cancellation.CancellationException
 internal class HttpWrapper(private val client: HttpClient) {
 
   /**
-   * Run [buildRequest] and hand the live response to [mapResponse]. Returns whatever [mapResponse]
-   * produced. Returns `null` only when an exception is thrown — by the engine or by [mapResponse].
+   * Run [buildRequest], dispatch to [onSuccess] on a 2xx response or [onError] on anything else,
+   * and return whatever the chosen lambda produced. Returns `null` if the engine throws or either
+   * lambda throws.
    */
   @Suppress("detekt:UnusedParameter", "detekt:TooGenericExceptionCaught")
   suspend fun <T> call(
     operation: String,
     buildRequest: HttpRequestBuilder.() -> Unit,
-    mapResponse: suspend (HttpResponse) -> T?,
+    onError: suspend (FailureResponse) -> T? = { null },
+    onSuccess: suspend (HttpResponse) -> T?,
   ): T? =
     try {
       val request = HttpRequestBuilder().apply(buildRequest)
-      client.prepareRequest(request).execute { res -> mapResponse(res) }
+      client.prepareRequest(request).execute { res ->
+        when (res.status.isSuccess()) {
+          true -> onSuccess(res)
+          false -> {
+            val failure = res.toFailureResponse()
+            // TODO: MOBILE-198 - log structured failure: operation, failure
+            onError(failure)
+          }
+        }
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (_: Exception) {
-      // TODO: MOBILE-198 - log exception
+      // TODO: MOBILE-198 - log exception: operation
       null
     }
+}
+
+@Serializable private data class FailureEnvelope(val errors: List<ActionableFailure> = emptyList())
+
+/**
+ * Build a [FailureResponse] from a non-2xx [HttpResponse]: parse the OCI error envelope when the
+ * body is JSON, otherwise create a single [ErrorCode.UNKNOWN] entry so callers always get a
+ * non-empty [FailureResponse.errors].
+ */
+private suspend fun HttpResponse.toFailureResponse(): FailureResponse {
+  val parsedErrors =
+    when (contentType()) {
+      ContentType.Application.Json ->
+        try {
+          body<FailureEnvelope>().errors
+        } catch (_: Exception) {
+          emptyList()
+        }
+      else -> emptyList()
+    }
+  val effective =
+    parsedErrors.ifEmpty {
+      listOf(ActionableFailure(code = ErrorCode.UNKNOWN, message = "HTTP ${status.value}"))
+    }
+  return FailureResponse(status = status, errors = effective)
 }

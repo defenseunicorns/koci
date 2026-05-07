@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci.api
 
+import com.defenseunicorns.koci.internal.Regex.digestRegex
 import java.security.MessageDigest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -99,7 +100,7 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
         }
       val hex = content.substringAfter(":")
 
-      if (DigestRegex.matchEntire("$algorithm:$hex") == null) return null
+      if (digestRegex.matchEntire("$algorithm:$hex") == null) return null
 
       val expectedLength =
         when (algorithm) {
@@ -110,13 +111,6 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
 
       return Digest(algorithm, hex)
     }
-
-    /**
-     * Regex pattern for validating digest strings according to OCI spec. Digests must be in the
-     * format algorithm:hex where algorithm is a lowercase identifier and hex is a base64-encoded
-     * string.
-     */
-    private val DigestRegex: Regex = Regex("^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$")
 
     private const val SHA256_HEX_LENGTH = 64
     private const val SHA512_HEX_LENGTH = 128

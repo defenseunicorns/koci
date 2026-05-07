@@ -16,6 +16,7 @@ import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.OciConstants.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.internal.OciConstants.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.internal.PushEvent
+import com.defenseunicorns.koci.internal.Regex.tagRegex
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.TagsResponse
 import com.defenseunicorns.koci.internal.UploadStatus
@@ -73,6 +74,7 @@ internal constructor(
   internal val router: Router,
   internal val caller: HttpWrapper,
   internal val store: Layout,
+  internal val json: Json,
 ) {
 
   @Volatile private var supportsRange: Boolean? = null
@@ -766,11 +768,7 @@ internal constructor(
    *   Distribution Spec: Pushing Manifests</a>
    */
   public suspend fun tag(content: Manifest, ref: String): Descriptor? =
-    tag(
-      ref,
-      content.mediaType ?: MANIFEST_MEDIA_TYPE,
-      Json.encodeToString(Manifest.serializer(), content),
-    )
+    tag(ref, content.mediaType ?: MANIFEST_MEDIA_TYPE, json.encodeToString(content))
 
   /**
    * Tags an [Index] under [ref].
@@ -780,14 +778,10 @@ internal constructor(
    *   Distribution Spec: Pushing Manifests</a>
    */
   public suspend fun tag(content: Index, ref: String): Descriptor? =
-    tag(
-      ref,
-      content.mediaType ?: INDEX_MEDIA_TYPE,
-      Json.encodeToString(Index.serializer(), content),
-    )
+    tag(ref, content.mediaType ?: INDEX_MEDIA_TYPE, json.encodeToString(content))
 
-  private suspend fun tag(ref: String, mediaType: String, body: String): Descriptor? {
-    if (Reference.TagRegex.matchEntire(ref) == null) return null
+  private suspend inline fun tag(ref: String, mediaType: String, body: String): Descriptor? {
+    if (tagRegex.matchEntire(ref) == null) return null
     return caller.call(
       operation = "repository.tag",
       buildRequest = {

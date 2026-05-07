@@ -146,6 +146,7 @@ public class Koci(
       caller = HttpWrapper(scopedClient),
       router = Router(url),
       store = layout,
+      json = json,
     )
   }
 

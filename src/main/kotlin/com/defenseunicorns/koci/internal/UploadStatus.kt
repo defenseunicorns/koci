@@ -5,6 +5,7 @@
 
 package com.defenseunicorns.koci.internal
 
+import com.defenseunicorns.koci.internal.Regex.uploadRangeRegex
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 
@@ -25,8 +26,7 @@ internal data class UploadStatus(val location: String, var offset: Long, var min
 internal fun Headers.toUploadStatus(): UploadStatus? {
   val location = this[HttpHeaders.Location] ?: return null
   val range = this[HttpHeaders.Range] ?: return null
-  val re = Regex("^([0-9]+)-([0-9]+)$")
-  val offset = re.matchEntire(range)?.groupValues?.last() ?: return null
+  val offset = uploadRangeRegex.matchEntire(range)?.groupValues?.last() ?: return null
 
   // this header MAY not exist
   val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L

@@ -5,6 +5,8 @@
 
 package com.defenseunicorns.koci.api
 
+import com.defenseunicorns.koci.internal.Regex.repositoryRegex
+import com.defenseunicorns.koci.internal.Regex.tagRegex
 import io.ktor.http.Url
 import io.ktor.http.hostWithPort
 import io.ktor.http.toURI
@@ -111,10 +113,10 @@ public class Reference(
       }
     if (hostWithPort != registry) return false
 
-    if (RepositoryRegex.matchEntire(repository) == null) return false
+    if (repositoryRegex.matchEntire(repository) == null) return false
 
     if (reference.isEmpty()) return true
-    if (TagRegex.matchEntire(reference) != null) return true
+    if (tagRegex.matchEntire(reference) != null) return true
     return Digest.parse(reference) != null
   }
 
@@ -173,21 +175,5 @@ public class Reference(
       if (!reference.validate()) return null
       return reference
     }
-
-    /**
-     * Regex pattern for validating tags according to OCI spec. Tags must start with a word
-     * character followed by up to 127 word, dot, or hyphen characters.
-     */
-    internal val TagRegex: Regex = Regex("^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}")
-
-    /**
-     * Regex pattern for validating repository names according to OCI spec. Repository names must
-     * follow a specific pattern with lowercase alphanumeric characters, separators, and optional
-     * path components.
-     *
-     * [Reference](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests)
-     */
-    private val RepositoryRegex: Regex =
-      Regex("^[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*")
   }
 }

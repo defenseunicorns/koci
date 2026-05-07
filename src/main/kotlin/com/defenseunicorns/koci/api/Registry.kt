@@ -12,6 +12,7 @@ import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.internal.CatalogResponse
 import com.defenseunicorns.koci.internal.HttpWrapper
 import com.defenseunicorns.koci.internal.Layout
+import com.defenseunicorns.koci.internal.Regex.linkRegex
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.internal.appendScopes
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
 
 /**
  * A reference to a single OCI Distribution-spec registry.
@@ -46,6 +48,7 @@ internal constructor(
   internal val caller: HttpWrapper,
   internal val router: Router,
   internal val store: Layout,
+  internal val json: Json,
 ) {
   /**
    * Returns a [Repository] bound to [name] within this registry (e.g. `"myorg/myimage"`).
@@ -65,6 +68,7 @@ internal constructor(
       router = router,
       caller = caller,
       store = store,
+      json = json,
     )
 
   /**
@@ -164,8 +168,7 @@ internal constructor(
   // https://datatracker.ietf.org/doc/html/rfc5988#section-5
   private fun parseNextLink(linkHeader: String?): Url? {
     if (linkHeader == null) return null
-    val regex = Regex("<(.+)>;\\s+rel=\"next\"")
-    val next = regex.find(linkHeader)?.groups?.get(1)?.value ?: return null
+    val next = linkRegex.find(linkHeader)?.groups?.get(1)?.value ?: return null
     val url = Url(next)
     val nextN = url.parameters["n"]?.toInt() ?: return null
     return router.catalog(nextN, url.parameters["last"])

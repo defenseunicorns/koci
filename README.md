@@ -4,38 +4,127 @@
 
 Kotlin implementation of the [OCI Distribution client specification](https://github.com/opencontainers/distribution-spec/blob/master/spec.md).
 
-## Import
-
-```bash
-com.defenseunicorns.koci
-```
-
 Grab from [GitHub packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry) or [Maven Central](https://central.sonatype.com/artifact/com.defenseunicorns/koci)
 
-## Basic Usage
+## Usage
+
+`Koci` is the entry point. It owns the HTTP engine and on-disk OCI layout, and hands out `Registry` and `Repository` views:
 
 ```kotlin
-// 0. Create a file store
-val store = runBlocking { Layout.create("/tmp/koci-store") }.getOrThrow()
-
-// 1. Connect to a remote repository
-val repo = Registry("https://public.ecr.aws").repo("ubuntu/redis")
-
-// 2. Copy from the remote repository to the file store
-val tag = "latest"
-
-repo.pull(tag, store).collect{ prog ->
-    println("$prog% done")
+Koci(root = "/tmp/koci-store").use { koci ->
+  val registry = koci.registry("https://ghcr.io")
+  val repo = registry.repo("linuxcontainers/alpine")
+  // ...
 }
 ```
 
-## Auth
+Each operation below has more than one shape, depending on what you already have on hand and how much control you want.
+
+### Pulling
+
+Pull an image by tag (resolves the tag, downloads the manifest and every referenced blob):
+
+```kotlin
+repo.pull(tag = "latest").collect { event ->
+  when (event) {
+    is PullEvent.Progress -> println("progress: ${event.percent}%")
+    PullEvent.Completed -> println("done")
+    PullEvent.Failed -> println("failed (cause logged inside koci)")
+  }
+}
+```
+
+Pull a single platform variant from a multi-arch index. The first manifest whose `Platform` matches is fetched; if nothing matches, `PullEvent.Failed` is emitted:
+
+```kotlin
+repo.pull(
+  tag = "latest",
+  platformResolver = { it.os == "linux" && it.architecture == "arm64" },
+).collect { /* ... */ }
+```
+
+Without a `platformResolver`, koci walks an index and pulls every referenced manifest.
+
+Pull by descriptor when you already have one (e.g. from `resolve(tag)` or a manifest you cached):
+
+```kotlin
+val descriptor = repo.resolve("latest") ?: return
+repo.pull(descriptor).collect { /* ... */ }
+```
+
+The descriptor overload skips the tag lookup that the tag overload performs first.
+
+### Pushing
+
+Push a blob with a descriptor computed by streaming the payload through a hasher:
+
+```kotlin
+val descriptor = Descriptor.fromInputStream(
+  stream = payload.inputStream(),
+  mediaType = "text/plain",
+)
+
+repo.push(stream = payload.inputStream(), expected = descriptor).collect { /* ... */ }
+```
+
+If you already know the digest and size (e.g. from a manifest you're mirroring), construct the `Descriptor` directly and skip the streaming pre-pass:
+
+```kotlin
+val descriptor = Descriptor(
+  mediaType = "text/plain",
+  digest = Digest.parse("sha256:..."),
+  size = payload.size.toLong(),
+)
+```
+
+`push` is resumable. Re-invoking with the same `expected` descriptor picks up where the previous attempt left off.
+
+### Listing
+
+One-shot catalog returns every repository the registry advertises:
+
+```kotlin
+for (repo in registry.catalog()) {
+  println("${repo.name}: ${repo.tags()}")
+}
+```
+
+Paginated catalog follows `Link` headers and emits one page at a time, useful for very large registries:
+
+```kotlin
+registry.catalog(n = 100).collect { page ->
+  for (repo in page) println(repo.name)
+}
+```
+
+`Repository.tags()` lists tags for a single repository. Both `catalog()` and `tags()` return empty on transport, HTTP, or decode failure (cause logged inside the HTTP wrapper).
+
+### Auth
+
+Auth is registry-scoped. Once installed on a `Registry`, it applies to every `Repository` derived from it.
+
+```kotlin
+// Anonymous (default)
+koci.registry(url = "https://ghcr.io")
+
+// HTTP Basic
+koci.registry(url = url, auth = AuthConfig.Basic(user, pass))
+
+// Pre-acquired bearer token
+koci.registry(url = url, auth = AuthConfig.Bearer(token))
+```
+
+Runnable demos for each of the above live in [`samples/`](./samples).
+
+## Specification coverage
+
+### Auth
 
 - [x] [Request scopes](https://distribution.github.io/distribution/spec/auth/scope/) [relevant code](https://github.com/distribution/distribution/blob/v2.7.1/registry/handlers/app.go#L915-L937)
 - [x] Basic/Bearer auth w/ Distribution auth flow
 - [ ] Docker's `~/.docker/config.json` support
 
-## Pull
+### Pull
 
 > [Distribution specification](https://github.com/opencontainers/distribution-spec)
 
@@ -59,7 +148,7 @@ repo.pull(tag, store).collect{ prog ->
   - [x] Content verification using size + digest
 - [ ] Referrers API
 
-## Push
+### Push
 
 > [Distribution specification](https://github.com/opencontainers/distribution-spec)
 
@@ -70,7 +159,7 @@ repo.pull(tag, store).collect{ prog ->
 - [x] Push + tag manifests/indexes
 - [ ] Referrers API
 
-## Store
+### Store
 
 > [Layout specification](https://github.com/opencontainers/image-spec/blob/main/image-layout.md)
 
@@ -85,12 +174,6 @@ Support for SHA-256 and SHA-512 hashing algorithms.
   - [x] Remove blob by descriptor
   - [x] Remove image/artifact by digest/reference
   - [x] Garbage collection
-
-## Concurrency
-
-> Changes to the concurrency API of `koci` are currently subject to change at any time.
->
-> For now, it is best to run operations that could interfere (images sharing layers) sequentially.
 
 ## Contributing
 

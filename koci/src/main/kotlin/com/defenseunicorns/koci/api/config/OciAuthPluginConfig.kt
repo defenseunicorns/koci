@@ -21,6 +21,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -30,6 +31,7 @@ import io.ktor.http.auth.parseAuthorizationHeader
 import io.ktor.http.contentType
 import io.ktor.http.hostWithPort
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.discard
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -197,6 +199,10 @@ internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
       val originalCall = proceed(request)
       originalCall.response.run { // this: HttpResponse
         if (status == HttpStatusCode.Unauthorized) {
+          // Drain the 401 challenge body so OkHttp can return the connection to the pool;
+          // otherwise it stays in-use and the keep-alive thread holds the JVM open.
+          bodyAsChannel().discard()
+
           var scopes = emptyList<String>()
           var token: String? = null
           val registryCache = tokenCache.computeIfAbsent(registryKey) { ConcurrentHashMap() }

@@ -7,8 +7,6 @@ package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Koci
 import com.defenseunicorns.koci.api.config.AuthConfig
-import com.defenseunicorns.koci.api.config.TimeoutConfig
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
@@ -17,12 +15,7 @@ fun main(): Unit = runBlocking {
   val pass = promptSecret("Password: ")
 
   Koci(root = "/tmp/koci-auth-sample").use { koci ->
-    val registry =
-      koci.registry(
-        url = url,
-        auth = AuthConfig.Basic(user = user, pass = pass),
-        timeouts = TimeoutConfig(requestTimeout = 30.seconds),
-      )
+    val registry = koci.registry(url = url, auth = AuthConfig.Basic(user = user, pass = pass))
     println("basic auth ping: ${registry.ping()}")
   }
 }

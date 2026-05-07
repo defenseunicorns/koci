@@ -3,4 +3,7 @@ plugins {
   id("com.defenseunicorns.koci.lint")
 }
 
-dependencies { implementation(project(":koci")) }
+dependencies {
+  implementation(project(":koci"))
+  implementation(libs.kotlinx.coroutines.core)
+}

@@ -64,7 +64,7 @@ private suspend fun HttpClient.fetchDistributionToken(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    // TODO: MOBILE-198 - Log non-200 from token endpoint
+    // TODO: #658 - Log non-200 from token endpoint
     return null
   }
 
@@ -72,13 +72,13 @@ private suspend fun HttpClient.fetchDistributionToken(
     try {
       res.body<DistributionTokenResponse>()
     } catch (_: SerializationException) {
-      // TODO: MOBILE-198 Log malformed token response
+      // TODO: #658 Log malformed token response
       return null
     }
 
   if (tokenResponse.accessToken != null) return tokenResponse.accessToken
   if (tokenResponse.token.isNotEmpty()) return tokenResponse.token
-  // TODO: MOBILE-198 Log empty token response
+  // TODO: #658 Log empty token response
   return null
 }
 
@@ -130,7 +130,7 @@ private suspend fun HttpClient.fetchOAuth2Token(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    // TODO: MOBILE-198 - Log non-200 from oauth2 token endpoint
+    // TODO: #658 - Log non-200 from oauth2 token endpoint
     return null
   }
 
@@ -138,12 +138,12 @@ private suspend fun HttpClient.fetchOAuth2Token(
     try {
       res.body<OAuth2TokenResponse>()
     } catch (_: SerializationException) {
-      // TODO: MOBILE-198 - Log malformed oauth2 token response
+      // TODO: #658 - Log malformed oauth2 token response
       return null
     }
 
   if (tokenResponse.accessToken.isNotEmpty()) return tokenResponse.accessToken
-  // TODO: MOBILE-198 - Log empty oauth2 token response
+  // TODO: #658 - Log empty oauth2 token response
   return null
 }
 
@@ -177,7 +177,7 @@ internal class OCIAuthPluginConfig {
  * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec:
  *   Authentication</a>
  */
-// TODO: MOBILE-218
+// TODO: #677
 internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
   createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()

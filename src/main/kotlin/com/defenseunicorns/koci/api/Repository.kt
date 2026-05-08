@@ -123,7 +123,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Tags</a>
    *
-   * TODO: MOBILE-215 Implement pagination support as described in the specification
+   * TODO: #674 Implement pagination support as described in the specification
    */
   public suspend fun tags(): List<String> {
     val outcome =
@@ -252,7 +252,7 @@ internal constructor(
         store.tag(descriptor, ref)
         send(PullEvent.Completed)
       } else {
-        // TODO: MOBILE-198 - Log "post-pull verification failed for $ref"
+        // TODO: #658 - Log "post-pull verification failed for $ref"
         send(PullEvent.Failed)
       }
     }
@@ -600,7 +600,7 @@ internal constructor(
    * ([PullEvent.Completed] on success, [PullEvent.Failed] otherwise — specific causes logged
    * internally).
    *
-   * Reuses [PullEvent] today for shape consistency with [pull]; MOBILE-210 will introduce a unified
+   * Reuses [PullEvent] today for shape consistency with [pull]; #670 will introduce a unified
    * progress type.
    *
    * @param stream Input stream containing blob data
@@ -666,7 +666,7 @@ internal constructor(
                 val endRange = offset + chunk.size - 1
                 val currentLocation = uploading[expected]?.location
                 if (currentLocation == null) {
-                  // TODO: MOBILE-198 - Log "upload session lost mid-push for $expected"
+                  // TODO: #658 - Log "upload session lost mid-push for $expected"
                   send(PullEvent.Failed)
                   return@channelFlow
                 }
@@ -701,7 +701,7 @@ internal constructor(
 
             val finalLocation = uploading[expected]?.location
             if (finalLocation == null) {
-              // TODO: MOBILE-198 - Log "upload session lost before commit for $expected"
+              // TODO: #658 - Log "upload session lost before commit for $expected"
               send(PullEvent.Failed)
               return@channelFlow
             }

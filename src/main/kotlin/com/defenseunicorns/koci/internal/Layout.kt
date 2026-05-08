@@ -86,7 +86,7 @@ internal class Layout(
         Index()
       }
 
-    // TODO: MOBILE-219 do this for all supported algorithms
+    // TODO: #678 do this for all supported algorithms
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha256")
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha512")
   }
@@ -197,7 +197,7 @@ internal class Layout(
 
         val length = withContext(dispatcher) { fileSystem.metadata(blobPath).size ?: 0L }
         if (length != descriptor.size) {
-          // TODO: MOBILE-198 - Log size mismatch — expected=${descriptor.size}, actual=$length,
+          // TODO: #658 - Log size mismatch — expected=${descriptor.size}, actual=$length,
           // descriptor=$descriptor
           send(PushEvent.Failed)
           return@withLock
@@ -206,7 +206,7 @@ internal class Layout(
         val digest = Digest(expectedDigest.algorithm, md.digest())
         if (digest != expectedDigest) {
           withContext(dispatcher) { fileSystem.delete(blobPath) }
-          // TODO: MOBILE-198 - Log digest mismatch — expected=$expectedDigest, actual=$digest,
+          // TODO: #658 - Log digest mismatch — expected=$expectedDigest, actual=$digest,
           // descriptor=$descriptor
           send(PushEvent.Failed)
           return@withLock
@@ -341,7 +341,7 @@ internal class Layout(
             val allOtherLayers = expand(otherManifests)
 
             if (allOtherLayers.contains(descriptor)) {
-              // TODO: MOBILE-198 - Log "manifest still referenced by another artifact: $descriptor"
+              // TODO: #658 - Log "manifest still referenced by another artifact: $descriptor"
               return false
             }
 

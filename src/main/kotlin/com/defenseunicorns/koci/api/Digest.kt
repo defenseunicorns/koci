@@ -52,7 +52,7 @@ public enum class RegisteredAlgorithm(private val n: String) {
 @Serializable(with = DigestSerializer::class)
 public class Digest
 internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: String) {
-  // TODO: MOBILE-213
+  // TODO: #672
   internal constructor(
     algorithm: RegisteredAlgorithm,
     hex: ByteArray,

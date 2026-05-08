@@ -25,7 +25,7 @@ import kotlinx.serialization.Serializable
  * producing `null`). Internal call sites that want to act on specific [ErrorCode]s override
  * [onError]; everyone else gets log-and-null for free.
  *
- * The single catch logs once with [operation] as the tag — that's the place MOBILE-198 will plug
+ * The single catch logs once with [operation] as the tag — that's the place #658 will plug
  * into. [CancellationException] is rethrown so coroutine cancellation propagates correctly.
  */
 internal class HttpWrapper(private val client: HttpClient) {
@@ -49,7 +49,7 @@ internal class HttpWrapper(private val client: HttpClient) {
           true -> onSuccess(res)
           false -> {
             val failure = res.toFailureResponse()
-            // TODO: MOBILE-198 - log structured failure: operation, failure
+            // TODO: #658 - log structured failure: operation, failure
             onError(failure)
           }
         }
@@ -57,7 +57,7 @@ internal class HttpWrapper(private val client: HttpClient) {
     } catch (e: CancellationException) {
       throw e
     } catch (_: Exception) {
-      // TODO: MOBILE-198 - log exception: operation
+      // TODO: #658 - log exception: operation
       null
     }
 }

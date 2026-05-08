@@ -128,7 +128,7 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Pagination</a>
    */
-  // TODO: MOBILE-217
+  // TODO: #676
   public fun catalog(n: Int, lastRepo: String? = null): Flow<List<Repository>> = flow {
     var endpoint: Url? = router.catalog(n.coerceAtMost(MAX_REPOS), lastRepo)
 
@@ -153,7 +153,7 @@ internal constructor(
     }
   }
 
-  // TODO: MOBILE-214 — replace with a full RFC 5988 parser.
+  // TODO: #673 — replace with a full RFC 5988 parser.
   // https://datatracker.ietf.org/doc/html/rfc5988#section-5
   private fun parseNextLink(linkHeader: String?): Url? {
     if (linkHeader == null) return null

@@ -159,7 +159,7 @@ internal constructor(
     if (linkHeader == null) return null
     val next = linkRegex.find(linkHeader)?.groups?.get(1)?.value ?: return null
     val url = Url(next)
-    val nextN = url.parameters["n"]?.toInt() ?: return null
+    val nextN = url.parameters["n"]?.toIntOrNull() ?: return null
     return router.catalog(nextN, url.parameters["last"])
   }
 

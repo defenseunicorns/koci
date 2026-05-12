@@ -83,6 +83,8 @@ complexity:
     active: true
   TooManyFunctions:
     active: false
+  LargeClass:
+    active: false
 coroutines:
   active: true
   GlobalCoroutineUsage:
@@ -228,5 +230,8 @@ style:
     ignoreRanges: true
 libraries:
   LibraryEntitiesShouldNotBePublic:
+    active: true
+    excludes: ["**/api/**"]
+  ForbiddenPublicDataClass:
     active: true
     excludes: ["**/api/**"]

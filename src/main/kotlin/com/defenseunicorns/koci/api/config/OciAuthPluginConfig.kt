@@ -6,7 +6,6 @@
 package com.defenseunicorns.koci.api.config
 
 import com.defenseunicorns.koci.api.Credential
-import com.defenseunicorns.koci.api.OCIException
 import com.defenseunicorns.koci.internal.DEFAULT_CLIENT_ID
 import com.defenseunicorns.koci.internal.appendScopes
 import com.defenseunicorns.koci.internal.cleanScopes
@@ -34,6 +33,7 @@ import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 
 /**
  * fetchDistributionToken fetches an access token as defined by the distribution specification. It
@@ -48,7 +48,7 @@ private suspend fun HttpClient.fetchDistributionToken(
   scopes: List<String>,
   username: String,
   password: String,
-): String {
+): String? {
   val res =
     get(realm) {
       if (username.isNotEmpty() || password.isNotEmpty()) {
@@ -64,18 +64,22 @@ private suspend fun HttpClient.fetchDistributionToken(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
+    // TODO: #658 - Log non-200 from token endpoint
+    return null
   }
 
-  val tokenResponse = res.body<DistributionTokenResponse>()
+  val tokenResponse =
+    try {
+      res.body<DistributionTokenResponse>()
+    } catch (_: SerializationException) {
+      // TODO: #658 Log malformed token response
+      return null
+    }
 
-  if (tokenResponse.accessToken != null) {
-    return tokenResponse.accessToken
-  }
-  if (tokenResponse.token.isNotEmpty()) {
-    return tokenResponse.token
-  }
-  throw OCIException.EmptyTokenReturned(res)
+  if (tokenResponse.accessToken != null) return tokenResponse.accessToken
+  if (tokenResponse.token.isNotEmpty()) return tokenResponse.token
+  // TODO: #658 Log empty token response
+  return null
 }
 
 // As specified in https://docs.docker.com/registry/spec/auth/token/ section
@@ -92,24 +96,17 @@ private data class DistributionTokenResponse(
  *
  * [Reference](https://docs.docker.com/registry/spec/auth/oauth/)
  */
-@Suppress("detekt:ThrowsCount", "detekt:SpreadOperator")
+@Suppress("detekt:SpreadOperator")
 private suspend fun HttpClient.fetchOAuth2Token(
   realm: String,
   service: String,
   scopes: List<String>,
   cred: Credential,
-): String {
+): String? {
   val res =
     post(realm) {
       contentType(ContentType.Application.FormUrlEncoded)
       formData {
-        // little redundant, but it makes linter / IDE happier this way
-        require(
-          cred.refreshToken.isNotEmpty() ||
-            (cred.username.isNotEmpty() && cred.password.isNotEmpty())
-        ) {
-          "missing username or password for bearer auth"
-        }
         if (cred.refreshToken.isNotEmpty()) {
           append("grant_type", "refresh_token")
           append("refresh_token", cred.refreshToken)
@@ -133,16 +130,21 @@ private suspend fun HttpClient.fetchOAuth2Token(
     }
 
   if (res.status != HttpStatusCode.OK) {
-    throw OCIException.UnexpectedStatus(HttpStatusCode.OK, res)
+    // TODO: #658 - Log non-200 from oauth2 token endpoint
+    return null
   }
 
-  val tokenResponse = res.body<OAuth2TokenResponse>()
+  val tokenResponse =
+    try {
+      res.body<OAuth2TokenResponse>()
+    } catch (_: SerializationException) {
+      // TODO: #658 - Log malformed oauth2 token response
+      return null
+    }
 
-  if (tokenResponse.accessToken.isNotEmpty()) {
-    return tokenResponse.accessToken
-  }
-
-  throw OCIException.EmptyTokenReturned(res)
+  if (tokenResponse.accessToken.isNotEmpty()) return tokenResponse.accessToken
+  // TODO: #658 - Log empty oauth2 token response
+  return null
 }
 
 /**
@@ -175,7 +177,7 @@ internal class OCIAuthPluginConfig {
  * @see <a href="https://github.com/opencontainers/tob/blob/main/proposals/wg-auth.md">OCI spec:
  *   Authentication</a>
  */
-// TODO: MOBILE-218
+// TODO: #677
 internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
   createClientPlugin("OCIAuthPlugin", ::OCIAuthPluginConfig) {
     val tokenCache = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
@@ -206,13 +208,11 @@ internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
           when (authHeader.authScheme) {
             AuthScheme.Basic -> {
               val cred = pluginConfig.cred
-              require(cred.isNotEmpty()) { "credential required for basic auth" }
-              require(cred.username.isNotEmpty() && cred.password.isNotEmpty()) {
-                "missing username or password for basic auth"
-              }
               if (requestScopes != null) {
                 scopes = requestScopes
               }
+              // If cred is empty or missing username/password, ktor will set an empty/invalid
+              // Authorization header and the server will reject it — surfaces as 401 to the caller.
               request.basicAuth(cred.username, cred.password)
             }
 
@@ -246,7 +246,7 @@ internal val OCIAuthPlugin: ClientPlugin<OCIAuthPluginConfig> =
                   client.fetchOAuth2Token(realm, service, scopes, cred)
                 }
 
-              request.bearerAuth(token)
+              token?.let { request.bearerAuth(it) }
             }
           }
           proceed(request).also {

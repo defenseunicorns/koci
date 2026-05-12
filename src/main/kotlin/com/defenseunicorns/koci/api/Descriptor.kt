@@ -19,8 +19,14 @@ import kotlinx.serialization.Serializable
 public class Descriptor(
   /** mediaType is the media type of the object this schema refers to. */
   public val mediaType: String,
-  /** digest is the digest of the targeted content. */
-  public val digest: Digest,
+  /**
+   * digest is the digest of the targeted content.
+   *
+   * Nullable to accommodate malformed wire input — a descriptor deserialized from JSON whose digest
+   * string fails [Digest.parse] lands here as null, and downstream consumers (Layout operations,
+   * pull loops) skip it gracefully rather than crash.
+   */
+  public val digest: Digest?,
   /** size specifies the size in bytes of the blob. */
   public val size: Long,
   /** urls specifies a list of URLs from which this object MAY be downloaded */
@@ -48,7 +54,7 @@ public class Descriptor(
 ) {
   public fun copy(
     mediaType: String = this.mediaType,
-    digest: Digest = this.digest,
+    digest: Digest? = this.digest,
     size: Long = this.size,
     urls: List<String>? = this.urls,
     annotations: Annotations? = this.annotations,
@@ -70,7 +76,7 @@ public class Descriptor(
 
   override fun hashCode(): Int {
     var result = mediaType.hashCode()
-    result = 31 * result + digest.hashCode()
+    result = 31 * result + (digest?.hashCode() ?: 0)
     result = 31 * result + size.hashCode()
     result = 31 * result + (urls?.hashCode() ?: 0)
     result = 31 * result + (annotations?.hashCode() ?: 0)

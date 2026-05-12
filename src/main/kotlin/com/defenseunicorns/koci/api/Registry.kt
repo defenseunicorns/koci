@@ -10,16 +10,16 @@ import com.defenseunicorns.koci.api.config.BackOffPolicy
 import com.defenseunicorns.koci.api.config.PullConfig
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.internal.CatalogResponse
+import com.defenseunicorns.koci.internal.HttpWrapper
 import com.defenseunicorns.koci.internal.Layout
+import com.defenseunicorns.koci.internal.Regex.linkRegex
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.internal.appendScopes
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.request.get
+import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -44,7 +44,7 @@ internal constructor(
   private val pull: PullConfig,
   private val push: PushConfig,
   private val backOffPolicy: BackOffPolicy,
-  internal val client: HttpClient,
+  internal val caller: HttpWrapper,
   internal val router: Router,
   internal val store: Layout,
   internal val json: Json,
@@ -65,7 +65,7 @@ internal constructor(
       push = push,
       backOffPolicy = backOffPolicy,
       router = router,
-      client = client,
+      caller = caller,
       store = store,
       json = json,
     )
@@ -75,36 +75,52 @@ internal constructor(
    *
    * Performs a GET request to the /v2/ endpoint as specified in the OCI Distribution Specification.
    * A successful response indicates the registry implements the API and the client is authorized to
-   * access it.
+   * access it. Returns `false` on transport failure (e.g. connect refused, SSL error, timeout) — no
+   * exception escapes.
    *
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#determining-support">OCI
    *   Distribution Spec: API Version Check</a>
    */
-  public suspend fun ping(): Boolean = client.get(router.base()).status.isSuccess()
+  public suspend fun ping(): Boolean {
+    val outcome =
+      caller.call(
+        operation = "registry.ping",
+        buildRequest = { url(router.base()) },
+        onSuccess = { true },
+      )
+    return outcome ?: false
+  }
 
   /**
    * Lists all repositories in the registry.
    *
-   * Performs a GET request to the /v2/_catalog endpoint as specified in the OCI spec. Returns a
-   * single page of repository names.
+   * On any failure (transport, HTTP error, malformed body) returns [emptyList]. The cause is logged
+   * inside [HttpWrapper].
    *
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Listing Repositories</a>
    */
-  public suspend fun catalog(): Result<List<Repository>> = runCatching {
-    val res = client.get(router.catalog()) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-    val catalog = res.body<CatalogResponse>()
-
-    catalog.repositories.map { repo(it) }
+  public suspend fun catalog(): List<Repository> {
+    val outcome =
+      caller.call(
+        operation = "registry.catalog",
+        buildRequest = {
+          url(router.catalog())
+          attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
+        },
+        onSuccess = { res -> res.body<CatalogResponse>().repositories.map { repo(it) } },
+      )
+    return outcome ?: emptyList()
   }
 
   /**
    * Lists all repositories in the registry with pagination support.
    *
    * Automatically handles pagination by following Link headers and emitting each page of results as
-   * a Flow. This implements the pagination mechanism defined in the OCI spec.
+   * a Flow. This implements the pagination mechanism defined in the OCI spec. The flow ends
+   * silently on transport / HTTP / decode failure (cause logged inside [HttpWrapper]).
    *
    * @param n Number of repositories to return per page, max of 1000 per page
    * @param lastRepo Optional repository name to resume listing from
@@ -112,37 +128,39 @@ internal constructor(
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags">OCI
    *   Distribution Spec: Pagination</a>
    */
-  // TODO: MOBILE-217
+  // TODO: #676
   public fun catalog(n: Int, lastRepo: String? = null): Flow<List<Repository>> = flow {
     var endpoint: Url? = router.catalog(n.coerceAtMost(MAX_REPOS), lastRepo)
 
     while (endpoint != null) {
-      val response = client.get(endpoint) { attributes.appendScopes(SCOPE_REGISTRY_CATALOG) }
-
-      // If the header is not present, the client can assume that all results have been received.
-      val linkHeader = response.headers[HttpHeaders.Link]
-
-      // TODO: MOBILE-214
-      endpoint =
-        linkHeader?.let {
-          // TODO: change from regex to a full spec-compliant parser
-          // https://datatracker.ietf.org/doc/html/rfc5988#section-5
-          val regex = Regex("<(.+)>;\\s+rel=\"next\"")
-
-          // TODO: MOBILE-198 Log the regex error
-          val next = regex.find(linkHeader)?.groups?.get(1)?.value ?: return@flow
-
-          val url = Url(next)
-
-          // TODO: MOBILE-198 Log failure
-          val nextN = url.parameters["n"]?.toInt() ?: return@flow
-          router.catalog(nextN, url.parameters["last"])
-        }
-
-      val catalog = response.body<CatalogResponse>()
-      val repos = catalog.repositories.map { repo(it) }
-      emit(repos)
+      val current = endpoint
+      val outcome =
+        caller.call(
+          operation = "registry.catalog.page",
+          buildRequest = {
+            url(current)
+            attributes.appendScopes(SCOPE_REGISTRY_CATALOG)
+          },
+          onSuccess = { res ->
+            val next = parseNextLink(res.headers[HttpHeaders.Link])
+            val repos = res.body<CatalogResponse>().repositories.map { repo(it) }
+            repos to next
+          },
+        )
+      val page = outcome ?: return@flow
+      emit(page.first)
+      endpoint = page.second
     }
+  }
+
+  // TODO: #673 — replace with a full RFC 5988 parser.
+  // https://datatracker.ietf.org/doc/html/rfc5988#section-5
+  private fun parseNextLink(linkHeader: String?): Url? {
+    if (linkHeader == null) return null
+    val next = linkRegex.find(linkHeader)?.groups?.get(1)?.value ?: return null
+    val url = Url(next)
+    val nextN = url.parameters["n"]?.toIntOrNull() ?: return null
+    return router.catalog(nextN, url.parameters["last"])
   }
 
   /**
@@ -161,7 +179,7 @@ internal constructor(
   public fun list(n: Int = MAX_REPOS): Flow<List<String>> =
     catalog(n)
       .flatMapMerge(concurrency = pull.concurrency) { repositories -> repositories.asFlow() }
-      .map { repo -> repo.tags().getOrThrow() }
+      .map { repo -> repo.tags() }
 
   override fun toString(): String = "Registry(url=$url)"
 

@@ -12,12 +12,11 @@ import com.defenseunicorns.koci.api.config.OCIAuthPlugin
 import com.defenseunicorns.koci.api.config.PullConfig
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.api.config.TimeoutConfig
+import com.defenseunicorns.koci.internal.HttpWrapper
 import com.defenseunicorns.koci.internal.Layout
 import com.defenseunicorns.koci.internal.Router
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
@@ -108,17 +107,6 @@ public class Koci(
           )
         }
       }
-
-      HttpResponseValidator {
-        handleResponseExceptionWithRequest { exception, _ ->
-          val clientException =
-            exception as? ClientRequestException ?: return@handleResponseExceptionWithRequest
-          attemptThrow4XX(clientException.response)
-          return@handleResponseExceptionWithRequest
-        }
-      }
-
-      expectSuccess = true
     }
 
   /**
@@ -155,7 +143,7 @@ public class Koci(
       pull = pull,
       push = push,
       backOffPolicy = backOffPolicy,
-      client = scopedClient,
+      caller = HttpWrapper(scopedClient),
       router = Router(url),
       store = layout,
       json = json,

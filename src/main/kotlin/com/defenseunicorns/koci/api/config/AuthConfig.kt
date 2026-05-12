@@ -23,7 +23,7 @@ public sealed class AuthConfig {
     override fun toString(): String = "AuthConfig.Bearer(token=***)"
   }
 
-  // TODO: MOBILE-216 Stop gap until we can clean up auth
+  // TODO: #675 Stop gap until we can clean up auth
   internal fun toCredential(): Credential =
     when (this) {
       None -> Credential()

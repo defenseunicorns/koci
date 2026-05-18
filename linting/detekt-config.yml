@@ -231,7 +231,7 @@ style:
 libraries:
   LibraryEntitiesShouldNotBePublic:
     active: true
-    excludes: ["**/api/**"]
+    excludes: ["**/api/**", "**/samples/**"]
   ForbiddenPublicDataClass:
     active: true
-    excludes: ["**/api/**"]
+    excludes: ["**/api/**", "**/samples/**"]

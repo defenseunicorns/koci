@@ -22,7 +22,4 @@ public sealed class TlsConfig {
     public val keyPem: ByteArray,
     public val caPem: ByteArray? = null,
   ) : TlsConfig()
-
-  /** Skips all TLS verification. Development only; never use in production. */
-  public data object Insecure : TlsConfig()
 }

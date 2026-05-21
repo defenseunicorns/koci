@@ -24,13 +24,7 @@ internal fun configureTls(base: OkHttpClient, tls: TlsConfig): OkHttpClient =
     .newBuilder()
     .apply {
       when (tls) {
-        TlsConfig.None -> {}
-        TlsConfig.Insecure -> {
-          val tm = insecureTrustManager()
-          val ctx = SSLContext.getInstance("TLS").apply { init(null, arrayOf(tm), null) }
-          sslSocketFactory(ctx.socketFactory, tm)
-          hostnameVerifier { _, _ -> true }
-        }
+        TlsConfig.None -> Unit
         is TlsConfig.CustomCa -> {
           val tm = trustManager(tls.caPem)
           val ctx = SSLContext.getInstance("TLS").apply { init(null, arrayOf(tm), null) }

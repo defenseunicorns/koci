@@ -372,13 +372,6 @@ public final class com/defenseunicorns/koci/api/config/TlsConfig$CustomCa : com/
 	public final fun getCaPem ()[B
 }
 
-public final class com/defenseunicorns/koci/api/config/TlsConfig$Insecure : com/defenseunicorns/koci/api/config/TlsConfig {
-	public static final field INSTANCE Lcom/defenseunicorns/koci/api/config/TlsConfig$Insecure;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class com/defenseunicorns/koci/api/config/TlsConfig$Mutual : com/defenseunicorns/koci/api/config/TlsConfig {
 	public fun <init> ([B[B[B)V
 	public synthetic fun <init> ([B[B[BILkotlin/jvm/internal/DefaultConstructorMarker;)V

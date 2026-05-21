@@ -13,7 +13,6 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-/** Serializer/deserializer for a [CopyOnWriteArrayList] of [Descriptor]. */
 internal object CopyOnWriteDescriptorArrayListSerializer :
   KSerializer<CopyOnWriteArrayList<Descriptor>> {
   override val descriptor: SerialDescriptor = ListSerializer(Descriptor.serializer()).descriptor

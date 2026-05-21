@@ -110,18 +110,13 @@ public final class com/defenseunicorns/koci/api/Index$Companion {
 }
 
 public final class com/defenseunicorns/koci/api/Koci : java/lang/AutoCloseable {
-	public static final field Companion Lcom/defenseunicorns/koci/api/Koci$Companion;
-	public synthetic fun <init> (Lkotlinx/serialization/json/Json;Lcom/defenseunicorns/koci/internal/KociLogger;Lcom/defenseunicorns/koci/api/Layout;Lokhttp3/Dispatcher;Lokhttp3/ConnectionPool;Lio/ktor/client/HttpClient;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lokio/FileSystem;Lkotlinx/coroutines/CoroutineDispatcher;Lcom/defenseunicorns/koci/api/config/ConnectionPoolConfig;)V
+	public synthetic fun <init> (Ljava/lang/String;Lokio/FileSystem;Lkotlinx/coroutines/CoroutineDispatcher;Lcom/defenseunicorns/koci/api/config/ConnectionPoolConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun close ()V
 	public final fun getLayout ()Lcom/defenseunicorns/koci/api/Layout;
 	public final fun registry (Ljava/lang/String;Lcom/defenseunicorns/koci/api/config/AuthConfig;Lcom/defenseunicorns/koci/api/config/TlsConfig;Lcom/defenseunicorns/koci/api/config/RetryPolicy;Lcom/defenseunicorns/koci/api/config/TimeoutConfig;Lcom/defenseunicorns/koci/api/config/PullConfig;Lcom/defenseunicorns/koci/api/config/PushConfig;)Lcom/defenseunicorns/koci/api/Registry;
 	public static synthetic fun registry$default (Lcom/defenseunicorns/koci/api/Koci;Ljava/lang/String;Lcom/defenseunicorns/koci/api/config/AuthConfig;Lcom/defenseunicorns/koci/api/config/TlsConfig;Lcom/defenseunicorns/koci/api/config/RetryPolicy;Lcom/defenseunicorns/koci/api/config/TimeoutConfig;Lcom/defenseunicorns/koci/api/config/PullConfig;Lcom/defenseunicorns/koci/api/config/PushConfig;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/Registry;
 	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/defenseunicorns/koci/api/Koci$Companion {
-	public final fun create (Ljava/lang/String;Lokio/FileSystem;Lkotlinx/coroutines/CoroutineDispatcher;Lcom/defenseunicorns/koci/api/config/ConnectionPoolConfig;)Lcom/defenseunicorns/koci/api/Koci;
-	public static synthetic fun create$default (Lcom/defenseunicorns/koci/api/Koci$Companion;Ljava/lang/String;Lokio/FileSystem;Lkotlinx/coroutines/CoroutineDispatcher;Lcom/defenseunicorns/koci/api/config/ConnectionPoolConfig;ILjava/lang/Object;)Lcom/defenseunicorns/koci/api/Koci;
 }
 
 public final class com/defenseunicorns/koci/api/Layout {
@@ -201,27 +196,6 @@ public final class com/defenseunicorns/koci/api/Platform$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
-public abstract interface class com/defenseunicorns/koci/api/PullEvent {
-}
-
-public final class com/defenseunicorns/koci/api/PullEvent$Failed : com/defenseunicorns/koci/api/PullEvent {
-	public static final field INSTANCE Lcom/defenseunicorns/koci/api/PullEvent$Failed;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/defenseunicorns/koci/api/PullEvent$Progress : com/defenseunicorns/koci/api/PullEvent {
-	public fun <init> (I)V
-	public final fun component1 ()I
-	public final fun copy (I)Lcom/defenseunicorns/koci/api/PullEvent$Progress;
-	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/PullEvent$Progress;IILjava/lang/Object;)Lcom/defenseunicorns/koci/api/PullEvent$Progress;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getPercent ()I
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class com/defenseunicorns/koci/api/Reference {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Reference$Companion;
 	public fun <init> (Lio/ktor/http/Url;Ljava/lang/String;Ljava/lang/String;)V
@@ -277,6 +251,27 @@ public final class com/defenseunicorns/koci/api/Repository {
 	public final fun tag (Lcom/defenseunicorns/koci/api/Index;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun tag (Lcom/defenseunicorns/koci/api/Manifest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun tags (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/defenseunicorns/koci/api/TransferEvent {
+}
+
+public final class com/defenseunicorns/koci/api/TransferEvent$Failed : com/defenseunicorns/koci/api/TransferEvent {
+	public static final field INSTANCE Lcom/defenseunicorns/koci/api/TransferEvent$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/defenseunicorns/koci/api/TransferEvent$Progress : com/defenseunicorns/koci/api/TransferEvent {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/defenseunicorns/koci/api/TransferEvent$Progress;
+	public static synthetic fun copy$default (Lcom/defenseunicorns/koci/api/TransferEvent$Progress;IILjava/lang/Object;)Lcom/defenseunicorns/koci/api/TransferEvent$Progress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPercent ()I
+	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 

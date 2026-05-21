@@ -7,14 +7,13 @@ package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.PullEvent
-import kotlinx.coroutines.flow.collect
+import com.defenseunicorns.koci.api.TransferEvent
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
   val payload = "hello from koci".toByteArray()
 
-  Koci.create(root = "/tmp/koci-push-sample").use { koci ->
+  Koci(root = "/tmp/koci-push-sample").use { koci ->
     val repo = koci.registry("http://localhost:5000").repo("samples/blob")
 
     val descriptor =
@@ -22,8 +21,8 @@ fun main(): Unit = runBlocking {
 
     repo.push(stream = payload.inputStream(), expected = descriptor).collect { event ->
       when (event) {
-        is PullEvent.Progress -> println("uploaded: ${event.percent}%")
-        PullEvent.Failed -> println("push failed")
+        is TransferEvent.Progress -> println("uploaded: ${event.percent}%")
+        TransferEvent.Failed -> println("push failed")
       }
     }
   }

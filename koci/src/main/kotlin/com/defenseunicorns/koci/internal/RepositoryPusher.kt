@@ -12,9 +12,9 @@ import com.defenseunicorns.koci.api.Layout
 import com.defenseunicorns.koci.api.Manifest
 import com.defenseunicorns.koci.api.OciConstants.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.api.OciConstants.MANIFEST_MEDIA_TYPE
-import com.defenseunicorns.koci.api.PullEvent
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.RegisteredAlgorithm
+import com.defenseunicorns.koci.api.TransferEvent
 import com.defenseunicorns.koci.api.config.PushConfig
 import com.defenseunicorns.koci.internal.Regex.tagRegex
 import com.defenseunicorns.koci.internal.SizeConstants.DEFAULT_PUSH_CHUNK_SIZE
@@ -76,27 +76,27 @@ internal class RepositoryPusher(
 
   /**
    * Pushes a single blob. Skips via HEAD when the blob is already on the remote; otherwise opens an
-   * upload session and dispatches to monolithic or chunked. Emits [PullEvent.Progress] as bytes
-   * flow and ends with `Progress(100)` on success or [PullEvent.Failed] on failure.
+   * upload session and dispatches to monolithic or chunked. Emits [TransferEvent.Progress] as bytes
+   * flow and ends with `Progress(100)` on success or [TransferEvent.Failed] on failure.
    *
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-blobs">OCI
    *   Distribution Spec: Pushing Blobs</a>
    *
-   * TODO: MOBILE-210 replace [PullEvent] with a unified progress type.
+   * TODO: MOBILE-210 replace [TransferEvent] with a unified progress type.
    */
-  fun push(stream: InputStream, expected: Descriptor): Flow<PullEvent> =
+  fun push(stream: InputStream, expected: Descriptor): Flow<TransferEvent> =
     channelFlow {
         val total = expected.size
         val ok =
           stream.use { s ->
             pushBlob(s.source().buffer(), expected) { bytes ->
-              trySend(PullEvent.Progress((bytes * PROGRESS_COMPLETE / total).toInt()))
+              trySend(TransferEvent.Progress((bytes * PROGRESS_COMPLETE / total).toInt()))
             }
           }
         when (ok) {
-          true -> send(PullEvent.Progress(PROGRESS_COMPLETE))
-          false -> send(PullEvent.Failed)
+          true -> send(TransferEvent.Progress(PROGRESS_COMPLETE))
+          false -> send(TransferEvent.Failed)
         }
       }
       .distinctUntilChanged()
@@ -108,15 +108,15 @@ internal class RepositoryPusher(
    * identically. An invalid OCI tag fails the flow immediately; without a tag the root is published
    * by digest only.
    */
-  fun push(root: Descriptor, tag: String? = null): Flow<PullEvent> =
+  fun push(root: Descriptor, tag: String? = null): Flow<TransferEvent> =
     flow {
         if (tag != null && tagRegex.matchEntire(tag) == null) {
           logger.warn { "invalid tag '$tag' rejected before push" }
-          emit(PullEvent.Failed)
+          emit(TransferEvent.Failed)
           return@flow
         }
         when (val walk = walkTree(root, json, logger) { readContainer(it) }) {
-          null -> emit(PullEvent.Failed)
+          null -> emit(TransferEvent.Failed)
           else -> execute(walk, tag).collect { emit(it) }
         }
       }
@@ -187,16 +187,16 @@ internal class RepositoryPusher(
    * its digest otherwise; on success the local layout is tagged so subsequent local lookups by name
    * resolve.
    */
-  private fun execute(walk: TreeWalk, tag: String?): Flow<PullEvent> =
+  private fun execute(walk: TreeWalk, tag: String?): Flow<TransferEvent> =
     channelFlow {
         val total = walk.totalBytes
         if (total == 0L) {
-          send(PullEvent.Progress(PROGRESS_COMPLETE))
+          send(TransferEvent.Progress(PROGRESS_COMPLETE))
           return@channelFlow
         }
 
         val tracker = ProgressTracker(total)
-        val emitJob = launch { for (pct in tracker.channel) send(PullEvent.Progress(pct)) }
+        val emitJob = launch { for (pct in tracker.channel) send(TransferEvent.Progress(pct)) }
 
         val blobsOk =
           walk.dispatchBlobs(pushConfig.concurrency) { blob ->
@@ -207,7 +207,7 @@ internal class RepositoryPusher(
         if (!blobsOk) {
           tracker.close()
           emitJob.join()
-          send(PullEvent.Failed)
+          send(TransferEvent.Failed)
           return@channelFlow
         }
 
@@ -222,7 +222,7 @@ internal class RepositoryPusher(
           if (!putManifest(descriptor.mediaType, buffer.snapshot().toByteArray(), ref)) {
             tracker.close()
             emitJob.join()
-            send(PullEvent.Failed)
+            send(TransferEvent.Failed)
             return@channelFlow
           }
           tracker.update(descriptor, descriptor.size)
@@ -235,7 +235,7 @@ internal class RepositoryPusher(
 
         tracker.close()
         emitJob.join()
-        send(PullEvent.Progress(PROGRESS_COMPLETE))
+        send(TransferEvent.Progress(PROGRESS_COMPLETE))
       }
       .onCompletion { cause ->
         if (cause == null) {

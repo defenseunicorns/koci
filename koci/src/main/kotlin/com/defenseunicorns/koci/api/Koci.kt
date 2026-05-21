@@ -42,7 +42,7 @@ import okio.Path.Companion.toPath
  * registry with per-call tuning (auth, TLS, timeouts, concurrency, retries).
  *
  * ```kotlin
- * val koci = Koci.create(root = "/tmp/oci-store")
+ * val koci = Koci(root = "/tmp/oci-store")
  * val ghcr = koci.registry("https://ghcr.io", auth = AuthConfig.Basic(user, pass))
  * ```
  *
@@ -53,7 +53,7 @@ import okio.Path.Companion.toPath
  *
  * For scoped lifetimes prefer `use`:
  * ```kotlin
- * Koci.create(root = "/tmp/oci-store").use { koci ->
+ * Koci(root = "/tmp/oci-store").use { koci ->
  *   val registry = koci.registry("https://example.com", auth = AuthConfig.Basic(user, pass))
  *   registry.repo("myorg/myimage").pull("latest").collect { /* ... */ }
  * }
@@ -62,16 +62,33 @@ import okio.Path.Companion.toPath
  * When provided as a DI singleton, let the container own the lifetime and do not call [close] from
  * consumers.
  */
-public class Koci
-private constructor(
-  private val json: Json,
-  private val logger: KociLogger,
-  public val layout: Layout,
-  private val dispatcher: Dispatcher,
-  private val connectionPool: ConnectionPool,
-  private val testClient: HttpClient?,
+public class Koci(
+  root: String,
+  fileSystem: FileSystem = FileSystem.SYSTEM,
+  dispatcher: CoroutineDispatcher = Dispatchers.IO,
+  connectionPool: ConnectionPoolConfig = ConnectionPoolConfig(),
 ) : AutoCloseable {
 
+  private val json = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+  }
+  private val logger: KociLogger = RealKociLogger()
+  public val layout: Layout =
+    Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher, json = json)
+      .apply {
+        this.logger = this@Koci.logger
+        create()
+      }
+  private val httpDispatcher =
+    Dispatcher().apply { maxRequestsPerHost = connectionPool.maxConnections }
+  private val httpPool =
+    ConnectionPool(
+      maxIdleConnections = connectionPool.maxConnections,
+      keepAliveDuration = connectionPool.keepAlive.inWholeMilliseconds,
+      timeUnit = TimeUnit.MILLISECONDS,
+    )
   private val registryClients = CopyOnWriteArrayList<HttpClient>()
 
   /**
@@ -94,22 +111,18 @@ private constructor(
     pull: PullConfig = PullConfig(),
     push: PushConfig = PushConfig(),
   ): Registry {
+    val baseOkHttp =
+      OkHttpClient.Builder().dispatcher(httpDispatcher).connectionPool(httpPool).build()
+    val okHttp =
+      when (tls) {
+        TlsConfig.None -> baseOkHttp
+        else -> configureTls(baseOkHttp, tls)
+      }
     val engineClient =
-      if (testClient != null) {
-        testClient
-      } else {
-        val baseOkHttp =
-          OkHttpClient.Builder().dispatcher(dispatcher).connectionPool(connectionPool).build()
-        val okHttp =
-          when (tls) {
-            TlsConfig.None -> baseOkHttp
-            else -> configureTls(baseOkHttp, tls)
-          }
-        HttpClient(OkHttp) {
-          install(ContentNegotiation) { json(json) }
-          install(UserAgent) { agent = "Koci" }
-          engine { preconfigured = okHttp }
-        }
+      HttpClient(OkHttp) {
+        install(ContentNegotiation) { json(json) }
+        install(UserAgent) { agent = "Koci" }
+        engine { preconfigured = okHttp }
       }
 
     val scopedClient =
@@ -167,80 +180,9 @@ private constructor(
    */
   override fun close() {
     registryClients.forEach { it.close() }
-    dispatcher.executorService.shutdown()
-    connectionPool.evictAll()
+    httpDispatcher.executorService.shutdown()
+    httpPool.evictAll()
   }
 
   override fun toString(): String = "Koci(root=${layout.root})"
-
-  public companion object {
-    private val json = Json {
-      ignoreUnknownKeys = true
-      isLenient = true
-      coerceInputValues = true
-    }
-
-    /**
-     * Creates a [Koci] instance backed by OkHttp with the given configuration.
-     *
-     * @param root On-disk root for the OCI layout (blobs, index, oci-layout marker).
-     * @param fileSystem Filesystem used for layout I/O. Defaults to the OS filesystem.
-     * @param dispatcher Dispatcher used for blocking I/O. Defaults to [Dispatchers.IO].
-     * @param connectionPool HTTP connection pool tuning shared across all registries.
-     */
-    public fun create(
-      root: String,
-      fileSystem: FileSystem = FileSystem.SYSTEM,
-      dispatcher: CoroutineDispatcher = Dispatchers.IO,
-      connectionPool: ConnectionPoolConfig = ConnectionPoolConfig(),
-    ): Koci {
-      val logger: KociLogger = RealKociLogger()
-      val layout =
-        Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher, json = json)
-          .apply {
-            this.logger = logger
-            create()
-          }
-      val okHttpDispatcher =
-        Dispatcher().apply { maxRequestsPerHost = connectionPool.maxConnections }
-      val okHttpPool =
-        ConnectionPool(
-          maxIdleConnections = connectionPool.maxConnections,
-          keepAliveDuration = connectionPool.keepAlive.inWholeMilliseconds,
-          timeUnit = TimeUnit.MILLISECONDS,
-        )
-      return Koci(
-        json = json,
-        logger = logger,
-        layout = layout,
-        dispatcher = okHttpDispatcher,
-        connectionPool = okHttpPool,
-        testClient = null
-      )
-    }
-
-    internal fun create(
-      root: String,
-      fileSystem: FileSystem,
-      dispatcher: CoroutineDispatcher,
-      httpClient: HttpClient,
-      logger: KociLogger = RealKociLogger(),
-    ): Koci {
-      val layout =
-        Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher, json = json)
-          .apply {
-            this.logger = logger
-            create()
-          }
-
-      return Koci(
-        json = json,
-        logger = logger,
-        layout = layout,
-        dispatcher = Dispatcher(),
-        connectionPool = ConnectionPool(0, 1, TimeUnit.MILLISECONDS),
-        testClient = httpClient,
-      )
-    }
-  }
 }

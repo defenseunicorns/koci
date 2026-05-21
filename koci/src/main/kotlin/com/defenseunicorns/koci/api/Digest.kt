@@ -101,10 +101,6 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
   }
 }
 
-/**
- * Serializes [Digest] to and from its canonical `algorithm:hex` form. Returns `null` on malformed
- * input so deserialized descriptors surface as `Descriptor.digest == null` rather than throwing.
- */
 internal object DigestSerializer : KSerializer<Digest?> {
   override val descriptor: SerialDescriptor =
     PrimitiveSerialDescriptor("Digest", PrimitiveKind.STRING)

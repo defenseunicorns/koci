@@ -73,18 +73,21 @@ internal constructor(
   ): Descriptor? = puller.resolveManifest(tag, platformResolver)
 
   /**
-   * Pulls a tagged image into the local layout, emitting [PullEvent.Progress] from 0 to 100 as
-   * bytes land on disk. The terminal event is `Progress(100)` on success or [PullEvent.Failed].
+   * Pulls a tagged image into the local layout, emitting [TransferEvent.Progress] from 0 to 100 as
+   * bytes land on disk. The terminal event is `Progress(100)` on success or [TransferEvent.Failed].
    * Supply [platformResolver] to pull a single platform from an index.
    */
-  public fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Flow<PullEvent> =
-    puller.pull(tag, platformResolver)
+  public fun pull(
+    tag: String,
+    platformResolver: ((Platform) -> Boolean)? = null,
+  ): Flow<TransferEvent> = puller.pull(tag, platformResolver)
 
   /**
-   * Pulls content addressed by [descriptor] into the local layout, emitting [PullEvent.Progress]
-   * from 0 to 100. The terminal event is `Progress(100)` on success or [PullEvent.Failed].
+   * Pulls content addressed by [descriptor] into the local layout, emitting
+   * [TransferEvent.Progress] from 0 to 100. The terminal event is `Progress(100)` on success or
+   * [TransferEvent.Failed].
    */
-  public fun pull(descriptor: Descriptor): Flow<PullEvent> = puller.pull(descriptor)
+  public fun pull(descriptor: Descriptor): Flow<TransferEvent> = puller.pull(descriptor)
 
   /**
    * Fetches [descriptor]'s bytes and passes the raw [InputStream] to [handler]. The stream is
@@ -95,20 +98,21 @@ internal constructor(
 
   /**
    * Pushes a single blob. [expected] carries the digest and size used to address the upload session
-   * and verify the bytes on the wire. Emits [PullEvent.Progress] from 0 to 100 as bytes are sent.
-   * The terminal event is `Progress(100)` on success or [PullEvent.Failed].
+   * and verify the bytes on the wire. Emits [TransferEvent.Progress] from 0 to 100 as bytes are
+   * sent. The terminal event is `Progress(100)` on success or [TransferEvent.Failed].
    */
-  public fun push(stream: InputStream, expected: Descriptor): Flow<PullEvent> =
+  public fun push(stream: InputStream, expected: Descriptor): Flow<TransferEvent> =
     pusher.push(stream, expected)
 
   /**
    * Pushes [root] and every blob it references from the local layout. Blobs already on the remote
    * are skipped. Manifests and indexes land in post-order so the root only registers after all
    * children exist remotely. When [tag] is non-null the root is also tagged remotely and in the
-   * local layout. Emits [PullEvent.Progress] from 0 to 100. The terminal event is `Progress(100)`
-   * on success or [PullEvent.Failed].
+   * local layout. Emits [TransferEvent.Progress] from 0 to 100. The terminal event is
+   * `Progress(100)` on success or [TransferEvent.Failed].
    */
-  public fun push(root: Descriptor, tag: String? = null): Flow<PullEvent> = pusher.push(root, tag)
+  public fun push(root: Descriptor, tag: String? = null): Flow<TransferEvent> =
+    pusher.push(root, tag)
 
   /**
    * Tags [content] under [ref] on the remote. [ref] must be a valid OCI tag. Returns the resulting

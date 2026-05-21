@@ -12,8 +12,8 @@ import com.defenseunicorns.koci.api.Layout
 import com.defenseunicorns.koci.api.OciConstants.INDEX_MEDIA_TYPE
 import com.defenseunicorns.koci.api.OciConstants.MANIFEST_MEDIA_TYPE
 import com.defenseunicorns.koci.api.Platform
-import com.defenseunicorns.koci.api.PullEvent
 import com.defenseunicorns.koci.api.Reference
+import com.defenseunicorns.koci.api.TransferEvent
 import com.defenseunicorns.koci.api.config.PullConfig
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
@@ -148,18 +148,18 @@ internal class RepositoryPuller(
   }
 
   /** Pulls an image by tag into the layout. */
-  fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Flow<PullEvent> =
+  fun pull(tag: String, platformResolver: ((Platform) -> Boolean)? = null): Flow<TransferEvent> =
     flow {
         val manifest = resolveManifest(tag, platformResolver)
         if (manifest == null) {
           logger.warn { "tag '$tag' could not be resolved in $name" }
-          emit(PullEvent.Failed)
+          emit(TransferEvent.Failed)
           return@flow
         }
 
         var failed = false
         pull(manifest).collect { event ->
-          if (event is PullEvent.Failed) {
+          if (event is TransferEvent.Failed) {
             failed = true
           }
           emit(event)
@@ -172,21 +172,21 @@ internal class RepositoryPuller(
         when (store.inspect(manifest)) {
           is BlobState.Present -> {
             store.tag(manifest, ref)
-            emit(PullEvent.Progress(PROGRESS_COMPLETE))
+            emit(TransferEvent.Progress(PROGRESS_COMPLETE))
           }
           else -> {
             logger.error { "post-pull verification failed for $ref" }
-            emit(PullEvent.Failed)
+            emit(TransferEvent.Failed)
           }
         }
       }
       .distinctUntilChanged()
 
   /** Pulls content addressed by [descriptor] into the layout. See class-level docs for the flow. */
-  fun pull(descriptor: Descriptor): Flow<PullEvent> =
+  fun pull(descriptor: Descriptor): Flow<TransferEvent> =
     flow {
         when (val walk = walkTree(descriptor, json, logger) { fetchContainer(it) }) {
-          null -> emit(PullEvent.Failed)
+          null -> emit(TransferEvent.Failed)
           else -> execute(walk).collect { emit(it) }
         }
       }
@@ -216,15 +216,15 @@ internal class RepositoryPuller(
    * each cached manifest/index in post-order. Already-present blobs contribute their full size to
    * progress immediately and skip the GET.
    */
-  private fun execute(walk: TreeWalk): Flow<PullEvent> = channelFlow {
+  private fun execute(walk: TreeWalk): Flow<TransferEvent> = channelFlow {
     val total = walk.totalBytes
     if (total == 0L) {
-      send(PullEvent.Progress(PROGRESS_COMPLETE))
+      send(TransferEvent.Progress(PROGRESS_COMPLETE))
       return@channelFlow
     }
 
     val tracker = ProgressTracker(total)
-    val emitJob = launch { for (pct in tracker.channel) send(PullEvent.Progress(pct)) }
+    val emitJob = launch { for (pct in tracker.channel) send(TransferEvent.Progress(pct)) }
 
     val blobsOk =
       walk.dispatchBlobs(pull.concurrency) { blob ->
@@ -233,7 +233,7 @@ internal class RepositoryPuller(
     if (!blobsOk) {
       tracker.close()
       emitJob.join()
-      send(PullEvent.Failed)
+      send(TransferEvent.Failed)
       return@channelFlow
     }
 
@@ -243,7 +243,7 @@ internal class RepositoryPuller(
         false -> {
           tracker.close()
           emitJob.join()
-          send(PullEvent.Failed)
+          send(TransferEvent.Failed)
           return@channelFlow
         }
       }
@@ -251,7 +251,7 @@ internal class RepositoryPuller(
 
     tracker.close()
     emitJob.join()
-    send(PullEvent.Progress(PROGRESS_COMPLETE))
+    send(TransferEvent.Progress(PROGRESS_COMPLETE))
   }
 
   /** Fetches a manifest or index body into an in-memory buffer. */

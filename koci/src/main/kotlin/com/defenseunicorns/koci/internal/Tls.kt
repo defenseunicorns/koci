@@ -89,9 +89,9 @@ private fun keyManagerFactory(certPem: ByteArray, keyPem: ByteArray): KeyManager
 
 private fun insecureTrustManager(): X509TrustManager =
   object : X509TrustManager {
-    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
-    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
     override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
   }

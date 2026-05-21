@@ -32,8 +32,7 @@ public sealed class RetryPolicy {
   ) : RetryPolicy()
 
   /**
-   * Grows the wait geometrically: `baseDelay * base^(N-1)` before retry N, capped at [maxDelay],
-   * plus up to [randomization] of jitter.
+   * Exponential retry logic with [randomization] of jitter.
    *
    * @param maxRetries Maximum retry attempts after the initial failure.
    */

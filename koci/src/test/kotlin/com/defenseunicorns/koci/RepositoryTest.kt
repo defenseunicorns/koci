@@ -14,8 +14,8 @@ import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Manifest
 import com.defenseunicorns.koci.api.OciConstants
 import com.defenseunicorns.koci.api.Platform
-import com.defenseunicorns.koci.api.PullEvent
 import com.defenseunicorns.koci.api.Reference
+import com.defenseunicorns.koci.api.TransferEvent
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.client.engine.mock.respondOk
@@ -30,7 +30,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okio.fakefilesystem.FakeFileSystem
@@ -222,7 +221,7 @@ class RepositoryTest {
   fun `pull emits Failed when tag cannot be resolved`() = runTest {
     val repo = fakeRepo(handler = { respondError(HttpStatusCode.NotFound) })
     val events = repo.pull("missing").toList()
-    assertTrue(events.contains(PullEvent.Failed))
+    assertTrue(events.contains(TransferEvent.Failed))
   }
 
   @Test
@@ -296,7 +295,7 @@ class RepositoryTest {
       )
 
     val events = repo.pull("latest").toList()
-    assertEquals(PullEvent.Progress(100), events.last())
+    assertEquals(TransferEvent.Progress(100), events.last())
 
     val ref = Reference("registry.example.com", "myrepo", "latest")
     assertNotNull(store.resolveReference(ref))
@@ -367,7 +366,7 @@ class RepositoryTest {
         }
       )
     val events = repo.push(blobBytes.inputStream(), desc).toList()
-    assertEquals(PullEvent.Progress(100), events.last())
+    assertEquals(TransferEvent.Progress(100), events.last())
     assertFalse(postCalled)
   }
 
@@ -401,7 +400,7 @@ class RepositoryTest {
         }
       )
     val events = repo.push(blobBytes.inputStream(), desc).toList()
-    assertEquals(PullEvent.Progress(100), events.last())
+    assertEquals(TransferEvent.Progress(100), events.last())
   }
 
   @Test
@@ -424,7 +423,7 @@ class RepositoryTest {
         }
       )
     val events = repo.push(blobBytes.inputStream(), desc).toList()
-    assertTrue(events.contains(PullEvent.Failed))
+    assertTrue(events.contains(TransferEvent.Failed))
   }
 
   // ── tag ─────────────────────────────────────────────────────────────────────

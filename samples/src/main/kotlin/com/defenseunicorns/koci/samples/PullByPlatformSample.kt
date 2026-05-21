@@ -6,12 +6,11 @@
 package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.PullEvent
-import kotlinx.coroutines.flow.collect
+import com.defenseunicorns.koci.api.TransferEvent
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
-  Koci.create(root = "/tmp/koci-platform-sample").use { koci ->
+  Koci(root = "/tmp/koci-platform-sample").use { koci ->
     val repo = koci.registry("https://ghcr.io").repo("linuxcontainers/alpine")
 
     repo
@@ -21,6 +20,8 @@ fun main(): Unit = runBlocking {
           platform.os == "linux" && platform.architecture == "arm64"
         },
       )
-      .collect { event -> if (event is PullEvent.Progress) println("progress: ${event.percent}%") }
+      .collect { event ->
+        if (event is TransferEvent.Progress) println("progress: ${event.percent}%")
+      }
   }
 }

@@ -6,9 +6,6 @@
 package com.defenseunicorns.koci
 
 import com.defenseunicorns.koci.api.Koci
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respondOk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -18,16 +15,8 @@ import okio.fakefilesystem.FakeFileSystem
 
 class KociTest {
 
-  private fun testKoci(root: String = "/oci", fs: FakeFileSystem = FakeFileSystem()): Koci {
-    val client = HttpClient(MockEngine) { engine { addHandler { respondOk() } } }
-    return Koci.create(
-      root = root,
-      fileSystem = fs,
-      dispatcher = Dispatchers.IO,
-      httpClient = client,
-      logger = TestFixtures.NoOpLogger,
-    )
-  }
+  private fun testKoci(root: String = "/oci", fs: FakeFileSystem = FakeFileSystem()): Koci =
+    Koci(root = root, fileSystem = fs, dispatcher = Dispatchers.IO)
 
   @Test
   fun `layout root matches the path given to constructor`() {
@@ -77,14 +66,10 @@ class KociTest {
   @Test
   fun `koci can be used with use block`() {
     var layoutRootSeen = false
-    Koci.create(
-        root = "/tmp/oci",
-        fileSystem = FakeFileSystem(),
-        dispatcher = Dispatchers.IO,
-        httpClient = HttpClient(MockEngine) { engine { addHandler { respondOk() } } },
-        logger = TestFixtures.NoOpLogger,
-      )
-      .use { koci -> layoutRootSeen = koci.layout.root.toString().isNotEmpty() }
+    Koci(root = "/tmp/oci", fileSystem = FakeFileSystem(), dispatcher = Dispatchers.IO).use { koci
+      ->
+      layoutRootSeen = koci.layout.root.toString().isNotEmpty()
+    }
     assertTrue(layoutRootSeen)
   }
 }

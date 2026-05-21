@@ -11,13 +11,12 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
-  Koci(root = "/tmp/koci-pull-sample").use { koci ->
-    val repo = koci.registry("https://ghcr.io").repo("linuxcontainers/alpine")
+  Koci.create(root = "/tmp/koci-pull-sample").use { koci ->
+    val repo = koci.registry("http://localhost:5000").repo("samples/blob")
 
-    repo.pull(tag = "latest").collect { event ->
+    repo.pull(tag = "test").collect { event ->
       when (event) {
         is PullEvent.Progress -> println("progress: ${event.percent}%")
-        PullEvent.Completed -> println("done")
         PullEvent.Failed -> println("failed (cause logged inside koci)")
       }
     }

@@ -7,8 +7,5 @@ package com.defenseunicorns.koci.internal
 
 import kotlinx.serialization.Serializable
 
-/**
- * LayoutMarker is the structure in the "oci-layout" file found in the root of an OCI Image Layout
- * directory. Internal-only — written once by [Layout.init] to mark the on-disk format version.
- */
+/** Contents of the `oci-layout` marker file at the root of an OCI Image Layout directory. */
 @Serializable internal data class LayoutMarker(val imageLayoutVersion: String)

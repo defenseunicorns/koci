@@ -11,20 +11,11 @@ import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
 import io.ktor.http.clone
 import io.ktor.http.encodedPath
+import io.ktor.http.parseQueryString
 import io.ktor.http.takeFrom
 import java.net.URI
 
-/**
- * Constructs API endpoints for an OCI spec compliant registry.
- *
- * This class handles URL construction for all registry operations including:
- * - Repository listing and tag management
- * - Blob and manifest operations
- * - Upload session management
- * - Cross-repository blob mounting
- *
- * All methods return fully constructed [Url] objects ready for use with HTTP clients.
- */
+/** Builds registry API endpoints from the configured base URL. */
 internal class Router(registryURL: String) {
   private companion object {
     private const val V2_PREFIX = "v2/"
@@ -32,83 +23,52 @@ internal class Router(registryURL: String) {
 
   val base: URLBuilder = URLBuilder().takeFrom(registryURL).appendPathSegments(V2_PREFIX)
 
-  /** Returns the base URL for the registry API (v2 endpoint). */
+  /** Registry v2 base URL. */
   fun base(): Url {
     return base.build()
   }
 
-  /** Returns the URL for listing all repositories in the registry. */
+  /** Catalog endpoint, no pagination. */
   fun catalog(): Url {
     return base.clone().appendPathSegments("_catalog").build()
   }
 
-  /**
-   * Returns the URL for listing repositories with pagination.
-   *
-   * @param n Number of repositories to return
-   * @param lastRepo Optional repository name to resume listing from
-   */
+  /** Catalog endpoint with pagination. */
   fun catalog(n: Int, lastRepo: String? = null): Url {
     return base.clone().appendPathSegments("_catalog").paginate(n, lastRepo).build()
   }
 
-  /**
-   * Returns the URL for listing all tags in a repository.
-   *
-   * @param repository Repository name
-   */
+  /** Tag-listing endpoint for [repository]. */
   fun tags(repository: String): Url {
     return base.clone().appendPathSegments(repository, "tags", "list").build()
   }
 
-  /**
-   * Returns the URL for accessing a manifest by reference (tag or digest).
-   *
-   * @param repository Repository name
-   * @param ref Tag or digest reference
-   */
+  /** Manifest endpoint addressed by tag or digest [ref]. */
   fun manifest(repository: String, ref: String): Url {
     return base.clone().appendPathSegments(repository, "manifests", ref).build()
   }
 
-  /**
-   * Returns the URL for accessing a manifest by descriptor, or null if [descriptor] has no digest.
-   *
-   * @param repository Repository name
-   * @param descriptor Content descriptor containing the digest
-   */
+  /** Manifest endpoint addressed by descriptor digest, or `null` when the descriptor has none. */
   fun manifest(repository: String, descriptor: Descriptor): Url? {
     val digest = descriptor.digest ?: return null
     return manifest(repository, digest.toString())
   }
 
-  /**
-   * Returns the URL for accessing a blob by descriptor, or null if [descriptor] has no digest.
-   *
-   * @param repository Repository name
-   * @param descriptor Content descriptor containing the digest
-   */
+  /** Blob endpoint addressed by descriptor digest, or `null` when the descriptor has none. */
   fun blob(repository: String, descriptor: Descriptor): Url? {
     val digest = descriptor.digest ?: return null
     return base.clone().appendPathSegments(repository, "blobs", digest.toString()).build()
   }
 
-  /**
-   * Returns the URL for initiating a blob upload session.
-   *
-   * @param repository Repository name
-   */
+  /** Endpoint that opens a new blob upload session. */
   fun uploads(repository: String): Url {
-    // the final "" allows for a trailing /
+    // Trailing "" preserves the spec-mandated trailing slash on the upload path.
     return base.clone().appendPathSegments(repository, "blobs", "uploads", "").build()
   }
 
   /**
-   * Returns the URL for mounting a blob from another repository.
+   * Endpoint that mounts a blob from [sourceRepository] into [repository].
    *
-   * @param repository Target repository to mount the blob to
-   * @param sourceRepository Source repository where the blob exists
-   * @param descriptor Blob descriptor to mount
    * @see <a
    *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#mounting-a-blob-from-another-repository">OCI
    *   Distribution Spec: Mounting a Blob</a>
@@ -126,12 +86,9 @@ internal class Router(registryURL: String) {
   }
 
   /**
-   * Parses a Location header value into a complete URL.
+   * Resolves a `Location` header into a full URL, accepting either an absolute URL or a relative
+   * path that is resolved against the registry base.
    *
-   * Handles both absolute and relative URLs according to RFC 7231 section 7.1.2. For relative URLs,
-   * resolves them against the registry base URL.
-   *
-   * @param locationHeader Location header value from HTTP response
    * @see <a href="https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.2">RFC 7231:
    *   Location</a>
    */
@@ -141,15 +98,19 @@ internal class Router(registryURL: String) {
       return URLBuilder().takeFrom(locationHeader).build()
     }
 
-    return URLBuilder().takeFrom(base.build()).apply { encodedPath = locationHeader }.build()
+    return URLBuilder()
+      .apply {
+        val baseUrl = base.build()
+        protocol = baseUrl.protocol
+        host = baseUrl.host
+        port = baseUrl.port
+        encodedPath = uri.rawPath
+        uri.rawQuery?.let { encodedParameters.appendAll(parseQueryString(it, decode = false)) }
+      }
+      .build()
   }
 
-  /**
-   * Adds pagination parameters to a URL as specified in the OCI spec.
-   *
-   * @param n Number of results to return
-   * @param last Optional token indicating where to resume listing
-   */
+  /** Adds the OCI-spec pagination parameters `n` and optional `last`. */
   private fun URLBuilder.paginate(n: Int, last: String? = null): URLBuilder = apply {
     parameters.append("n", n.toString())
     last?.let { parameters.append("last", it) }

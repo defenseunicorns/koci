@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 fun main(): Unit = runBlocking {
   val payload = "hello from koci".toByteArray()
 
-  Koci(root = "/tmp/koci-push-sample").use { koci ->
+  Koci.create(root = "/tmp/koci-push-sample").use { koci ->
     val repo = koci.registry("http://localhost:5000").repo("samples/blob")
 
     val descriptor =
@@ -22,8 +22,7 @@ fun main(): Unit = runBlocking {
 
     repo.push(stream = payload.inputStream(), expected = descriptor).collect { event ->
       when (event) {
-        is PullEvent.Progress -> println("uploaded: ${event.percent} bytes")
-        PullEvent.Completed -> println("pushed ${descriptor.digest}")
+        is PullEvent.Progress -> println("uploaded: ${event.percent}%")
         PullEvent.Failed -> println("push failed")
       }
     }

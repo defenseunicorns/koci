@@ -8,27 +8,18 @@ package com.defenseunicorns.koci.api
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** Platform describes the platform which the image in the manifest runs on. */
+/** Target platform for an OCI image. */
 @Serializable
 public class Platform(
-  /** architecture field specifies the CPU architecture, for example `amd64` or `ppc64le`. */
+  /** CPU architecture, e.g. `amd64`, `arm64`, `ppc64le`. */
   public val architecture: String,
-  /** os specifies the operating system, for example `linux` or `windows`. */
+  /** Operating system, e.g. `linux`, `windows`. */
   public val os: String,
-  /**
-   * osVersion is an optional field specifying the operating system version, for example on Windows
-   * `10.0.14393.1066`.
-   */
+  /** Operating system version, e.g. `10.0.14393.1066` for Windows. */
   @SerialName("os.version") public val osVersion: String? = null,
-  /**
-   * osFeatures is an optional field specifying an array of strings, each listing a required OS
-   * feature (for example on Windows `win32k`).
-   */
+  /** Required OS features, e.g. `win32k`. */
   @SerialName("os.features") public val osFeatures: List<String>? = null,
-  /**
-   * variant is an optional field specifying a variant of the CPU, for example `v7` to specify ARMv7
-   * when architecture is `arm`.
-   */
+  /** CPU variant, e.g. `v7` for ARMv7 when [architecture] is `arm`. */
   public val variant: String? = null,
 ) {
   override fun equals(other: Any?): Boolean {

@@ -6,17 +6,14 @@
 package com.defenseunicorns.koci.api
 
 /**
- * Events emitted by [Repository.pull].
- *
- * [Progress] reports completion percentage (0..100) while bytes are flowing. The flow ends with
- * exactly one terminal event: [Completed] on success, [Failed] otherwise. Specific failure causes
- * (digest mismatch, registry error, unsupported content type, etc.) are logged inside koci — the
- * consumer just sees `Failed`.
+ * Events emitted by [Repository.pull] and [Repository.push]. [Progress] carries a percentage from 0
+ * to 100; the terminal event is `Progress(100)` on success or [Failed] on any error. Failure
+ * details are logged internally; the consumer sees only `Failed`.
  */
 public sealed interface PullEvent {
+  /** Completion percentage, 0 to 100. */
   public data class Progress(val percent: Int) : PullEvent
 
-  public data object Completed : PullEvent
-
+  /** Terminal failure. */
   public data object Failed : PullEvent
 }

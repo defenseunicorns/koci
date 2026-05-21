@@ -7,25 +7,27 @@ package com.defenseunicorns.koci.api
 
 import com.defenseunicorns.koci.internal.CopyOnWriteDescriptorArrayListSerializer
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
- * Index references manifests for various platforms.
- *
- * This structure provides [INDEX_MEDIA_TYPE] mediatype when marshalled to JSON.
+ * An OCI image index (`application/vnd.oci.image.index.v1+json`), referencing manifests for one or
+ * more platforms.
  */
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 public class Index(
-  public val schemaVersion: Int = 2,
-  /** mediaType specifies the type of this document data structure e.g. [INDEX_MEDIA_TYPE] */
+  /** OCI image index schema version; always 2. */
+  @EncodeDefault public val schemaVersion: Int = 2,
+  /** Media type of this document (`application/vnd.oci.image.index.v1+json`). */
   public val mediaType: String? = null,
-  /** manifests references platform specific manifests. */
+  /** Platform-specific manifests referenced by this index. */
   @Serializable(with = CopyOnWriteDescriptorArrayListSerializer::class)
   public val manifests: CopyOnWriteArrayList<Descriptor> = CopyOnWriteArrayList(),
-  /** annotations contains arbitrary metadata for the image index. */
+  /** Arbitrary metadata for the image index. */
   public val annotations: Annotations? = null,
-
-  /** specifies a descriptor of another manifest */
+  /** Optional reference to another manifest that this index was derived from. */
   public val subject: Descriptor? = null,
 ) {
   override fun equals(other: Any?): Boolean {
@@ -38,7 +40,7 @@ public class Index(
   }
 
   override fun hashCode(): Int {
-    var result = schemaVersion?.hashCode() ?: 0
+    var result = schemaVersion.hashCode() ?: 0
     result = 31 * result + (mediaType?.hashCode() ?: 0)
     result = 31 * result + manifests.hashCode()
     result = 31 * result + (annotations?.hashCode() ?: 0)

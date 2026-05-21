@@ -17,47 +17,48 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.Serializable
 
 /**
- * Single ingress for every HTTP request koci makes against an upstream registry.
- *
- * The wrapper turns engine-level exceptions (transport failure, timeout, engine closed, decode
- * threw) into `null`, then splits status-code branching once: 2xx goes to [onSuccess], everything
- * else is parsed into a [FailureResponse], logged, and handed to [onError] (which defaults to
- * producing `null`). Internal call sites that want to act on specific [ErrorCode]s override
- * [onError]; everyone else gets log-and-null for free.
- *
- * The single catch logs once with [operation] as the tag — that's the place #658 will plug into.
- * [CancellationException] is rethrown so coroutine cancellation propagates correctly.
+ * Single entry point for every HTTP request koci makes against an upstream registry. Engine
+ * exceptions (transport failure, timeout, engine closed, deserialization throws) become `null`.
+ * Status branching happens once: 2xx goes to [onSuccess], everything else is parsed into a
+ * [FailureResponse] and handed to [onError], which defaults to logging and returning `null`.
+ * [CancellationException] is rethrown so coroutine cancellation propagates.
  */
-internal class HttpWrapper(private val client: HttpClient) {
+internal class HttpWrapper(private val client: HttpClient, private val logger: KociLogger) {
 
   /**
-   * Run [buildRequest], dispatch to [onSuccess] on a 2xx response or [onError] on anything else,
-   * and return whatever the chosen lambda produced. Returns `null` if the engine throws or either
-   * lambda throws.
+   * Builds a request via [buildRequest], dispatches to [onSuccess] on a 2xx response or [onError]
+   * otherwise, and returns whatever the chosen lambda produced. Returns `null` if the engine throws
+   * or either lambda throws.
    */
-  @Suppress("detekt:UnusedParameter", "detekt:TooGenericExceptionCaught")
+  @Suppress("detekt:TooGenericExceptionCaught")
   suspend fun <T> call(
     operation: String,
     buildRequest: HttpRequestBuilder.() -> Unit,
-    onError: suspend (FailureResponse) -> T? = { null },
+    onError: suspend (FailureResponse) -> T? = {
+      logger.warn { "[$operation] call failed: $it" }
+      null
+    },
     onSuccess: suspend (HttpResponse) -> T?,
   ): T? =
     try {
       val request = HttpRequestBuilder().apply(buildRequest)
       client.prepareRequest(request).execute { res ->
-        when (res.status.isSuccess()) {
-          true -> onSuccess(res)
-          false -> {
-            val failure = res.toFailureResponse()
-            // TODO: #658 - log structured failure: operation, failure
-            onError(failure)
+        try {
+          when (res.status.isSuccess()) {
+            true -> onSuccess(res)
+            false -> onError(res.toFailureResponse())
           }
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          logger.error(e) { "[$operation] handler exception: ${e::class.simpleName}" }
+          null
         }
       }
     } catch (e: CancellationException) {
       throw e
-    } catch (_: Exception) {
-      // TODO: #658 - log exception: operation
+    } catch (e: Exception) {
+      logger.error(e) { "[$operation] unexpected exception: ${e::class.simpleName}" }
       null
     }
 }
@@ -65,9 +66,9 @@ internal class HttpWrapper(private val client: HttpClient) {
 @Serializable private data class FailureEnvelope(val errors: List<ActionableFailure> = emptyList())
 
 /**
- * Build a [FailureResponse] from a non-2xx [HttpResponse]: parse the OCI error envelope when the
- * body is JSON, otherwise create a single [ErrorCode.UNKNOWN] entry so callers always get a
- * non-empty [FailureResponse.errors].
+ * Builds a [FailureResponse] from a non-2xx [HttpResponse]. Parses the OCI error envelope when the
+ * body is JSON; otherwise returns a single [ErrorCode.UNKNOWN] entry so [FailureResponse.errors] is
+ * never empty.
  */
 private suspend fun HttpResponse.toFailureResponse(): FailureResponse {
   val parsedErrors =
@@ -78,6 +79,7 @@ private suspend fun HttpResponse.toFailureResponse(): FailureResponse {
         } catch (_: Exception) {
           emptyList()
         }
+
       else -> emptyList()
     }
   val effective =

@@ -9,15 +9,12 @@ import com.defenseunicorns.koci.internal.Regex.uploadRangeRegex
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 
-/** UploadStatus tracks the server-side state of an upload. */
-internal data class UploadStatus(val location: String, var offset: Long, var minChunkSize: Long)
+/** Server-side state of a blob upload session. */
+internal data class UploadStatus(val location: String, val offset: Long, val minChunkSize: Long)
 
 /**
- * Extracts upload status from HTTP response headers for resumable uploads.
- *
- * Parses Location and Range headers to determine upload state and handles the optional
- * OCI-Chunk-Min-Length header. Returns null when the registry omits or malforms a required header —
- * callers treat null as a failed upload step and surface it accordingly.
+ * Parses [Headers] into an [UploadStatus] for a resumable upload. Returns `null` when `Location` or
+ * `Range` is missing or malformed; callers treat that as a failed upload step.
  *
  * @see <a
  *   href="https://github.com/opencontainers/distribution-spec/blob/main/spec.md#resuming-an-upload">OCI
@@ -28,7 +25,7 @@ internal fun Headers.toUploadStatus(): UploadStatus? {
   val range = this[HttpHeaders.Range] ?: return null
   val offset = uploadRangeRegex.matchEntire(range)?.groupValues?.last() ?: return null
 
-  // this header MAY not exist
+  // OCI-Chunk-Min-Length is optional on the response.
   val minChunk = this["OCI-Chunk-Min-Length"]?.toLong() ?: 0L
 
   return UploadStatus(location, offset.toLong(), minChunk)

@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
-  Koci(root = "/tmp/koci-platform-sample").use { koci ->
+  Koci.create(root = "/tmp/koci-platform-sample").use { koci ->
     val repo = koci.registry("https://ghcr.io").repo("linuxcontainers/alpine")
 
     repo

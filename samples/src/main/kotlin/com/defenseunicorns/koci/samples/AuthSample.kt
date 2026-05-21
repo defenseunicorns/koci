@@ -14,7 +14,7 @@ fun main(): Unit = runBlocking {
   val user = prompt("Username: ")
   val pass = promptSecret("Password: ")
 
-  Koci(root = "/tmp/koci-auth-sample").use { koci ->
+  Koci.create(root = "/tmp/koci-auth-sample").use { koci ->
     val registry = koci.registry(url = url, auth = AuthConfig.Basic(user = user, pass = pass))
     println("basic auth ping: ${registry.ping()}")
   }

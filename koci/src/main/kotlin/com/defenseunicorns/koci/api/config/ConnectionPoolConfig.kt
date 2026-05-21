@@ -6,13 +6,12 @@
 package com.defenseunicorns.koci.api.config
 
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.minutes
 
-/** HTTP connection pool tuning. Honored by the platform-selected engine. */
+/** HTTP connection pool tuning for the underlying engine. */
 public class ConnectionPoolConfig(
-  /** Idle keep-alive duration for pooled connections. */
-  public val keepAlive: Duration = 30.seconds,
-
+  /** How long idle connections stay alive in the pool. */
+  public val keepAlive: Duration = 5.minutes,
   /** Maximum number of pooled connections. */
   public val maxConnections: Int = 64,
 ) {

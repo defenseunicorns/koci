@@ -15,12 +15,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-/**
- * Represents supported digest algorithms according to the OCI spec.
- *
- * Each algorithm provides a string representation and a way to create a [MessageDigest] instance
- * for computing digests using that algorithm.
- */
+/** Digest algorithms supported by koci, per the OCI spec. */
 public enum class RegisteredAlgorithm(private val n: String) {
   SHA256("sha256"),
   SHA512("sha512");
@@ -29,7 +24,7 @@ public enum class RegisteredAlgorithm(private val n: String) {
     return this.n
   }
 
-  /** Creates a [MessageDigest] instance for this algorithm. */
+  /** Returns a fresh [MessageDigest] instance for this algorithm. */
   public fun hasher(): MessageDigest {
     return when (this) {
       SHA256 -> MessageDigest.getInstance("SHA-256")
@@ -39,15 +34,11 @@ public enum class RegisteredAlgorithm(private val n: String) {
 }
 
 /**
- * Represents a content-addressable digest as defined in the OCI spec.
+ * Content-addressable digest in `algorithm:hex` form, e.g.
+ * `sha256:6c3c624b58dbbcd3c0dd82b4c53f04194d1247c6eebdaab7c610cf7d66709b3b`.
  *
- * A digest consists of an algorithm identifier and a hex-encoded hash value. The string
- * representation follows the format: algorithm:hex (e.g.,
- * "sha256:6c3c624b58dbbcd3c0dd82b4c53f04194d1247c6eebdaab7c610cf7d66709b3b").
- *
- * The primary constructor is internal; callers must go through [Digest.parse] for untrusted input
- * or through the hash-computation convenience ctor used by internal hashing paths. [parse] returns
- * null for malformed input rather than throwing.
+ * Use [Digest.parse] for untrusted input; it returns `null` instead of throwing on malformed
+ * values. Comparison is case-insensitive on the hex portion.
  */
 @Serializable(with = DigestSerializer::class)
 public class Digest
@@ -62,10 +53,6 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
     return "$algorithm:$hex"
   }
 
-  /**
-   * Compares this digest with another object for equality. Two digests are equal if they have the
-   * same algorithm and hex value (case-insensitive).
-   */
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (other !is Digest) return false
@@ -76,7 +63,6 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
     return true
   }
 
-  /** Returns a hash code for this digest. */
   override fun hashCode(): Int {
     var result = algorithm.hashCode()
     result = 31 * result + hex.hashCode()
@@ -85,10 +71,8 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
 
   public companion object {
     /**
-     * Parses a content-addressable digest from its canonical `algorithm:hex` string form.
-     *
-     * Returns `null` if the string is missing an algorithm, names an unregistered algorithm, does
-     * not match the digest regex, or has the wrong hex length for its algorithm.
+     * Parses a digest in `algorithm:hex` form. Returns `null` if the algorithm is unsupported, the
+     * format is invalid, or the hex length doesn't match the algorithm.
      */
     public fun parse(content: String): Digest? {
       val algoPart = content.substringBefore(":", "")
@@ -118,11 +102,8 @@ internal constructor(public val algorithm: RegisteredAlgorithm, public val hex: 
 }
 
 /**
- * Serializer for [Digest] that converts between [Digest] objects and their string representation.
- *
- * Returns null on malformed wire input rather than throwing — consumers that deserialize a
- * [Descriptor] with a malformed digest see `Descriptor.digest == null` and handle it gracefully
- * (skip, log, no-op).
+ * Serializes [Digest] to and from its canonical `algorithm:hex` form. Returns `null` on malformed
+ * input so deserialized descriptors surface as `Descriptor.digest == null` rather than throwing.
  */
 internal object DigestSerializer : KSerializer<Digest?> {
   override val descriptor: SerialDescriptor =

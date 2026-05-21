@@ -28,10 +28,12 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.okio)
+  implementation(libs.kermit)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.ktor.client.mock)
+  testImplementation(libs.okio.fakefilesystem)
   testImplementation(kotlin("test"))
 }
 

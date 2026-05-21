@@ -9,7 +9,7 @@ import com.defenseunicorns.koci.api.Koci
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
-  Koci(root = "/tmp/koci-catalog-sample").use { koci ->
+  Koci.create(root = "/tmp/koci-catalog-sample").use { koci ->
     val registry = koci.registry("http://localhost:5000")
 
     if (!registry.ping()) {
@@ -17,8 +17,10 @@ fun main(): Unit = runBlocking {
       return@runBlocking
     }
 
-    for (repo in registry.catalog()) {
-      println("${repo.name}: ${repo.tags()}")
+    registry.catalog().collect { repos ->
+      for (repo in repos) {
+        println("${repo.name}: ${repo.tags()}")
+      }
     }
   }
 }

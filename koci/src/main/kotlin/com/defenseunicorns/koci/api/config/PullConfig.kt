@@ -5,9 +5,9 @@
 
 package com.defenseunicorns.koci.api.config
 
-/** Pull-side tuning. */
+/** Pull tuning. */
 public class PullConfig(
-  /** Maximum number of parallel pulls. */
+  /** Maximum number of blob downloads in flight at once. */
   public val concurrency: Int = 4
 ) {
   override fun equals(other: Any?): Boolean {

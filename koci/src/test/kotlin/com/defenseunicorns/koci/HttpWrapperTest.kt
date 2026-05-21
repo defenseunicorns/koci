@@ -32,7 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 
-internal class HttpWrapperTest {
+class HttpWrapperTest {
 
   @Test
   fun `2xx response routes to onSuccess`() = runTest {
@@ -249,5 +249,5 @@ internal class HttpWrapperTest {
           }
         }
       }
-      .use { block(HttpWrapper(it)) }
+      .use { block(HttpWrapper(it, TestFixtures.NoOpLogger)) }
 }

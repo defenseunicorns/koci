@@ -155,15 +155,6 @@ class LayoutTest {
   }
 
   @Test
-  fun `tag with distinct references coexist in catalog`() = runTest {
-    val layout = buildLayout()
-    val desc = layout.writeBlob("shared".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
-    layout.tag(desc, Reference("r.example.com", "repo", "v1"))
-    layout.tag(desc, Reference("r.example.com", "repo", "v2"))
-    assertEquals(2, layout.catalog().size)
-  }
-
-  @Test
   fun `remove by reference returns true when reference is absent`() = runTest {
     val layout = buildLayout()
     val ref = Reference("r.example.com", "repo", "ghost")

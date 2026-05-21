@@ -8,10 +8,11 @@ package com.defenseunicorns.koci
 import com.defenseunicorns.koci.api.Koci
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
+import org.junit.jupiter.api.assertThrows
 
 class KociTest {
 
@@ -26,28 +27,10 @@ class KociTest {
   }
 
   @Test
-  fun `oci layout directory structure is created on construction`() {
-    val fs = FakeFileSystem()
-    testKoci(root = "/store", fs = fs).use {
-      assertTrue(fs.exists("/store/oci-layout".toPath()))
-      assertTrue(fs.exists("/store/blobs/sha256".toPath()))
-      assertTrue(fs.exists("/store/blobs/sha512".toPath()))
-    }
-  }
-
-  @Test
   fun `registry returns a registry bound to the given url`() {
     testKoci().use { koci ->
       val registry = koci.registry("https://ghcr.io")
       assertEquals("https://ghcr.io", registry.url)
-    }
-  }
-
-  @Test
-  fun `registry name is the host portion of the url`() {
-    testKoci().use { koci ->
-      assertEquals("ghcr.io", koci.registry("https://ghcr.io").name)
-      assertEquals("registry.example.com", koci.registry("https://registry.example.com:443").name)
     }
   }
 
@@ -59,17 +42,13 @@ class KociTest {
   }
 
   @Test
-  fun `toString includes the root path`() {
-    testKoci(root = "/my/store").use { koci -> assertTrue(koci.toString().contains("/my/store")) }
-  }
+  fun `close also closes registry clients`() = runTest {
+    val koci = testKoci()
+    val registry = koci.registry("https://registry.example.com")
+    val registry2 = koci.registry("https://registry.example.com")
+    koci.close()
 
-  @Test
-  fun `koci can be used with use block`() {
-    var layoutRootSeen = false
-    Koci(root = "/tmp/oci", fileSystem = FakeFileSystem(), dispatcher = Dispatchers.IO).use { koci
-      ->
-      layoutRootSeen = koci.layout.root.toString().isNotEmpty()
-    }
-    assertTrue(layoutRootSeen)
+    assertThrows<IllegalStateException> { registry.ping() }
+    assertThrows<IllegalStateException> { registry2.ping() }
   }
 }

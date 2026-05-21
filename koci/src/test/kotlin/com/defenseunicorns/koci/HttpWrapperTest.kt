@@ -28,6 +28,7 @@ import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -67,7 +68,7 @@ class HttpWrapperTest {
   }
 
   @Test
-  fun `onError receives synthetic UNKNOWN failure when body is not JSON`() = runTest {
+  fun `onError receives UNKNOWN failure when body is not JSON`() = runTest {
     withWrapper({ respondError(HttpStatusCode.InternalServerError) }) { w ->
       val outcome =
         w.call<FailureResponse>(
@@ -97,7 +98,7 @@ class HttpWrapperTest {
       withJson = true,
     ) { w ->
       val outcome =
-        w.call<FailureResponse>(
+        w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
           onError = { failure -> failure },
@@ -124,7 +125,7 @@ class HttpWrapperTest {
   }
 
   @Test
-  fun `onSuccess receives the live response`() = runTest {
+  fun `onSuccess receives the real response`() = runTest {
     withWrapper({
       respond("body", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/plain"))
     }) { w ->
@@ -211,7 +212,7 @@ class HttpWrapperTest {
   fun `request timeout is caught and returns null`() = runTest {
     withWrapper(
       handler = {
-        delay(500)
+        delay(500.milliseconds)
         respondOk()
       },
       timeoutMs = 50,

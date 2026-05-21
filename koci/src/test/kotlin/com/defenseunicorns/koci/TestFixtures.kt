@@ -42,7 +42,13 @@ object TestFixtures {
   }
 
   internal fun buildLayout(fs: FakeFileSystem = FakeFileSystem()): Layout =
-    Layout(root = "/oci".toPath(), fileSystem = fs, dispatcher = Dispatchers.IO, json = testJson)
+    Layout(
+        root = "/oci".toPath(),
+        fileSystem = fs,
+        dispatcher = Dispatchers.IO,
+        json = testJson,
+        logger = NoOpLogger,
+      )
       .also { it.create() }
 
   internal suspend fun Layout.writeBlob(
@@ -88,8 +94,6 @@ object TestFixtures {
   ) = fakeRegistry(handler = handler, store = store).repo(name)
 
   internal object NoOpLogger : KociLogger {
-    override fun verbose(message: () -> String) = Unit
-
     override fun debug(message: () -> String) = Unit
 
     override fun info(message: () -> String) = Unit

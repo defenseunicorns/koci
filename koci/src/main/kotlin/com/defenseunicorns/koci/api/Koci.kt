@@ -67,6 +67,7 @@ public class Koci(
   fileSystem: FileSystem = FileSystem.SYSTEM,
   dispatcher: CoroutineDispatcher = Dispatchers.IO,
   connectionPool: ConnectionPoolConfig = ConnectionPoolConfig(),
+  logLevel: LogLevel = LogLevel.Error,
 ) : AutoCloseable {
 
   private val json = Json {
@@ -74,13 +75,16 @@ public class Koci(
     isLenient = true
     coerceInputValues = true
   }
-  private val logger: KociLogger = RealKociLogger()
+  private val logger: KociLogger = RealKociLogger(logLevel = logLevel)
   public val layout: Layout =
-    Layout(root = root.toPath(), fileSystem = fileSystem, dispatcher = dispatcher, json = json)
-      .apply {
-        this.logger = this@Koci.logger
-        create()
-      }
+    Layout(
+        root = root.toPath(),
+        fileSystem = fileSystem,
+        dispatcher = dispatcher,
+        json = json,
+        logger = logger,
+      )
+      .apply { create() }
   private val httpDispatcher =
     Dispatcher().apply { maxRequestsPerHost = connectionPool.maxConnections }
   private val httpPool =

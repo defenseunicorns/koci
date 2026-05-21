@@ -8,7 +8,6 @@ package com.defenseunicorns.koci.api
 import com.defenseunicorns.koci.internal.BlobState
 import com.defenseunicorns.koci.internal.KociLogger
 import com.defenseunicorns.koci.internal.LayoutMarker
-import com.defenseunicorns.koci.internal.RealKociLogger
 import com.defenseunicorns.koci.internal.SizeConstants
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,14 +40,14 @@ import okio.buffer
  * ```
  */
 @Suppress("detekt:TooManyFunctions")
-public class Layout(
+public class Layout
+internal constructor(
   internal val root: Path,
   private val fileSystem: FileSystem,
   private val dispatcher: CoroutineDispatcher,
   private val json: Json,
+  private val logger: KociLogger,
 ) {
-  internal var logger: KociLogger = RealKociLogger()
-
   private lateinit var index: Index
 
   private val inflight = ConcurrentHashMap<Descriptor, Slot>()

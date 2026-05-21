@@ -6,10 +6,11 @@
 package com.defenseunicorns.koci.internal
 
 import co.touchlab.kermit.Logger
+import co.touchlab.kermit.Severity
+import co.touchlab.kermit.loggerConfigInit
+import com.defenseunicorns.koci.api.LogLevel
 
 internal interface KociLogger {
-  fun verbose(message: () -> String)
-
   fun debug(message: () -> String)
 
   fun info(message: () -> String)
@@ -19,10 +20,21 @@ internal interface KociLogger {
   fun error(throwable: Throwable? = null, message: () -> String)
 }
 
-internal class RealKociLogger : KociLogger {
-  private val log = Logger.withTag("Koci")
-
-  override fun verbose(message: () -> String) = log.v { message() }
+internal class RealKociLogger(logLevel: LogLevel) : KociLogger {
+  private val log =
+    Logger(
+      config =
+        loggerConfigInit(
+          minSeverity =
+            when (logLevel) {
+              LogLevel.Debug -> Severity.Debug
+              LogLevel.Info -> Severity.Info
+              LogLevel.Warn -> Severity.Warn
+              LogLevel.Error -> Severity.Error
+            }
+        ),
+      tag = "Koci",
+    )
 
   override fun debug(message: () -> String) = log.d { message() }
 
@@ -30,9 +42,5 @@ internal class RealKociLogger : KociLogger {
 
   override fun warn(message: () -> String) = log.a { message() }
 
-  override fun error(throwable: Throwable?, message: () -> String) =
-    when (throwable) {
-      null -> log.e { message() }
-      else -> log.e(throwable) { message() }
-    }
+  override fun error(throwable: Throwable?, message: () -> String) = log.e(throwable) { message() }
 }

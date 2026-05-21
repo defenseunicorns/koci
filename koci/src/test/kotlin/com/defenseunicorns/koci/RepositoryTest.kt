@@ -151,8 +151,6 @@ class RepositoryTest {
 
   @Test
   fun `resolve with platform resolver picks matching manifest from index`() = runTest {
-    val amd64Digest = "a".repeat(64)
-    val arm64Digest = "b".repeat(64)
     val index =
       Index().apply {
         manifests.add(

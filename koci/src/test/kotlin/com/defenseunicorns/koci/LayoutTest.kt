@@ -6,18 +6,24 @@
 package com.defenseunicorns.koci
 
 import com.defenseunicorns.koci.TestFixtures.buildLayout
+import com.defenseunicorns.koci.TestFixtures.digestOf
 import com.defenseunicorns.koci.TestFixtures.testJson
 import com.defenseunicorns.koci.TestFixtures.writeBlob
+import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Manifest
 import com.defenseunicorns.koci.api.OciConstants
 import com.defenseunicorns.koci.api.Platform
 import com.defenseunicorns.koci.api.Reference
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import okio.Buffer
+import okio.Path.Companion.toPath
+import okio.buffer
 import okio.fakefilesystem.FakeFileSystem
 
 class LayoutTest {
@@ -241,5 +247,39 @@ class LayoutTest {
     assertEquals(emptyList(), layout.gc())
     assertNotNull(layout.fetchBlob(layerDesc) { it.readUtf8() })
     assertNotNull(layout.fetchBlob(configDesc) { it.readUtf8() })
+  }
+
+  @Test
+  fun `push leaves no blob at final path on mid-stream failure`() = runTest {
+    val fs = FakeFileSystem()
+    val layout = buildLayout(fs)
+    val bytes = "hello world".toByteArray()
+    val desc =
+      Descriptor(
+        mediaType = "application/octet-stream",
+        digest = digestOf(bytes),
+        size = bytes.size.toLong(),
+      )
+
+    // Truncated source — too few bytes, causing a size/digest mismatch.
+    val truncated = Buffer().apply { write(bytes, 0, bytes.size / 2) }
+    val ok = layout.push(desc, truncated)
+
+    assertFalse(ok)
+    assertNull(layout.fetchBlob(desc) { it.readUtf8() })
+    assertFalse(fs.exists("/oci/blobs/sha256/${desc.digest!!.hex}".toPath()))
+  }
+
+  @Test
+  fun `gc sweeps interrupted temp files`() = runTest {
+    val fs = FakeFileSystem()
+    val layout = buildLayout(fs)
+
+    val tmpFile = "/oci/blobs/.tmp/sha256-deadbeef".toPath()
+    fs.sink(tmpFile).buffer().use { it.writeUtf8("partial") }
+
+    layout.gc()
+
+    assertFalse(fs.exists(tmpFile))
   }
 }

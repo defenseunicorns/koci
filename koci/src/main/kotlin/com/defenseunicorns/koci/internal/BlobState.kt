@@ -13,15 +13,19 @@ package com.defenseunicorns.koci.internal
  * from byte zero. Use [Layout.remove] to delete the file outright.
  */
 internal sealed interface BlobState {
-  /** Full content present and digest-verified. */
+  /**
+   * Full content present at the final blob path; size matches. Correctness guaranteed by write-time
+   * digest verification before the atomic rename.
+   */
   data object Present : BlobState
 
-  /** Nothing usable on disk. Includes missing, zero-byte, oversize, and digest-mismatched files. */
+  /** Nothing usable on disk. Includes missing, wrong-size, and corrupt files. */
   data object Absent : BlobState
 
   /**
-   * A prefix is on disk. [bytesOnDisk] is the current size, in `1 until descriptor.size`. The
-   * caller can resume via a `Range` request when the registry supports it.
+   * A temp file from an interrupted write is on disk. [bytesOnDisk] is in `1 until
+   * descriptor.size`. The caller can resume by appending and sending a `Range` request when the
+   * registry supports it.
    */
   data class Partial(val bytesOnDisk: Long) : BlobState
 }

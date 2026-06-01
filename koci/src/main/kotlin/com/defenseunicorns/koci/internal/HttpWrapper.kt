@@ -43,16 +43,9 @@ internal class HttpWrapper(private val client: HttpClient, private val logger: K
     try {
       val request = HttpRequestBuilder().apply(buildRequest)
       client.prepareRequest(request).execute { res ->
-        try {
-          when (res.status.isSuccess()) {
-            true -> onSuccess(res)
-            false -> onError(res.toFailureResponse())
-          }
-        } catch (e: CancellationException) {
-          throw e
-        } catch (e: Exception) {
-          logger.error(e) { "[$operation] handler exception: ${e::class.simpleName}" }
-          null
+        when (res.status.isSuccess()) {
+          true -> onSuccess(res)
+          false -> onError(res.toFailureResponse())
         }
       }
     } catch (e: CancellationException) {

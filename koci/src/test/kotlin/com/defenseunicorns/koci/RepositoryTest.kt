@@ -131,12 +131,12 @@ class RepositoryTest {
   }
 
   @Test
-  fun `resolve returns null when Docker-Content-Digest header is absent`() = runTest {
+  fun `resolve returns when Docker-Content-Digest header is absent`() = runTest {
     val repo =
       fakeRepo(
         handler = {
           respond(
-            content = "",
+            content = "1234",
             status = HttpStatusCode.OK,
             headers =
               headersOf(
@@ -146,7 +146,7 @@ class RepositoryTest {
           )
         }
       )
-    assertNull(repo.resolve("latest"))
+    assertNotNull(repo.resolve("latest"))
   }
 
   @Test

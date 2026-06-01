@@ -278,7 +278,8 @@ internal class RepositoryPusher(
     session: UploadStatus,
     onBytes: (Long) -> Unit,
   ): Boolean {
-    val bytesLeft = expected.size - session.offset
+    val committed = if (session.offset > 0L) session.offset + 1L else 0L
+    val bytesLeft = expected.size - committed
     return when (bytesLeft) {
       in 1..session.minChunkSize -> uploadMonolithic(source, expected, session)
       else -> uploadChunked(source, expected, session, onBytes)
@@ -294,8 +295,9 @@ internal class RepositoryPusher(
     expected: Descriptor,
     session: UploadStatus,
   ): Boolean {
-    val bytesLeft = expected.size - session.offset
-    if (session.offset > 0L) source.skip(session.offset)
+    val committed = if (session.offset > 0L) session.offset + 1L else 0L
+    val bytesLeft = expected.size - committed
+    if (committed > 0L) source.skip(committed)
     val status =
       caller.call(
         operation = "repository.push.monolithic",
@@ -331,8 +333,9 @@ internal class RepositoryPusher(
       // shrink chunkSize to 0 and exit the loop after one chunk.
       val chunkSize = session.minChunkSize
       var currentLocation = session.location
-      var offset = session.offset
-      if (offset > 0L) source.skip(offset + 1)
+      val committed = if (session.offset > 0L) session.offset + 1L else 0L
+      if (committed > 0L) source.skip(committed)
+      var offset = committed
 
       while (currentCoroutineContext().isActive) {
         val want = minOf(expected.size - offset, chunkSize)

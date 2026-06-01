@@ -397,16 +397,17 @@ internal constructor(
   }
 
   private suspend fun <T> withDescriptorLock(descriptor: Descriptor, block: suspend () -> T): T {
-    // TODO: Remove !!
     val slot =
-      inflight.compute(descriptor) { _, existing ->
-        (existing ?: Slot(Mutex())).also { it.refs += 1 }
-      }!!
+      checkNotNull(
+        inflight.compute(descriptor) { _, existing ->
+          (existing ?: Slot(Mutex())).also { it.refs += 1 }
+        }
+      )
     try {
       return slot.mu.withLock { block() }
     } finally {
       inflight.compute(descriptor) { _, existing ->
-        val s = existing!!
+        val s = existing ?: return@compute null
         s.refs -= 1
         if (s.refs <= 0) null else s
       }

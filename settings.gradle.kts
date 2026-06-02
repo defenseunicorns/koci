@@ -21,3 +21,6 @@ rootProject.name = "koci-root"
 
 include(":koci")
 include(":samples")
+include(":bench:harness")
+include(":bench:v1")
+include(":bench:current")

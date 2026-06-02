@@ -28,6 +28,10 @@ bin/
 
 ### Koci specific ###
 .registry
+bench/results/
+bench/go/bench-go
+bench/go/koci-bench
+**/__pycache__/**
 
 # Windsurf rules
 .windsurfrules

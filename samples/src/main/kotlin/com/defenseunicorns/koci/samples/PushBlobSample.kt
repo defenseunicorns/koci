@@ -7,8 +7,7 @@ package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.PullEvent
-import kotlinx.coroutines.flow.collect
+import com.defenseunicorns.koci.api.TransferEvent
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
@@ -22,9 +21,8 @@ fun main(): Unit = runBlocking {
 
     repo.push(stream = payload.inputStream(), expected = descriptor).collect { event ->
       when (event) {
-        is PullEvent.Progress -> println("uploaded: ${event.percent} bytes")
-        PullEvent.Completed -> println("pushed ${descriptor.digest}")
-        PullEvent.Failed -> println("push failed")
+        is TransferEvent.Progress -> println("uploaded: ${event.percent}%")
+        TransferEvent.Failed -> println("push failed")
       }
     }
   }

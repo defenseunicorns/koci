@@ -5,18 +5,14 @@
 
 package com.defenseunicorns.koci.api.config
 
-/** Push-side tuning. */
+/** Push tuning. */
 public class PushConfig(
-  /** Maximum number of parallel pushes. */
+  /** Maximum number of blob uploads in flight at once. */
   public val concurrency: Int = 4,
-
   /**
-   * Minimum chunk size for chunked uploads, in bytes.
-   *
-   * Per the OCI Distribution spec, registries MAY advertise their own minimum via the
-   * `OCI-Chunk-Min-Length` header on the upload location response — when the registry advertises a
-   * minimum, that value wins. `null` means honor whatever the registry reports (or upload in a
-   * single PUT when chunking isn't required).
+   * Minimum chunk size for chunked uploads, in bytes. When a registry advertises its own minimum
+   * via `OCI-Chunk-Min-Length`, the registry's value is used instead. Leave `null` to defer
+   * entirely to the registry.
    */
   public val minChunkSize: Long? = null,
 ) {

@@ -5,25 +5,23 @@
 
 package com.defenseunicorns.koci.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
-/** Manifest provides [MANIFEST_MEDIA_TYPE] mediatype structure when marshalled to JSON. */
+/** An OCI image manifest (`application/vnd.oci.image.manifest.v1+json`). */
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 public class Manifest(
-  /** schemaVersion is the image manifest schema that this image follows */
-  public val schemaVersion: Int = 2,
-  /** mediaType specifies the type of this document data structure e.g. [MANIFEST_MEDIA_TYPE] */
+  /** OCI image manifest schema version; always 2. */
+  @EncodeDefault public val schemaVersion: Int = 2,
+  /** Media type of this document (`application/vnd.oci.image.manifest.v1+json`). */
   public val mediaType: String? = null,
-  /**
-   * config references a configuration object for a container, by digest.
-   *
-   * The referenced configuration object is a JSON blob that the runtime uses to set up the
-   * container.
-   */
+  /** Descriptor of the config blob the runtime uses to set up the container. */
   public val config: Descriptor,
-  /** layers is an indexed list of layers referenced by the manifest. */
+  /** Ordered list of layer descriptors that make up the image filesystem. */
   public val layers: List<Descriptor>,
-  /** annotations contains arbitrary metadata for the image manifest. */
+  /** Arbitrary key/value metadata for the manifest. */
   public val annotations: Annotations? = null,
 ) {
   override fun equals(other: Any?): Boolean {

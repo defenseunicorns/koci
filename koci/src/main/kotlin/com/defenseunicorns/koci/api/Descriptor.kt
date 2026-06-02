@@ -8,48 +8,32 @@ package com.defenseunicorns.koci.api
 import io.ktor.http.ContentType.Application
 import java.io.InputStream
 import kotlinx.serialization.Serializable
+import okio.HashingSource
+import okio.blackholeSink
+import okio.buffer
+import okio.source
 
-/**
- * Descriptor describes the disposition of targeted content.
- *
- * This structure provides `application/vnd.oci.descriptor.v1+json` mediatype when marshalled to
- * JSON.
- */
+/** Identifies an OCI blob, manifest, or index by media type, content digest, and size. */
 @Serializable
 public class Descriptor(
-  /** mediaType is the media type of the object this schema refers to. */
+  /** Media type of the referenced content. */
   public val mediaType: String,
   /**
-   * digest is the digest of the targeted content.
-   *
-   * Nullable to accommodate malformed wire input — a descriptor deserialized from JSON whose digest
-   * string fails [Digest.parse] lands here as null, and downstream consumers (Layout operations,
-   * pull loops) skip it gracefully rather than crash.
+   * Content digest. Nullable so descriptors deserialized from malformed wire data still parse;
+   * downstream consumers skip null-digest entries.
    */
   public val digest: Digest?,
-  /** size specifies the size in bytes of the blob. */
+  /** Size in bytes of the referenced content. */
   public val size: Long,
-  /** urls specifies a list of URLs from which this object MAY be downloaded */
+  /** Optional URLs from which the content may be downloaded. */
   public val urls: List<String>? = null,
-  /** annotations contains arbitrary metadata relating to the targeted content. */
+  /** Arbitrary key/value metadata. */
   public val annotations: Annotations? = null,
-  /**
-   * data is an embedding of the targeted content. This is encoded as a base64 string when
-   * marshalled to JSON (automatically, by encoding/json). If present, data can be used directly to
-   * avoid fetching the targeted content.
-   */
+  /** Inline content, base64-encoded when present in JSON. Lets consumers skip a fetch when set. */
   public val data: String? = null,
-  /**
-   * platform describes the platform which the image in the manifest runs on.
-   *
-   * This should only be used when referring to a manifest.
-   */
+  /** Target platform. Only meaningful when the descriptor refers to a manifest. */
   public val platform: Platform? = null,
-
-  /**
-   * contains the type of an artifact when the descriptor points to an artifact when the descriptor
-   * references an image manifest
-   */
+  /** Artifact media type when this descriptor refers to an artifact manifest. */
   public val artifactType: String? = null,
 ) {
   public fun copy(
@@ -91,28 +75,21 @@ public class Descriptor(
 
   public companion object {
     /**
-     * fromInputStream returns a [Descriptor], given the content and media type.
-     *
-     * if no media type is specified, "application/octet-stream" will be used
+     * Reads [stream] to compute its digest and size, returning a [Descriptor]. Defaults to
+     * `application/octet-stream` and SHA-256. The stream is fully consumed and closed.
      */
     public fun fromInputStream(
       stream: InputStream,
       mediaType: String = Application.OctetStream.toString(),
       algorithm: RegisteredAlgorithm = RegisteredAlgorithm.SHA256,
     ): Descriptor {
-      val md = algorithm.hasher()
-      var size = 0L
-      val buffer = ByteArray(READ_BUFFER_SIZE)
-      stream.use { s ->
-        var bytesRead: Int
-        while (s.read(buffer).also { bytesRead = it } != -1) {
-          size += bytesRead
-          md.update(buffer, 0, bytesRead)
+      val hashingSource =
+        when (algorithm) {
+          RegisteredAlgorithm.SHA256 -> HashingSource.sha256(stream.source())
+          RegisteredAlgorithm.SHA512 -> HashingSource.sha512(stream.source())
         }
-      }
-      return Descriptor(mediaType, Digest(algorithm, md.digest()), size)
+      val size = hashingSource.buffer().use { it.readAll(blackholeSink()) }
+      return Descriptor(mediaType, Digest(algorithm, hashingSource.hash.hex()), size)
     }
-
-    private const val READ_BUFFER_SIZE = 1024
   }
 }

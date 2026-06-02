@@ -10,19 +10,17 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * HTTP timeouts applied to every request made against a [Registry]. Shared by pulls and pushes —
- * request latency is a connection concern, not a direction concern.
- *
- * Defaults to 10 seconds, matching OkHttp's defaults.
+ * HTTP timeouts applied to every request against a [Registry]. [requestTimeout] is the absolute
+ * deadline for an entire request, while [socketTimeout] catches stalled transfers by tripping only
+ * when the socket goes idle. The default leaves [requestTimeout] uncapped so large blob transfers
+ * aren't killed mid-flight.
  */
 public class TimeoutConfig(
-  /** End-to-end deadline for a single request (from send to full response received). */
-  public val requestTimeout: Duration = 10.seconds,
-
-  /** Maximum time allowed to establish a TCP/TLS connection. */
+  /** Absolute deadline for a single request, from send to response received. */
+  public val requestTimeout: Duration = Duration.INFINITE,
+  /** Time allowed to establish a TCP and TLS connection. */
   public val connectTimeout: Duration = 10.seconds,
-
-  /** Maximum idle time between socket reads/writes during an in-flight request. */
+  /** Maximum idle time between socket reads or writes during an in-flight request. */
   public val socketTimeout: Duration = 10.seconds,
 ) {
   override fun equals(other: Any?): Boolean {

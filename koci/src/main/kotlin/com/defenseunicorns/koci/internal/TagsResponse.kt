@@ -7,12 +7,5 @@ package com.defenseunicorns.koci.internal
 
 import kotlinx.serialization.Serializable
 
-/**
- * Response structure for repository tags list requests.
- *
- * Contains the repository name and its associated tags.
- *
- * @property name Repository name
- * @property tags List of tags associated with the repository, may be null if no tags exist
- */
+/** Body of a `/v2/<repo>/tags/list` response. */
 @Serializable internal data class TagsResponse(val name: String, val tags: List<String>)

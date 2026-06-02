@@ -11,6 +11,7 @@ mavenPublish = "0.34.0"
 spotless = "8.0.0"
 binary-validator = "0.18.1"
 okio = "3.16.2"
+kermit = "2.0.4"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }
@@ -28,6 +29,8 @@ ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "kto
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorClient" }
 ktor-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktorClient" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
+kermit = { module = "co.touchlab:kermit", version.ref = "kermit"}
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt" }

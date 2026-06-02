@@ -17,8 +17,10 @@ fun main(): Unit = runBlocking {
       return@runBlocking
     }
 
-    for (repo in registry.catalog()) {
-      println("${repo.name}: ${repo.tags()}")
+    registry.catalog().collect { repos ->
+      for (repo in repos) {
+        println("${repo.name}: ${repo.tags()}")
+      }
     }
   }
 }

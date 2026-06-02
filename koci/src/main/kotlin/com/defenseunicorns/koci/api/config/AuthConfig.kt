@@ -5,7 +5,6 @@
 
 package com.defenseunicorns.koci.api.config
 
-import com.defenseunicorns.koci.api.Credential
 import com.defenseunicorns.koci.api.Registry
 
 /** Authentication strategy used against a [Registry]. */
@@ -22,12 +21,4 @@ public sealed class AuthConfig {
   public class Bearer(public val token: String) : AuthConfig() {
     override fun toString(): String = "AuthConfig.Bearer(token=***)"
   }
-
-  // TODO: #675 Stop gap until we can clean up auth
-  internal fun toCredential(): Credential =
-    when (this) {
-      None -> Credential()
-      is Basic -> Credential(username = user, password = pass)
-      is Bearer -> Credential(accessToken = token)
-    }
 }

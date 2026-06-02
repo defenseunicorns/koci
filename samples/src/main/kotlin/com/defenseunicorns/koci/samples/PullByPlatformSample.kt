@@ -6,8 +6,7 @@
 package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.PullEvent
-import kotlinx.coroutines.flow.collect
+import com.defenseunicorns.koci.api.TransferEvent
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
@@ -21,6 +20,8 @@ fun main(): Unit = runBlocking {
           platform.os == "linux" && platform.architecture == "arm64"
         },
       )
-      .collect { event -> if (event is PullEvent.Progress) println("progress: ${event.percent}%") }
+      .collect { event ->
+        if (event is TransferEvent.Progress) println("progress: ${event.percent}%")
+      }
   }
 }

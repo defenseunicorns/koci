@@ -13,25 +13,15 @@ import io.ktor.http.toURI
 import java.net.URI
 
 /**
- * Represents a complete reference to an OCI artifact.
- *
- * A reference consists of three components:
- * - registry: The host and optional port of the registry (e.g., "registry.example.com:5000")
- * - repository: The repository path within the registry (e.g., "library/ubuntu")
- * - reference: Either a tag or digest (e.g., "latest" or "sha256:abc123...")
- *
- * References are used to uniquely identify and locate artifacts in OCI-compliant registries.
+ * A complete reference to an OCI artifact, made of a registry host (`registry.example.com:5000`), a
+ * repository path (`library/ubuntu`), and either a tag or digest (`latest`, `sha256:abc…`).
  */
 public class Reference(
   public val registry: String,
   public val repository: String,
   public val reference: String,
 ) {
-  /**
-   * Creates a [Reference] from a [Url] registry and string repository and reference.
-   *
-   * Extracts the host and optional port from the URL to form the registry component.
-   */
+  /** Builds a [Reference] from a [Url], using its host and optional port as the registry. */
   public constructor(
     registry: Url,
     repository: String,
@@ -40,7 +30,7 @@ public class Reference(
     registry =
       registry.toURI().let { uri ->
         when (uri.port) {
-          -1 -> registry.host // Use host instead of uri.toString() to avoid including the scheme
+          -1 -> registry.host
           else -> registry.hostWithPort
         }
       },
@@ -64,40 +54,25 @@ public class Reference(
   }
 
   /**
-   * Returns the string representation of this reference.
-   *
-   * The format depends on the reference type:
-   * - For digests: registry/repository@digest
-   * - For tags: registry/repository:tag
-   * - For empty references: registry/repository
+   * Formats as `registry/repository@digest` for digests, `registry/repository:tag` for tags, or
+   * `registry/repository` when [reference] is empty.
    */
   override fun toString(): String {
     return if (reference.contains(":")) {
-      "$registry/$repository@$reference" // valid form A
+      "$registry/$repository@$reference"
     } else {
       if (reference.isEmpty()) {
-        "$registry/$repository" // valid form D
+        "$registry/$repository"
       } else {
-        "$registry/$repository:$reference" // valid form C
+        "$registry/$repository:$reference"
       }
     }
   }
 
-  /**
-   * Parses the reference string as a [Digest].
-   *
-   * Returns null when [reference] is not a syntactically valid digest.
-   */
+  /** Returns [reference] parsed as a [Digest], or `null` if it isn't one. */
   public fun digest(): Digest? = Digest.parse(reference)
 
-  /**
-   * Validates that all components of the reference conform to the OCI spec.
-   *
-   * Returns true when:
-   * - Registry is a non-empty valid hostname with optional port
-   * - Repository matches the required pattern
-   * - Reference is either empty, a valid tag, or a valid digest
-   */
+  /** Returns `true` when the registry, repository, and reference are all valid per the OCI spec. */
   public fun validate(): Boolean {
     if (registry.isEmpty()) return false
     val uri =
@@ -120,36 +95,27 @@ public class Reference(
     return Digest.parse(reference) != null
   }
 
-  /** Checks if this reference is empty (all components are empty strings). */
+  /** Returns `true` when every component is empty. */
   public fun isEmpty(): Boolean {
     return this.registry.isEmpty() && this.reference.isEmpty() && this.repository.isEmpty()
   }
 
-  /** Checks if this reference is not empty (at least one component is non-empty). */
+  /** Returns `true` when at least one component is non-empty. */
   public fun isNotEmpty(): Boolean {
     return this.registry.isNotEmpty() || this.reference.isNotEmpty() || this.repository.isNotEmpty()
   }
 
   public companion object {
     /**
-     * <--- path --------------------------------------------> | - Decode `path` <=== REPOSITORY
-     * ===> <--- reference ------------------> | - Decode `reference` <=== REPOSITORY ===> @
-     * <=================== digest ===> | - Valid Form A <=== REPOSITORY ===> : <!!! TAG !!!> @ <===
-     * digest ===> | - Valid Form B (tag is dropped) <=== REPOSITORY ===> : <=== TAG
-     * ======================> | - Valid Form C <=== REPOSITORY
-     * ======================================> | - Valid Form D
+     * Parses [artifact] in any of the canonical OCI reference forms. Returns `null` if the result
+     * is not valid.
      *
-     * Parses a string artifact reference into a [Reference] object.
-     *
-     * Supports multiple reference formats as defined in the OCI spec:
-     * - Form A: registry/repository@digest
-     * - Form B: registry/repository:tag@digest (tag is dropped)
-     * - Form C: registry/repository:tag
-     * - Form D: registry/repository
-     *
-     * Returns null when [artifact] is not a syntactically valid reference.
-     *
-     * @param artifact String representation of the artifact reference
+     * | Form                             | Example                                            |
+     * |----------------------------------|----------------------------------------------------|
+     * | `registry/repository@digest`     | `ghcr.io/foo/bar@sha256:abc…`                      |
+     * | `registry/repository:tag@digest` | `ghcr.io/foo/bar:latest@sha256:abc…` (tag dropped) |
+     * | `registry/repository:tag`        | `ghcr.io/foo/bar:latest`                           |
+     * | `registry/repository`            | `ghcr.io/foo/bar`                                  |
      */
     public fun parse(artifact: String): Reference? {
       val reg = artifact.substringBefore("/", "")
@@ -159,16 +125,14 @@ public class Reference(
       val (repo, ref) =
         if (repoAndRef.contains("@")) {
           val ref = repoAndRef.substringAfter("@")
-          // drop tag if it exists (valid form B)
           val repoStrippedOfTag = repoAndRef.substringBefore("@").substringBefore(":")
-
-          repoStrippedOfTag to ref // valid form A
+          repoStrippedOfTag to ref
         } else if (repoAndRef.contains(":")) {
           val repo = repoAndRef.substringBefore(":")
           val tag = repoAndRef.substringAfter(":")
-          repo to tag // valid form C
+          repo to tag
         } else {
-          repoAndRef to "" // valid form D
+          repoAndRef to ""
         }
 
       val reference = Reference(reg, repo, ref)

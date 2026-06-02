@@ -6,19 +6,17 @@
 package com.defenseunicorns.koci.samples
 
 import com.defenseunicorns.koci.api.Koci
-import com.defenseunicorns.koci.api.PullEvent
-import kotlinx.coroutines.flow.collect
+import com.defenseunicorns.koci.api.TransferEvent
 import kotlinx.coroutines.runBlocking
 
 fun main(): Unit = runBlocking {
   Koci(root = "/tmp/koci-pull-sample").use { koci ->
-    val repo = koci.registry("https://ghcr.io").repo("linuxcontainers/alpine")
+    val repo = koci.registry("http://localhost:5000").repo("samples/blob")
 
-    repo.pull(tag = "latest").collect { event ->
+    repo.pull(tag = "test").collect { event ->
       when (event) {
-        is PullEvent.Progress -> println("progress: ${event.percent}%")
-        PullEvent.Completed -> println("done")
-        PullEvent.Failed -> println("failed (cause logged inside koci)")
+        is TransferEvent.Progress -> println("progress: ${event.percent}%")
+        TransferEvent.Failed -> println("failed (cause logged inside koci)")
       }
     }
   }

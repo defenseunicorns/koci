@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 (2026-06-03)
+
+## What's Changed
+* chore: removed workflows only running on main by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/152
+* chore: update CODEOWNERS to uds-fleet and add SECURITY.md by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/165
+* feat!: v2 by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/166
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.4.3...v0.5.0
+
 ## 0.4.3 (2025-12-17)
 
 ## What's Changed

@@ -271,6 +271,29 @@ class LayoutTest {
   }
 
   @Test
+  fun `push resumes from partial temp file`() = runTest {
+    val fs = FakeFileSystem()
+    val layout = buildLayout(fs)
+    val bytes = "hello resumable world".toByteArray()
+    val desc =
+      Descriptor(
+        mediaType = "application/octet-stream",
+        digest = digestOf(bytes),
+        size = bytes.size.toLong(),
+      )
+
+    val half = bytes.size / 2
+    val tmpPath = "/oci/blobs/.tmp/sha256-${desc.digest!!.hex}".toPath()
+    fs.sink(tmpPath).buffer().use { it.write(bytes, 0, half) }
+
+    val ok = layout.push(desc, Buffer().apply { write(bytes) })
+
+    assertTrue(ok)
+    assertEquals("hello resumable world", layout.fetchBlob(desc) { it.readUtf8() })
+    assertFalse(fs.exists(tmpPath))
+  }
+
+  @Test
   fun `gc sweeps interrupted temp files`() = runTest {
     val fs = FakeFileSystem()
     val layout = buildLayout(fs)

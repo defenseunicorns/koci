@@ -89,65 +89,54 @@ internal constructor(
     // TODO: #678 do this for all supported algorithms
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha256")
     fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / "sha512")
+    fileSystem.createDirectories(root / IMAGE_BLOBS_DIR / IMAGE_BLOBS_TMP_DIR)
   }
 
   /**
-   * Returns the on-disk state of [descriptor]'s blob: `Present` (full content, digest verified),
-   * `Partial` (resumable prefix), or `Absent` (missing, corrupt, or unrecoverable).
+   * Returns the on-disk state of [descriptor]'s blob: `Present` (size matches; correctness
+   * guaranteed by write-time verification), `Partial` (temp file from an interrupted write), or
+   * `Absent` (missing or corrupt).
    */
   internal suspend fun inspect(descriptor: Descriptor): BlobState =
     withDescriptorLock(descriptor) { inspectAcquiredLock(descriptor) }
 
   private suspend fun inspectAcquiredLock(descriptor: Descriptor): BlobState {
-    val expectedDigest = descriptor.digest ?: return BlobState.Absent
     val blobPath = blobPath(descriptor) ?: return BlobState.Absent
+    val tmpPath = tmpBlobPath(descriptor) ?: return BlobState.Absent
 
     return withContext(dispatcher) {
-      if (!fileSystem.exists(blobPath)) {
-        return@withContext BlobState.Absent
-      }
-
-      val size = fileSystem.metadata(blobPath).size ?: 0L
-      when (size) {
-        descriptor.size -> {
-          val computed =
-            fileSystem.source(blobPath).buffer().use { source ->
-              val hashingSource =
-                when (expectedDigest.algorithm) {
-                  RegisteredAlgorithm.SHA256 -> HashingSource.sha256(source)
-                  RegisteredAlgorithm.SHA512 -> HashingSource.sha512(source)
-                }
-              hashingSource.buffer().use { it.readAll(blackholeSink()) }
-              Digest(algorithm = expectedDigest.algorithm, hex = hashingSource.hash.hex())
-            }
-          when (computed == expectedDigest) {
-            true -> BlobState.Present
-            false -> BlobState.Absent
-          }
+      if (fileSystem.exists(blobPath)) {
+        return@withContext when (fileSystem.metadata(blobPath).size ?: 0L) {
+          descriptor.size -> BlobState.Present
+          else -> BlobState.Absent
         }
-
-        in 1 until descriptor.size -> BlobState.Partial(size)
-        else -> BlobState.Absent
       }
+      if (fileSystem.exists(tmpPath)) {
+        val tmpSize = fileSystem.metadata(tmpPath).size ?: 0L
+        if (tmpSize in 1 until descriptor.size) return@withContext BlobState.Partial(tmpSize)
+      }
+      BlobState.Absent
     }
   }
 
   /**
    * Writes [descriptor]'s content from [source] into the layout. [onProgress] receives cumulative
    * bytes-on-disk (including any resume prefix) so callers can render `bytesOnDisk /
-   * descriptor.size`. The content is verified against the descriptor once the stream is drained; a
-   * digest mismatch deletes the partial file and returns `false`.
+   * descriptor.size`. Content is streamed to a temp path, verified once the stream is drained, then
+   * atomically renamed to the final blob path. A digest mismatch deletes the temp file and returns
+   * `false`.
    *
-   * If a resumable prefix already exists on disk, [source] is skipped past those bytes and the
-   * remainder is appended.
+   * If a temp file from a previous interrupted write exists, [source] is skipped past those bytes
+   * and the remainder is appended.
    */
-  @Suppress("detekt:CyclomaticComplexMethod")
+  @Suppress("detekt:CyclomaticComplexMethod", "detekt:LongMethod")
   internal suspend fun push(
     descriptor: Descriptor,
     source: Source,
     onProgress: (bytesOnDisk: Long) -> Unit = {},
   ): Boolean {
     val blobPath = blobPath(descriptor) ?: return false
+    val tmpPath = tmpBlobPath(descriptor) ?: return false
     val expectedDigest = descriptor.digest ?: return false
 
     return withDescriptorLock(descriptor) {
@@ -163,7 +152,7 @@ internal constructor(
         bufferedSource.skip(skip)
 
         // Fresh writes hash inline so verification needs no second read; resumed writes
-        // can't hash the pre-existing prefix, so we re-read from disk after appending.
+        // can't hash the pre-existing prefix, so we re-read the temp file after appending.
         val hashingSource =
           when (skip) {
             0L ->
@@ -176,24 +165,45 @@ internal constructor(
           }
         val readSource = hashingSource?.buffer() ?: bufferedSource
 
-        fileSystem.appendingSink(blobPath).buffer().use { sink ->
-          val chunk = Buffer()
-          var written = skip
-          while (true) {
-            val read = readSource.read(chunk, SizeConstants.IO_BUFFER_SIZE)
-            if (read == -1L) break
-            sink.writeAll(chunk)
-            written += read
-            onProgress(written)
+        if (skip > 0L) {
+            fileSystem.appendingSink(tmpPath)
+          } else {
+            fileSystem.sink(tmpPath)
           }
-        }
+          .buffer()
+          .use { sink ->
+            val chunk = Buffer()
+            var written = skip
+            while (true) {
+              val read = readSource.read(chunk, SizeConstants.IO_BUFFER_SIZE)
+              if (read == -1L) break
+              sink.writeAll(chunk)
+              written += read
+              onProgress(written)
+            }
+          }
 
         when (hashingSource) {
           null -> {
-            when (inspectAcquiredLock(descriptor)) {
-              BlobState.Present -> true
-              else -> {
-                fileSystem.delete(blobPath)
+            // Re-read the complete temp file to verify digest.
+            val computed =
+              fileSystem.source(tmpPath).buffer().use { src ->
+                val hs =
+                  when (expectedDigest.algorithm) {
+                    RegisteredAlgorithm.SHA256 -> HashingSource.sha256(src)
+                    RegisteredAlgorithm.SHA512 -> HashingSource.sha512(src)
+                  }
+                hs.buffer().use { it.readAll(blackholeSink()) }
+                Digest(algorithm = expectedDigest.algorithm, hex = hs.hash.hex())
+              }
+            when (computed == expectedDigest) {
+              true -> {
+                fileSystem.atomicMove(tmpPath, blobPath)
+                true
+              }
+
+              false -> {
+                fileSystem.delete(tmpPath)
                 false
               }
             }
@@ -203,9 +213,13 @@ internal constructor(
             val computed =
               Digest(algorithm = expectedDigest.algorithm, hex = hashingSource.hash.hex())
             when (computed == expectedDigest) {
-              true -> true
+              true -> {
+                fileSystem.atomicMove(tmpPath, blobPath)
+                true
+              }
+
               false -> {
-                fileSystem.delete(blobPath)
+                fileSystem.delete(tmpPath)
                 false
               }
             }
@@ -299,7 +313,10 @@ internal constructor(
 
     return withDescriptorLock(descriptor) {
       withContext(dispatcher) {
-        if (!fileSystem.exists(blobPath)) return@withContext true
+        if (!fileSystem.exists(blobPath)) {
+          tmpBlobPath(descriptor)?.let { tmp -> if (fileSystem.exists(tmp)) fileSystem.delete(tmp) }
+          return@withContext true
+        }
 
         when (descriptor.mediaType) {
           OciConstants.INDEX_MEDIA_TYPE -> {
@@ -354,6 +371,9 @@ internal constructor(
 
           else -> {
             fileSystem.delete(blobPath)
+            tmpBlobPath(descriptor)?.let { tmp ->
+              if (fileSystem.exists(tmp)) fileSystem.delete(tmp)
+            }
             true
           }
         }
@@ -382,17 +402,29 @@ internal constructor(
         }
       }
 
-      blobsOnDisk
-        .filter { it !in referencedDigests }
-        .mapNotNull { zombieDigest ->
-          val path = root / IMAGE_BLOBS_DIR / zombieDigest.algorithm.toString() / zombieDigest.hex
+      val deleted =
+        blobsOnDisk
+          .filter { it !in referencedDigests }
+          .mapNotNull { zombieDigest ->
+            val path = root / IMAGE_BLOBS_DIR / zombieDigest.algorithm.toString() / zombieDigest.hex
+            try {
+              fileSystem.delete(path)
+              zombieDigest
+            } catch (_: Exception) {
+              null
+            }
+          }
+
+      val tmpDir = root / IMAGE_BLOBS_DIR / IMAGE_BLOBS_TMP_DIR
+      if (fileSystem.exists(tmpDir)) {
+        fileSystem.list(tmpDir).forEach { path ->
           try {
             fileSystem.delete(path)
-            zombieDigest
-          } catch (_: Exception) {
-            null
-          }
+          } catch (_: Exception) {}
         }
+      }
+
+      deleted
     }
   }
 
@@ -461,9 +493,15 @@ internal constructor(
     return root / IMAGE_BLOBS_DIR / digest.algorithm.toString() / digest.hex
   }
 
+  private fun tmpBlobPath(descriptor: Descriptor): Path? {
+    val digest = descriptor.digest ?: return null
+    return root / IMAGE_BLOBS_DIR / IMAGE_BLOBS_TMP_DIR / "${digest.algorithm}-${digest.hex}"
+  }
+
   private companion object {
     private const val IMAGE_INDEX_FILE: String = "index.json"
     private const val IMAGE_BLOBS_DIR: String = "blobs"
     private const val IMAGE_LAYOUT_FILE: String = "oci-layout"
+    private const val IMAGE_BLOBS_TMP_DIR: String = ".tmp"
   }
 }

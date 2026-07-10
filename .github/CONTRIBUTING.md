@@ -1,10 +1,6 @@
 # Contributing to `defenseunicorns/koci`
 
-1. Install a suitable JVM and necessary testing dependencies.
-
-   ```bash
-   make install-deps
-   ```
+1. Install a suitable JDK (21+).
 
 2. Create a new branch on your fork.
 
@@ -17,11 +13,9 @@
 4. Run the tests, linters, and formatters.
 
     ```bash
-    make registry-up
-    make registry-seed
-
-    make lint
-    make test
+    ./gradlew test
+    ./gradlew spotlessCheck
+    ./gradlew detekt
     ```
 
 5. Commit your changes.

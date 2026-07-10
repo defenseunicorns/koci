@@ -28,10 +28,7 @@ jobs:
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
 
       - name: Test
-        run: |
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          make install-deps
-          make test-all
+        run: ./gradlew test
 
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

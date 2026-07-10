@@ -228,8 +228,6 @@ public final class com/defenseunicorns/koci/api/Platform$Companion {
 
 public final class com/defenseunicorns/koci/api/Reference {
 	public static final field Companion Lcom/defenseunicorns/koci/api/Reference$Companion;
-	public fun <init> (Lio/ktor/http/Url;Ljava/lang/String;Ljava/lang/String;)V
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public final fun digest ()Lcom/defenseunicorns/koci/api/Digest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getReference ()Ljava/lang/String;
@@ -243,6 +241,7 @@ public final class com/defenseunicorns/koci/api/Reference {
 }
 
 public final class com/defenseunicorns/koci/api/Reference$Companion {
+	public final fun from (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/defenseunicorns/koci/api/Reference;
 	public final fun parse (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/Reference;
 }
 

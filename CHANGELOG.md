@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 (2026-07-10)
+
+## What's Changed
+* chore: removed dead dev setup by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/168
+* fix!: name of registry preserves port if non-standard by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/167
+* fix: non scheme breaking reference func by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/170
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.5.0...v0.6.0
+
 ## 0.5.0 (2026-06-03)
 
 ## What's Changed

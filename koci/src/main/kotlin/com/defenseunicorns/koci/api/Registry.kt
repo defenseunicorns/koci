@@ -18,6 +18,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
+import io.ktor.http.hostWithPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
@@ -38,7 +39,7 @@ internal constructor(
   internal val json: Json,
   private val logger: KociLogger,
 ) {
-  public val name: String = Url(url).host
+  public val name: String = Url(url).hostWithPort
 
   /** Returns a [Repository] bound to [name] within this registry, e.g. `"myorg/myimage"`. */
   public fun repo(name: String): Repository =

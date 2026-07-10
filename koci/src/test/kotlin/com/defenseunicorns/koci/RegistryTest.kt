@@ -23,6 +23,31 @@ import kotlinx.coroutines.test.runTest
 class RegistryTest {
 
   @Test
+  fun `name strips default port 443`() {
+    val registry = fakeRegistry(url = "https://registry.example.com:443", handler = { respondOk() })
+    assertEquals("registry.example.com", registry.name)
+  }
+
+  @Test
+  fun `name strips default port 80`() {
+    val registry = fakeRegistry(url = "http://registry.example.com:80", handler = { respondOk() })
+    assertEquals("registry.example.com", registry.name)
+  }
+
+  @Test
+  fun `name preserves non-default port`() {
+    val registry =
+      fakeRegistry(url = "https://registry.example.com:5000", handler = { respondOk() })
+    assertEquals("registry.example.com:5000", registry.name)
+  }
+
+  @Test
+  fun `name without explicit port is unchanged`() {
+    val registry = fakeRegistry(handler = { respondOk() })
+    assertEquals("registry.example.com", registry.name)
+  }
+
+  @Test
   fun `repo returns repository with the given name`() {
     val registry = fakeRegistry(handler = { respondOk() })
     assertEquals("library/ubuntu", registry.repo("library/ubuntu").name)

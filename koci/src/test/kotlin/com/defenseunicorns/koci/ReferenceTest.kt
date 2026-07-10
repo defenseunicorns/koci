@@ -78,6 +78,9 @@ class ReferenceTest {
     val fromNoPort = Reference.from("https://registry.example.com", "repo", "tag")
     assertEquals("registry.example.com/repo:tag", fromNoPort.toString())
 
+    val fromBareHostPort = Reference.from("10.0.2.2:5000", "repo", "tag")
+    assertEquals("10.0.2.2:5000/repo:tag", fromBareHostPort.toString())
+
     assertTrue(Reference("", "", "").isEmpty())
     assertFalse(Reference("", "", "").isNotEmpty())
     val partialEmpties =

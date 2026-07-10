@@ -6,7 +6,6 @@
 package com.defenseunicorns.koci
 
 import com.defenseunicorns.koci.api.Reference
-import io.ktor.http.Url
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -67,9 +66,17 @@ class ReferenceTest {
       }
     }
 
-    val urlTestCase = Reference(Url("https://localhost:5005"), "repo", "tag")
+    val fromWithPort = Reference.from("https://localhost:5005", "repo", "tag")
+    assertEquals("localhost:5005/repo:tag", fromWithPort.toString())
 
-    assertEquals("localhost:5005/repo:tag", urlTestCase.toString())
+    val fromStripsPort443 = Reference.from("https://registry.example.com:443", "repo", "tag")
+    assertEquals("registry.example.com/repo:tag", fromStripsPort443.toString())
+
+    val fromStripsPort80 = Reference.from("http://registry.example.com:80", "repo", "tag")
+    assertEquals("registry.example.com/repo:tag", fromStripsPort80.toString())
+
+    val fromNoPort = Reference.from("https://registry.example.com", "repo", "tag")
+    assertEquals("registry.example.com/repo:tag", fromNoPort.toString())
 
     assertTrue(Reference("", "", "").isEmpty())
     assertFalse(Reference("", "", "").isNotEmpty())

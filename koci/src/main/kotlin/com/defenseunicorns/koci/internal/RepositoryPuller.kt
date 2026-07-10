@@ -151,7 +151,8 @@ internal class RepositoryPuller(
           return@flow
         }
 
-        val ref = Reference(registry = router.base(), repository = name, reference = tag)
+        val ref =
+          Reference.from(registry = router.base().toString(), repository = name, reference = tag)
         when (store.inspect(manifest)) {
           is BlobState.Present -> {
             store.tag(manifest, ref)

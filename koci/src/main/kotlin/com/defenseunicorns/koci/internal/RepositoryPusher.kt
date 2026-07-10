@@ -230,7 +230,10 @@ internal class RepositoryPusher(
 
         if (tag != null) {
           val root = walk.containers.last().first
-          store.tag(root, Reference(registry = router.base(), repository = name, reference = tag))
+          store.tag(
+            root,
+            Reference.from(registry = router.base().toString(), repository = name, reference = tag),
+          )
         }
 
         tracker.close()

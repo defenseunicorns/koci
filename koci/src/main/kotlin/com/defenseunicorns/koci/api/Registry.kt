@@ -39,7 +39,7 @@ internal constructor(
   internal val json: Json,
   private val logger: KociLogger,
 ) {
-  public val name: String = Url(url).hostWithPort
+  public val name: String = Url(url).hostWithPort.replace(Regex(":(80|443)$"), "")
 
   /** Returns a [Repository] bound to [name] within this registry, e.g. `"myorg/myimage"`. */
   public fun repo(name: String): Repository =

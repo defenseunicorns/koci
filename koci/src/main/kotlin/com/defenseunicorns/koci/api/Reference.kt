@@ -7,36 +7,18 @@ package com.defenseunicorns.koci.api
 
 import com.defenseunicorns.koci.internal.Regex.repositoryRegex
 import com.defenseunicorns.koci.internal.Regex.tagRegex
-import io.ktor.http.Url
-import io.ktor.http.hostWithPort
-import io.ktor.http.toURI
 import java.net.URI
 
 /**
  * A complete reference to an OCI artifact, made of a registry host (`registry.example.com:5000`), a
  * repository path (`library/ubuntu`), and either a tag or digest (`latest`, `sha256:abc…`).
  */
-public class Reference(
+public class Reference
+internal constructor(
   public val registry: String,
   public val repository: String,
   public val reference: String,
 ) {
-  /** Builds a [Reference] from a [Url], using its host and optional port as the registry. */
-  public constructor(
-    registry: Url,
-    repository: String,
-    reference: String,
-  ) : this(
-    registry =
-      registry.toURI().let { uri ->
-        when (uri.port) {
-          -1 -> registry.host
-          else -> registry.hostWithPort
-        }
-      },
-    repository = repository,
-    reference = reference,
-  )
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -106,6 +88,23 @@ public class Reference(
   }
 
   public companion object {
+    /**
+     * Builds a [Reference] from a registry URL string, stripping default ports (80, 443) from the
+     * registry name.
+     */
+    public fun from(registry: String, repository: String, reference: String): Reference {
+      val uri = URI(registry)
+      val registryName =
+        @Suppress("detekt:MagicNumber")
+        when (uri.port) {
+          -1,
+          80,
+          443 -> uri.host
+          else -> "${uri.host}:${uri.port}"
+        }
+      return Reference(registryName, repository, reference)
+    }
+
     /**
      * Parses [artifact] in any of the canonical OCI reference forms. Returns `null` if the result
      * is not valid.

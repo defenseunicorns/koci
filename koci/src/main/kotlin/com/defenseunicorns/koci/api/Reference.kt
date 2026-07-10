@@ -93,13 +93,19 @@ internal constructor(
      * registry name.
      */
     public fun from(registry: String, repository: String, reference: String): Reference {
-      val uri = URI(registry)
+      val normalized =
+        when ("://" in registry) {
+          true -> registry
+          false -> "dummy://$registry"
+        }
+      val uri = URI(normalized)
       val registryName =
         @Suppress("detekt:MagicNumber")
         when (uri.port) {
           -1,
           80,
           443 -> uri.host
+
           else -> "${uri.host}:${uri.port}"
         }
       return Reference(registryName, repository, reference)

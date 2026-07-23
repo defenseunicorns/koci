@@ -213,6 +213,44 @@ class RepositoryTest {
     assertNull(repo.resolve("latest") { it.architecture == "s390x" })
   }
 
+  @Test
+  fun `resolve without platform resolver returns index descriptor`() = runTest {
+    val index =
+      Index().apply {
+        manifests.add(
+          Descriptor(
+            mediaType = OciConstants.MANIFEST_MEDIA_TYPE,
+            digest = digestOf("amd64-manifest".toByteArray()),
+            size = 100,
+            platform = Platform(architecture = "amd64", os = "linux"),
+          )
+        )
+      }
+    val indexJson = testJson.encodeToString(index)
+    val indexBytes = indexJson.toByteArray()
+    val indexDigest = digestOf(indexBytes)
+    val repo =
+      fakeRepo(
+        handler = {
+          respond(
+            content = indexJson,
+            status = HttpStatusCode.OK,
+            headers =
+              headersOf(
+                HttpHeaders.ContentType to listOf(OciConstants.INDEX_MEDIA_TYPE),
+                "Docker-Content-Digest" to listOf(indexDigest.toString()),
+                HttpHeaders.ContentLength to listOf(indexBytes.size.toString()),
+              ),
+          )
+        }
+      )
+    val desc = repo.resolve("latest")
+    assertNotNull(desc)
+    assertEquals(OciConstants.INDEX_MEDIA_TYPE, desc.mediaType)
+    assertEquals(indexDigest, desc.digest)
+    assertEquals(indexBytes.size.toLong(), desc.size)
+  }
+
   // ── pull ────────────────────────────────────────────────────────────────────
 
   @Test

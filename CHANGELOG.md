@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 (2026-07-24)
+
+## What's Changed
+* fix: index descriptor can now be returned by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/171
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.6.0...v0.6.1
+
 ## 0.6.0 (2026-07-10)
 
 ## What's Changed

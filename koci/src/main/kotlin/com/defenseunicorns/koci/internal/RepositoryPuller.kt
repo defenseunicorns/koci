@@ -119,8 +119,12 @@ internal class RepositoryPuller(
       },
       onSuccess = { res ->
         when (val ct = res.contentType()?.toString()) {
-          MANIFEST_MEDIA_TYPE -> manifestDescriptor(res, endpoint)
-          INDEX_MEDIA_TYPE -> selectPlatform(res.body<Index>(), platformResolver)
+          MANIFEST_MEDIA_TYPE -> manifestDescriptor(res, endpoint, MANIFEST_MEDIA_TYPE)
+          INDEX_MEDIA_TYPE ->
+            when (platformResolver) {
+              null -> manifestDescriptor(res, endpoint, INDEX_MEDIA_TYPE)
+              else -> selectPlatform(res.body<Index>(), platformResolver)
+            }
           else -> {
             logger.warn { "unsupported manifest content type from $endpoint: $ct" }
             null
@@ -254,14 +258,7 @@ internal class RepositoryPuller(
    * Picks the first manifest descriptor in [index] whose platform matches [platformResolver].
    * Returns null and logs when no platform matches.
    */
-  private fun selectPlatform(
-    index: Index,
-    platformResolver: ((Platform) -> Boolean)? = null,
-  ): Descriptor? {
-    if (platformResolver == null) {
-      logger.warn { "No platform passed in but index was found" }
-      return null
-    }
+  private fun selectPlatform(index: Index, platformResolver: (Platform) -> Boolean): Descriptor? {
     val selected =
       index.manifests.firstOrNull { d -> d.platform != null && platformResolver(d.platform) }
     if (selected == null) {
@@ -277,11 +274,15 @@ internal class RepositoryPuller(
    * @see <a
    *   href="https://specs.opencontainers.org/distribution-spec/#legacy-docker-support-http-headers">Docker-Content-Digest</a>
    */
-  private suspend fun manifestDescriptor(res: HttpResponse, endpoint: Url): Descriptor? {
+  private suspend fun manifestDescriptor(
+    res: HttpResponse,
+    endpoint: Url,
+    mediaType: String,
+  ): Descriptor? {
     val dockerContentDigest = res.headers["Docker-Content-Digest"]
 
     return when (dockerContentDigest == null) {
-      true -> Descriptor.fromInputStream(stream = res.body(), mediaType = MANIFEST_MEDIA_TYPE)
+      true -> Descriptor.fromInputStream(stream = res.body(), mediaType = mediaType)
       false -> {
         val digest =
           Digest.parse(dockerContentDigest)
@@ -295,7 +296,7 @@ internal class RepositoryPuller(
               logger.warn { "missing or invalid Content-Length in resolve response from $endpoint" }
               return null
             }
-        Descriptor(mediaType = MANIFEST_MEDIA_TYPE, digest = digest, size = size)
+        Descriptor(mediaType = mediaType, digest = digest, size = size)
       }
     }
   }

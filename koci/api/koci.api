@@ -191,19 +191,19 @@ public final class com/defenseunicorns/koci/api/Manifest$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
-public final class com/defenseunicorns/koci/api/OciConstants : java/lang/Enum {
-	public static final field Companion Lcom/defenseunicorns/koci/api/OciConstants$Companion;
-	public static final field DOCKER_MANIFEST Lcom/defenseunicorns/koci/api/OciConstants;
-	public static final field INDEX Lcom/defenseunicorns/koci/api/OciConstants;
-	public static final field MANIFEST Lcom/defenseunicorns/koci/api/OciConstants;
+public final class com/defenseunicorns/koci/api/ManifestConstants : java/lang/Enum {
+	public static final field Companion Lcom/defenseunicorns/koci/api/ManifestConstants$Companion;
+	public static final field DOCKER Lcom/defenseunicorns/koci/api/ManifestConstants;
+	public static final field INDEX Lcom/defenseunicorns/koci/api/ManifestConstants;
+	public static final field OCI Lcom/defenseunicorns/koci/api/ManifestConstants;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public final fun getMediaType ()Ljava/lang/String;
-	public static fun valueOf (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/OciConstants;
-	public static fun values ()[Lcom/defenseunicorns/koci/api/OciConstants;
+	public static fun valueOf (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/ManifestConstants;
+	public static fun values ()[Lcom/defenseunicorns/koci/api/ManifestConstants;
 }
 
-public final class com/defenseunicorns/koci/api/OciConstants$Companion {
-	public final fun fromMediaType (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/OciConstants;
+public final class com/defenseunicorns/koci/api/ManifestConstants$Companion {
+	public final fun fromMediaType (Ljava/lang/String;)Lcom/defenseunicorns/koci/api/ManifestConstants;
 }
 
 public final class com/defenseunicorns/koci/api/Platform {

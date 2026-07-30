@@ -39,7 +39,7 @@ class LayoutTest {
     val layout = buildLayout()
     repeat(3) { i ->
       val bytes = "content-$i".toByteArray()
-      val desc = layout.writeBlob(bytes, OciConstants.MANIFEST_MEDIA_TYPE)
+      val desc = layout.writeBlob(bytes, OciConstants.MANIFEST.mediaType)
       val ref = Reference("registry.example.com", "repo", "tag-$i")
       layout.tag(desc, ref)
     }
@@ -82,7 +82,7 @@ class LayoutTest {
   @Test
   fun `resolveDescriptor returns null when predicate never matches`() = runTest {
     val layout = buildLayout()
-    val desc = layout.writeBlob("x".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
+    val desc = layout.writeBlob("x".toByteArray(), OciConstants.MANIFEST.mediaType)
     layout.tag(desc, Reference("r.example.com", "repo", "v1"))
     assertNull(layout.resolveDescriptor { it.mediaType == "no/match" })
   }
@@ -90,8 +90,8 @@ class LayoutTest {
   @Test
   fun `resolveDescriptor returns first descriptor satisfying predicate`() = runTest {
     val layout = buildLayout()
-    val descA = layout.writeBlob("a".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
-    val descB = layout.writeBlob("b".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
+    val descA = layout.writeBlob("a".toByteArray(), OciConstants.MANIFEST.mediaType)
+    val descB = layout.writeBlob("b".toByteArray(), OciConstants.MANIFEST.mediaType)
     layout.tag(descA, Reference("r.example.com", "repo", "tag-a"))
     layout.tag(descB, Reference("r.example.com", "repo", "tag-b"))
     val found = layout.resolveDescriptor { it.digest == descA.digest }
@@ -109,7 +109,7 @@ class LayoutTest {
   @Test
   fun `resolveReference returns descriptor for its tagged reference`() = runTest {
     val layout = buildLayout()
-    val desc = layout.writeBlob("manifest".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
+    val desc = layout.writeBlob("manifest".toByteArray(), OciConstants.MANIFEST.mediaType)
     val ref = Reference("r.example.com", "repo", "latest")
     layout.tag(desc, ref)
     val resolved = layout.resolveReference(ref)
@@ -124,11 +124,11 @@ class LayoutTest {
     val arm64Bytes = "arm64-manifest".toByteArray()
     val amd64 =
       layout
-        .writeBlob(amd64Bytes, OciConstants.MANIFEST_MEDIA_TYPE)
+        .writeBlob(amd64Bytes, OciConstants.MANIFEST.mediaType)
         .copy(platform = Platform(architecture = "amd64", os = "linux"))
     val arm64 =
       layout
-        .writeBlob(arm64Bytes, OciConstants.MANIFEST_MEDIA_TYPE)
+        .writeBlob(arm64Bytes, OciConstants.MANIFEST.mediaType)
         .copy(platform = Platform(architecture = "arm64", os = "linux"))
     val ref = Reference("r.example.com", "repo", "latest")
     layout.tag(amd64, ref)
@@ -142,7 +142,7 @@ class LayoutTest {
   @Test
   fun `tag makes descriptor findable by reference`() = runTest {
     val layout = buildLayout()
-    val desc = layout.writeBlob("m".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
+    val desc = layout.writeBlob("m".toByteArray(), OciConstants.MANIFEST.mediaType)
     val ref = Reference("r.example.com", "repo", "v2")
     layout.tag(desc, ref)
     assertNotNull(layout.resolveReference(ref))
@@ -152,8 +152,8 @@ class LayoutTest {
   fun `tag replaces existing entry for the same reference`() = runTest {
     val layout = buildLayout()
     val ref = Reference("r.example.com", "repo", "stable")
-    val old = layout.writeBlob("old".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
-    val new = layout.writeBlob("new".toByteArray(), OciConstants.MANIFEST_MEDIA_TYPE)
+    val old = layout.writeBlob("old".toByteArray(), OciConstants.MANIFEST.mediaType)
+    val new = layout.writeBlob("new".toByteArray(), OciConstants.MANIFEST.mediaType)
     layout.tag(old, ref)
     layout.tag(new, ref)
     assertEquals(1, layout.catalog().size)
@@ -175,7 +175,7 @@ class LayoutTest {
       layout.writeBlob("{}".toByteArray(), "application/vnd.oci.image.config.v1+json")
     val manifestBytes =
       testJson.encodeToString(Manifest(config = configDesc, layers = emptyList())).toByteArray()
-    val manifestDesc = layout.writeBlob(manifestBytes, OciConstants.MANIFEST_MEDIA_TYPE)
+    val manifestDesc = layout.writeBlob(manifestBytes, OciConstants.MANIFEST.mediaType)
     val ref = Reference("r.example.com", "repo", "v1")
     layout.tag(manifestDesc, ref)
     layout.remove(ref)
@@ -202,8 +202,8 @@ class LayoutTest {
       testJson
         .encodeToString(Manifest(config = configBDesc, layers = listOf(layerDesc)))
         .toByteArray()
-    val manifestADesc = layout.writeBlob(manifestABytes, OciConstants.MANIFEST_MEDIA_TYPE)
-    val manifestBDesc = layout.writeBlob(manifestBBytes, OciConstants.MANIFEST_MEDIA_TYPE)
+    val manifestADesc = layout.writeBlob(manifestABytes, OciConstants.MANIFEST.mediaType)
+    val manifestBDesc = layout.writeBlob(manifestBBytes, OciConstants.MANIFEST.mediaType)
 
     layout.tag(manifestADesc, Reference("r.example.com", "repo", "tag-a"))
     layout.tag(manifestBDesc, Reference("r.example.com", "repo", "tag-b"))
@@ -241,7 +241,7 @@ class LayoutTest {
       testJson
         .encodeToString(Manifest(config = configDesc, layers = listOf(layerDesc)))
         .toByteArray()
-    val manifestDesc = layout.writeBlob(manifestBytes, OciConstants.MANIFEST_MEDIA_TYPE)
+    val manifestDesc = layout.writeBlob(manifestBytes, OciConstants.MANIFEST.mediaType)
     layout.tag(manifestDesc, Reference("r.example.com", "repo", "v1"))
 
     assertEquals(emptyList(), layout.gc())

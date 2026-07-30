@@ -319,7 +319,7 @@ internal constructor(
         }
 
         when (descriptor.mediaType) {
-          OciConstants.INDEX_MEDIA_TYPE -> {
+          OciConstants.INDEX.mediaType -> {
             val indexToRemove: Index =
               fileSystem.source(blobPath).buffer().use { source ->
                 json.decodeFromString(source.readUtf8())
@@ -338,7 +338,7 @@ internal constructor(
             true
           }
 
-          OciConstants.MANIFEST_MEDIA_TYPE -> {
+          OciConstants.MANIFEST.mediaType -> {
             val otherManifests =
               indexMutex.withLock {
                 val others = index.manifests.filter { it.digest != descriptor.digest }
@@ -458,7 +458,7 @@ internal constructor(
       .flatMap { desc ->
         val path = blobPath(desc)
         when (desc.mediaType) {
-          OciConstants.INDEX_MEDIA_TYPE -> {
+          OciConstants.INDEX.mediaType -> {
             if (path != null && fileSystem.exists(path)) {
               val i: Index =
                 fileSystem.source(path).buffer().use { source ->
@@ -470,7 +470,7 @@ internal constructor(
             }
           }
 
-          OciConstants.MANIFEST_MEDIA_TYPE -> {
+          OciConstants.MANIFEST.mediaType -> {
             if (path != null && fileSystem.exists(path)) {
               val m: Manifest =
                 fileSystem.source(path).buffer().use { source ->

@@ -71,8 +71,9 @@ object TestFixtures {
         engine { addHandler(handler) }
         install(ContentNegotiation) {
           json(testJson)
-          json(testJson, contentType = ContentType.parse(OciConstants.INDEX_MEDIA_TYPE))
-          json(testJson, contentType = ContentType.parse(OciConstants.MANIFEST_MEDIA_TYPE))
+          json(testJson, contentType = ContentType.parse(OciConstants.INDEX.mediaType))
+          json(testJson, contentType = ContentType.parse(OciConstants.MANIFEST.mediaType))
+          json(testJson, contentType = ContentType.parse(OciConstants.DOCKER_MANIFEST.mediaType))
         }
       }
     return Registry(

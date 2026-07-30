@@ -5,11 +5,18 @@
 
 package com.defenseunicorns.koci.api
 
-public object OciConstants {
-
+public enum class OciConstants(public val mediaType: String) {
   /** Media type for an image manifest (see [Manifest]). */
-  public const val MANIFEST_MEDIA_TYPE: String = "application/vnd.oci.image.manifest.v1+json"
+  MANIFEST("application/vnd.oci.image.manifest.v1+json"),
+
+  /** Media type for a Docker manifest. */
+  DOCKER_MANIFEST("application/vnd.docker.distribution.manifest.v2+json"),
 
   /** Media type for an image index (see [Index]). */
-  public const val INDEX_MEDIA_TYPE: String = "application/vnd.oci.image.index.v1+json"
+  INDEX("application/vnd.oci.image.index.v1+json");
+
+  public companion object {
+    public fun fromMediaType(mediaType: String?): OciConstants? =
+      entries.firstOrNull { it.mediaType == mediaType }
+  }
 }

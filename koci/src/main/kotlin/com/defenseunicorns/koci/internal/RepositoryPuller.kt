@@ -9,7 +9,7 @@ import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Layout
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.api.Platform
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.TransferEvent
@@ -117,11 +117,11 @@ internal class RepositoryPuller(
       },
       onSuccess = { res ->
         when (val ct = res.contentType()?.toString()) {
-          OciConstants.MANIFEST.mediaType,
-          OciConstants.DOCKER_MANIFEST.mediaType -> manifestDescriptor(res, endpoint, ct)
-          OciConstants.INDEX.mediaType ->
+          ManifestConstants.OCI.mediaType,
+          ManifestConstants.DOCKER.mediaType -> manifestDescriptor(res, endpoint, ct)
+          ManifestConstants.INDEX.mediaType ->
             when (platformResolver) {
-              null -> manifestDescriptor(res, endpoint, OciConstants.INDEX.mediaType)
+              null -> manifestDescriptor(res, endpoint, ManifestConstants.INDEX.mediaType)
               else -> selectPlatform(res.body<Index>(), platformResolver)
             }
 
@@ -377,21 +377,21 @@ internal class RepositoryPuller(
    */
   private fun endpointFor(descriptor: Descriptor): Url? =
     when (descriptor.mediaType) {
-      OciConstants.MANIFEST.mediaType,
-      OciConstants.DOCKER_MANIFEST.mediaType,
-      OciConstants.INDEX.mediaType -> router.manifest(name, descriptor)
+      ManifestConstants.OCI.mediaType,
+      ManifestConstants.DOCKER.mediaType,
+      ManifestConstants.INDEX.mediaType -> router.manifest(name, descriptor)
 
       else -> router.blob(name, descriptor)
     }
 
   /** Adds every manifest/index `Accept` header used when resolving by tag. */
   private fun HttpRequestBuilder.acceptContainerTypes() {
-    OciConstants.entries.forEach { constant -> accept(ContentType.parse(constant.mediaType)) }
+    ManifestConstants.entries.forEach { constant -> accept(ContentType.parse(constant.mediaType)) }
   }
 
   /** Adds the right `Accept` header for manifest or index descriptors. No-op for blobs. */
   private fun HttpRequestBuilder.acceptForDescriptor(descriptor: Descriptor) {
-    if (OciConstants.fromMediaType(descriptor.mediaType) != null) {
+    if (ManifestConstants.fromMediaType(descriptor.mediaType) != null) {
       accept(ContentType.parse(descriptor.mediaType))
     }
   }

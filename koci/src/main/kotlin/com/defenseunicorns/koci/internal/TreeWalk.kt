@@ -8,7 +8,7 @@ package com.defenseunicorns.koci.internal
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Manifest
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flatMapMerge
@@ -50,9 +50,9 @@ internal suspend fun walkTree(
   while (queue.isNotEmpty()) {
     val d = queue.removeFirst()
     when (d.mediaType) {
-      OciConstants.MANIFEST.mediaType,
-      OciConstants.DOCKER_MANIFEST.mediaType,
-      OciConstants.INDEX.mediaType -> {
+      ManifestConstants.OCI.mediaType,
+      ManifestConstants.DOCKER.mediaType,
+      ManifestConstants.INDEX.mediaType -> {
         val buffer = fetchContainer(d) ?: return null
         val children = parseChildren(d, buffer, json, logger) ?: return null
         containers += d to buffer
@@ -98,12 +98,12 @@ private fun parseChildren(
 ): List<Descriptor>? =
   try {
     when (descriptor.mediaType) {
-      OciConstants.MANIFEST.mediaType,
-      OciConstants.DOCKER_MANIFEST.mediaType -> {
+      ManifestConstants.OCI.mediaType,
+      ManifestConstants.DOCKER.mediaType -> {
         val m = json.decodeFromString<Manifest>(buffer.peek().readUtf8())
         m.layers + m.config
       }
-      OciConstants.INDEX.mediaType ->
+      ManifestConstants.INDEX.mediaType ->
         json.decodeFromString<Index>(buffer.peek().readUtf8()).manifests
       else -> emptyList()
     }

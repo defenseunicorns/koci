@@ -8,7 +8,7 @@ package com.defenseunicorns.koci
 import com.defenseunicorns.koci.api.ANNOTATION_TITLE
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Digest
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.internal.Router
 import io.ktor.http.URLBuilder
 import kotlin.test.Test
@@ -68,7 +68,7 @@ class RouteTest {
 
     val desc =
       Descriptor(
-        mediaType = OciConstants.MANIFEST.mediaType,
+        mediaType = ManifestConstants.OCI.mediaType,
         digest = digest("sha256:12120425f07de11a1b899e418d4b0ea174c8d4d572d45bdb640f93bc7ca06a3d"),
         size = 0, // dummy size
       )

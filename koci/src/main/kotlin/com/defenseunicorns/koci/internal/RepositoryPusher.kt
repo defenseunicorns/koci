@@ -10,7 +10,7 @@ import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Layout
 import com.defenseunicorns.koci.api.Manifest
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.RegisteredAlgorithm
 import com.defenseunicorns.koci.api.TransferEvent
@@ -131,7 +131,7 @@ internal class RepositoryPusher(
   suspend fun tag(content: Manifest, ref: String): Descriptor? =
     tagContent(
       ref,
-      content.mediaType ?: OciConstants.MANIFEST.mediaType,
+      content.mediaType ?: ManifestConstants.OCI.mediaType,
       json.encodeToString(content),
     )
 
@@ -143,7 +143,11 @@ internal class RepositoryPusher(
    *   Distribution Spec: Pushing Manifests</a>
    */
   suspend fun tag(content: Index, ref: String): Descriptor? =
-    tagContent(ref, content.mediaType ?: OciConstants.INDEX.mediaType, json.encodeToString(content))
+    tagContent(
+      ref,
+      content.mediaType ?: ManifestConstants.INDEX.mediaType,
+      json.encodeToString(content),
+    )
 
   private suspend fun tagContent(ref: String, mediaType: String, body: String): Descriptor? {
     if (tagRegex.matchEntire(ref) == null) return null

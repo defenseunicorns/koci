@@ -8,7 +8,7 @@ package com.defenseunicorns.koci
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Layout
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.api.RegisteredAlgorithm
 import com.defenseunicorns.koci.api.Registry
 import com.defenseunicorns.koci.api.config.PullConfig
@@ -71,9 +71,9 @@ object TestFixtures {
         engine { addHandler(handler) }
         install(ContentNegotiation) {
           json(testJson)
-          json(testJson, contentType = ContentType.parse(OciConstants.INDEX.mediaType))
-          json(testJson, contentType = ContentType.parse(OciConstants.MANIFEST.mediaType))
-          json(testJson, contentType = ContentType.parse(OciConstants.DOCKER_MANIFEST.mediaType))
+          json(testJson, contentType = ContentType.parse(ManifestConstants.INDEX.mediaType))
+          json(testJson, contentType = ContentType.parse(ManifestConstants.OCI.mediaType))
+          json(testJson, contentType = ContentType.parse(ManifestConstants.DOCKER.mediaType))
         }
       }
     return Registry(

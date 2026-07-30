@@ -7,7 +7,7 @@ package com.defenseunicorns.koci.internal
 
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
-import co.touchlab.kermit.loggerConfigInit
+import co.touchlab.kermit.StaticConfig
 import com.defenseunicorns.koci.api.LogLevel
 
 internal interface KociLogger {
@@ -24,7 +24,7 @@ internal class RealKociLogger(logLevel: LogLevel) : KociLogger {
   private val log =
     Logger(
       config =
-        loggerConfigInit(
+        StaticConfig(
           minSeverity =
             when (logLevel) {
               LogLevel.Debug -> Severity.Debug
@@ -40,7 +40,7 @@ internal class RealKociLogger(logLevel: LogLevel) : KociLogger {
 
   override fun info(message: () -> String) = log.i { message() }
 
-  override fun warn(message: () -> String) = log.a { message() }
+  override fun warn(message: () -> String) = log.w { message() }
 
   override fun error(throwable: Throwable?, message: () -> String) = log.e(throwable) { message() }
 }

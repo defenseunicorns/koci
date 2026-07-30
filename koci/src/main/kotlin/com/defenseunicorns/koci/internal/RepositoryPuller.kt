@@ -91,6 +91,10 @@ internal class RepositoryPuller(
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
       },
       onSuccess = { res -> res.body<TagsResponse>().tags },
+      onError = { failure ->
+        logger.error { "repository tags could not be listed for $name: ${failure.summary()}" }
+        null
+      },
     ) ?: emptyList()
 
   /**
@@ -130,6 +134,10 @@ internal class RepositoryPuller(
             null
           }
         }
+      },
+      onError = { failure ->
+        logger.error { "manifest '$tag' could not be resolved in $name: ${failure.summary()}" }
+        null
       },
     )
   }
@@ -367,6 +375,10 @@ internal class RepositoryPuller(
           attributes.appendScopes(scopeRepository(name, ACTION_PULL))
         },
         onSuccess = { res -> res.headers["Accept-Ranges"] == "bytes" },
+        onError = { failure ->
+          logger.error { "range support probe failed for $name: ${failure.summary()}" }
+          null
+        },
       ) ?: false
     rangeSupported = result
     return result
@@ -406,7 +418,12 @@ internal class RepositoryPuller(
     operation: String,
     method: HttpMethod = HttpMethod.Get,
     extraBuild: HttpRequestBuilder.() -> Unit = {},
-    onError: suspend (FailureResponse) -> T? = { null },
+    onError: suspend (FailureResponse) -> T? = { failure ->
+      logger.error {
+        "$operation failed for $name descriptor ${descriptor.digest}: ${failure.summary()}"
+      }
+      null
+    },
     onSuccess: suspend (HttpResponse) -> T?,
   ): T? {
     val endpoint = endpointFor(descriptor) ?: return null

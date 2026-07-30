@@ -20,3 +20,17 @@ internal data class FailureResponse(
   val status: HttpStatusCode,
   val errors: List<ActionableFailure>,
 )
+
+internal fun FailureResponse.summary(): String {
+  val detail =
+    errors
+      .joinToString(separator = "; ") { failure ->
+        when (failure.message.isBlank()) {
+          true -> failure.code.name
+          false -> "${failure.code.name}: ${failure.message}"
+        }
+      }
+      .ifBlank { ErrorCode.UNKNOWN.name }
+
+  return "HTTP ${status.value} ${status.description} ($detail)"
+}

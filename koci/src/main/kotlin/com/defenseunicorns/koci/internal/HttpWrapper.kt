@@ -20,8 +20,8 @@ import kotlinx.serialization.Serializable
  * Single entry point for every HTTP request koci makes against an upstream registry. Engine
  * exceptions (transport failure, timeout, engine closed, deserialization throws) become `null`.
  * Status branching happens once: 2xx goes to [onSuccess], everything else is parsed into a
- * [FailureResponse] and handed to [onError], which defaults to logging and returning `null`.
- * [CancellationException] is rethrown so coroutine cancellation propagates.
+ * [FailureResponse] and handed to [onError]. [CancellationException] is rethrown so coroutine
+ * cancellation propagates.
  */
 internal class HttpWrapper(private val client: HttpClient, private val logger: KociLogger) {
 
@@ -34,10 +34,7 @@ internal class HttpWrapper(private val client: HttpClient, private val logger: K
   suspend fun <T> call(
     operation: String,
     buildRequest: HttpRequestBuilder.() -> Unit,
-    onError: suspend (FailureResponse) -> T? = {
-      logger.warn { "[$operation] call failed: $it" }
-      null
-    },
+    onError: suspend (FailureResponse) -> T?,
     onSuccess: suspend (HttpResponse) -> T?,
   ): T? =
     try {

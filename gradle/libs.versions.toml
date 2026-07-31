@@ -6,19 +6,23 @@ kotlinxCoroutinesTest = "1.10.2"
 kotlinxSerializationJson = "1.9.0"
 ktorClient = "3.2.3"
 kover = "0.9.1"
+koci = "0.4.3"
 detekt = "2.0.0-alpha.1"
 mavenPublish = "0.34.0"
 spotless = "8.0.0"
 binary-validator = "0.18.1"
 okio = "3.16.2"
 kermit = "2.0.4"
+slf4jNop = "2.0.16"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }
 detekt-gradle-plugin = { module = "dev.detekt:detekt-gradle-plugin", version.ref = "detekt" }
 spotless-gradle-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 maven-publish-gradle-plugin = { module = "com.vanniktech:gradle-maven-publish-plugin", version.ref = "mavenPublish" }
+koci = { module = "com.defenseunicorns:koci", version.ref = "koci" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesCore" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
@@ -31,6 +35,7 @@ ktor-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation",
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit"}
+slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4jNop" }
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt" }

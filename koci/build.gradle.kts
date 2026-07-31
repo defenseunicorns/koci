@@ -34,7 +34,7 @@ dependencies {
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.ktor.client.mock)
   testImplementation(libs.okio.fakefilesystem)
-  testImplementation(kotlin("test"))
+  testImplementation(libs.kotlin.test)
 }
 
 tasks.test {

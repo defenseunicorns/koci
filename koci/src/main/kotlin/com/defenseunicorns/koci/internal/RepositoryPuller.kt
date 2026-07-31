@@ -9,8 +9,7 @@ import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Digest
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Layout
-import com.defenseunicorns.koci.api.OciConstants.INDEX_MEDIA_TYPE
-import com.defenseunicorns.koci.api.OciConstants.MANIFEST_MEDIA_TYPE
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.api.Platform
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.TransferEvent
@@ -113,18 +112,19 @@ internal class RepositoryPuller(
       buildRequest = {
         method = HttpMethod.Get
         url(endpoint)
-        accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-        accept(ContentType.parse(INDEX_MEDIA_TYPE))
+        acceptContainerTypes()
         attributes.appendScopes(scopeRepository(name, ACTION_PULL))
       },
       onSuccess = { res ->
         when (val ct = res.contentType()?.toString()) {
-          MANIFEST_MEDIA_TYPE -> manifestDescriptor(res, endpoint, MANIFEST_MEDIA_TYPE)
-          INDEX_MEDIA_TYPE ->
+          ManifestConstants.OCI.mediaType,
+          ManifestConstants.DOCKER.mediaType -> manifestDescriptor(res, endpoint, ct)
+          ManifestConstants.INDEX.mediaType ->
             when (platformResolver) {
-              null -> manifestDescriptor(res, endpoint, INDEX_MEDIA_TYPE)
+              null -> manifestDescriptor(res, endpoint, ManifestConstants.INDEX.mediaType)
               else -> selectPlatform(res.body<Index>(), platformResolver)
             }
+
           else -> {
             logger.warn { "unsupported manifest content type from $endpoint: $ct" }
             null
@@ -377,17 +377,22 @@ internal class RepositoryPuller(
    */
   private fun endpointFor(descriptor: Descriptor): Url? =
     when (descriptor.mediaType) {
-      MANIFEST_MEDIA_TYPE,
-      INDEX_MEDIA_TYPE -> router.manifest(name, descriptor)
+      ManifestConstants.OCI.mediaType,
+      ManifestConstants.DOCKER.mediaType,
+      ManifestConstants.INDEX.mediaType -> router.manifest(name, descriptor)
 
       else -> router.blob(name, descriptor)
     }
 
+  /** Adds every manifest/index `Accept` header used when resolving by tag. */
+  private fun HttpRequestBuilder.acceptContainerTypes() {
+    ManifestConstants.entries.forEach { constant -> accept(ContentType.parse(constant.mediaType)) }
+  }
+
   /** Adds the right `Accept` header for manifest or index descriptors. No-op for blobs. */
   private fun HttpRequestBuilder.acceptForDescriptor(descriptor: Descriptor) {
-    when (descriptor.mediaType) {
-      MANIFEST_MEDIA_TYPE -> accept(ContentType.parse(MANIFEST_MEDIA_TYPE))
-      INDEX_MEDIA_TYPE -> accept(ContentType.parse(INDEX_MEDIA_TYPE))
+    if (ManifestConstants.fromMediaType(descriptor.mediaType) != null) {
+      accept(ContentType.parse(descriptor.mediaType))
     }
   }
 

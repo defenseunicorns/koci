@@ -12,7 +12,7 @@ import com.defenseunicorns.koci.TestFixtures.testJson
 import com.defenseunicorns.koci.api.Descriptor
 import com.defenseunicorns.koci.api.Index
 import com.defenseunicorns.koci.api.Manifest
-import com.defenseunicorns.koci.api.OciConstants
+import com.defenseunicorns.koci.api.ManifestConstants
 import com.defenseunicorns.koci.api.Platform
 import com.defenseunicorns.koci.api.Reference
 import com.defenseunicorns.koci.api.TransferEvent
@@ -116,7 +116,7 @@ class RepositoryTest {
             status = HttpStatusCode.OK,
             headers =
               headersOf(
-                HttpHeaders.ContentType to listOf(OciConstants.MANIFEST_MEDIA_TYPE),
+                HttpHeaders.ContentType to listOf(ManifestConstants.OCI.mediaType),
                 "Docker-Content-Digest" to listOf(manifestDigest.toString()),
                 HttpHeaders.ContentLength to listOf(manifestBytes.size.toString()),
               ),
@@ -126,7 +126,40 @@ class RepositoryTest {
     val desc = repo.resolve("latest")
     assertNotNull(desc)
     assertEquals(manifestDigest, desc.digest)
-    assertEquals(OciConstants.MANIFEST_MEDIA_TYPE, desc.mediaType)
+    assertEquals(ManifestConstants.OCI.mediaType, desc.mediaType)
+    assertEquals(manifestBytes.size.toLong(), desc.size)
+  }
+
+  @Test
+  fun `resolve supports Docker manifest media type`() = runTest {
+    val manifestBytes =
+      """{"schemaVersion":2,"config":{"mediaType":"application/vnd.docker.container.image.v1+json","digest":"sha256:${"b".repeat(64)}","size":1},"layers":[]}"""
+        .toByteArray()
+    val manifestDigest = digestOf(manifestBytes)
+    var acceptHeaders: List<String>? = null
+    val repo =
+      fakeRepo(
+        handler = { req ->
+          acceptHeaders = req.headers.getAll(HttpHeaders.Accept)
+          respond(
+            content = "",
+            status = HttpStatusCode.OK,
+            headers =
+              headersOf(
+                HttpHeaders.ContentType to listOf(ManifestConstants.DOCKER.mediaType),
+                "Docker-Content-Digest" to listOf(manifestDigest.toString()),
+                HttpHeaders.ContentLength to listOf(manifestBytes.size.toString()),
+              ),
+          )
+        }
+      )
+
+    val desc = repo.resolve("latest")
+
+    assertNotNull(desc)
+    assertTrue(acceptHeaders?.contains(ManifestConstants.DOCKER.mediaType) == true)
+    assertEquals(ManifestConstants.DOCKER.mediaType, desc.mediaType)
+    assertEquals(manifestDigest, desc.digest)
     assertEquals(manifestBytes.size.toLong(), desc.size)
   }
 
@@ -140,7 +173,7 @@ class RepositoryTest {
             status = HttpStatusCode.OK,
             headers =
               headersOf(
-                HttpHeaders.ContentType to listOf(OciConstants.MANIFEST_MEDIA_TYPE),
+                HttpHeaders.ContentType to listOf(ManifestConstants.OCI.mediaType),
                 HttpHeaders.ContentLength to listOf("100"),
               ),
           )
@@ -155,7 +188,7 @@ class RepositoryTest {
       Index().apply {
         manifests.add(
           Descriptor(
-            mediaType = OciConstants.MANIFEST_MEDIA_TYPE,
+            mediaType = ManifestConstants.OCI.mediaType,
             digest = digestOf("amd64-manifest".toByteArray()),
             size = 100,
             platform = Platform(architecture = "amd64", os = "linux"),
@@ -163,7 +196,7 @@ class RepositoryTest {
         )
         manifests.add(
           Descriptor(
-            mediaType = OciConstants.MANIFEST_MEDIA_TYPE,
+            mediaType = ManifestConstants.OCI.mediaType,
             digest = digestOf("arm64-manifest".toByteArray()),
             size = 100,
             platform = Platform(architecture = "arm64", os = "linux"),
@@ -177,7 +210,7 @@ class RepositoryTest {
           respond(
             content = indexJson,
             status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, OciConstants.INDEX_MEDIA_TYPE),
+            headers = headersOf(HttpHeaders.ContentType, ManifestConstants.INDEX.mediaType),
           )
         }
       )
@@ -192,7 +225,7 @@ class RepositoryTest {
       Index().apply {
         manifests.add(
           Descriptor(
-            mediaType = OciConstants.MANIFEST_MEDIA_TYPE,
+            mediaType = ManifestConstants.OCI.mediaType,
             digest = digestOf("amd64-manifest".toByteArray()),
             size = 100,
             platform = Platform(architecture = "amd64", os = "linux"),
@@ -206,7 +239,7 @@ class RepositoryTest {
           respond(
             content = indexJson,
             status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, OciConstants.INDEX_MEDIA_TYPE),
+            headers = headersOf(HttpHeaders.ContentType, ManifestConstants.INDEX.mediaType),
           )
         }
       )
@@ -219,7 +252,7 @@ class RepositoryTest {
       Index().apply {
         manifests.add(
           Descriptor(
-            mediaType = OciConstants.MANIFEST_MEDIA_TYPE,
+            mediaType = ManifestConstants.OCI.mediaType,
             digest = digestOf("amd64-manifest".toByteArray()),
             size = 100,
             platform = Platform(architecture = "amd64", os = "linux"),
@@ -237,7 +270,7 @@ class RepositoryTest {
             status = HttpStatusCode.OK,
             headers =
               headersOf(
-                HttpHeaders.ContentType to listOf(OciConstants.INDEX_MEDIA_TYPE),
+                HttpHeaders.ContentType to listOf(ManifestConstants.INDEX.mediaType),
                 "Docker-Content-Digest" to listOf(indexDigest.toString()),
                 HttpHeaders.ContentLength to listOf(indexBytes.size.toString()),
               ),
@@ -246,7 +279,7 @@ class RepositoryTest {
       )
     val desc = repo.resolve("latest")
     assertNotNull(desc)
-    assertEquals(OciConstants.INDEX_MEDIA_TYPE, desc.mediaType)
+    assertEquals(ManifestConstants.INDEX.mediaType, desc.mediaType)
     assertEquals(indexDigest, desc.digest)
     assertEquals(indexBytes.size.toLong(), desc.size)
   }
@@ -298,7 +331,7 @@ class RepositoryTest {
                 status = HttpStatusCode.OK,
                 headers =
                   headersOf(
-                    HttpHeaders.ContentType to listOf(OciConstants.MANIFEST_MEDIA_TYPE),
+                    HttpHeaders.ContentType to listOf(ManifestConstants.OCI.mediaType),
                     "Docker-Content-Digest" to listOf(manifestDigest.toString()),
                     HttpHeaders.ContentLength to listOf(manifestBytes.size.toString()),
                   ),
@@ -308,7 +341,7 @@ class RepositoryTest {
               respond(
                 content = manifestBytes,
                 status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, OciConstants.MANIFEST_MEDIA_TYPE),
+                headers = headersOf(HttpHeaders.ContentType, ManifestConstants.OCI.mediaType),
               )
 
             method == HttpMethod.Get && path.contains("/blobs/${configDesc.digest}") ->
@@ -361,6 +394,38 @@ class RepositoryTest {
       )
     val result = repo.fetch(desc) { stream -> stream.readBytes().toString(Charsets.UTF_8) }
     assertEquals(content, result)
+  }
+
+  @Test
+  fun `fetch routes Docker manifest descriptors through manifest endpoint`() = runTest {
+    val content = "docker manifest"
+    val bytes = content.toByteArray()
+    val desc =
+      Descriptor(
+        mediaType = ManifestConstants.DOCKER.mediaType,
+        digest = digestOf(bytes),
+        size = bytes.size.toLong(),
+      )
+    var requestPath: String? = null
+    var acceptHeader: String? = null
+    val repo =
+      fakeRepo(
+        handler = { req ->
+          requestPath = req.url.encodedPath
+          acceptHeader = req.headers[HttpHeaders.Accept]
+          respond(
+            content = bytes,
+            status = HttpStatusCode.OK,
+            headers = headersOf(HttpHeaders.ContentType, ManifestConstants.DOCKER.mediaType),
+          )
+        }
+      )
+
+    val result = repo.fetch(desc) { stream -> stream.readBytes().toString(Charsets.UTF_8) }
+
+    assertEquals(content, result)
+    assertTrue(requestPath?.contains("/manifests/${desc.digest}") == true)
+    assertTrue(acceptHeader?.contains(ManifestConstants.DOCKER.mediaType) == true)
   }
 
   @Test
@@ -476,7 +541,7 @@ class RepositoryTest {
     val repo = fakeRepo(handler = { respond(content = "", status = HttpStatusCode.Created) })
     val result = repo.tag(manifest, "v1.0")
     assertNotNull(result)
-    assertEquals(OciConstants.MANIFEST_MEDIA_TYPE, result.mediaType)
+    assertEquals(ManifestConstants.OCI.mediaType, result.mediaType)
     assertNotNull(result.digest)
   }
 
@@ -525,7 +590,7 @@ class RepositoryTest {
     val repo = fakeRepo(handler = { respond(content = "", status = HttpStatusCode.Created) })
     val result = repo.tag(index, "latest")
     assertNotNull(result)
-    assertEquals(OciConstants.INDEX_MEDIA_TYPE, result.mediaType)
+    assertEquals(ManifestConstants.INDEX.mediaType, result.mediaType)
     assertNotNull(result.digest)
   }
 }

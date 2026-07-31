@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 (2026-07-31)
+
+## What's Changed
+* feat!: add docker oci manifest support by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/173
+* fix: logging http calls by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/174
+* ci(deps): bump the github-actions group across 1 directory with 9 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/176
+* build(deps): bump oras.land/oras-go/v2 from 2.6.0 to 2.6.2 in /bench/go by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/177
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.6.1...v0.7.0
+
 ## 0.6.1 (2026-07-24)
 
 ## What's Changed

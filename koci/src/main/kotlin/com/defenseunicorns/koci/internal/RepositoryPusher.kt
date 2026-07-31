@@ -274,6 +274,10 @@ internal class RepositoryPusher(
           attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         },
         onSuccess = { res -> res.status },
+        onError = { failure ->
+          logger.error { "manifest '$ref' could not be pushed to $name: ${failure.summary()}" }
+          failure.status
+        },
       )
     return status == HttpStatusCode.Created
   }
@@ -320,6 +324,12 @@ internal class RepositoryPusher(
           attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         },
         onSuccess = { res -> res.status },
+        onError = { failure ->
+          logger.error {
+            "monolithic blob upload could not be committed for ${expected.digest}: ${failure.summary()}"
+          }
+          failure.status
+        },
       )
     return status == HttpStatusCode.Created
   }
@@ -351,7 +361,8 @@ internal class RepositoryPusher(
         val want = minOf(expected.size - offset, chunkSize)
         if (want <= 0L) break
 
-        val updated = pushChunk(currentLocation, source, want, offset) ?: return@withContext false
+        val updated =
+          pushChunk(currentLocation, source, want, offset, expected) ?: return@withContext false
         currentLocation = updated.location
         uploading[expected] = updated.copy(minChunkSize = chunkSize)
         offset = updated.offset + 1
@@ -371,6 +382,7 @@ internal class RepositoryPusher(
     source: BufferedSource,
     chunkSize: Long,
     offset: Long,
+    expected: Descriptor,
   ): UploadStatus? {
     val endRange = offset + chunkSize - 1
     return caller.call(
@@ -395,6 +407,12 @@ internal class RepositoryPusher(
           }
         }
       },
+      onError = { failure ->
+        logger.error {
+          "blob chunk could not be pushed for ${expected.digest}: ${failure.summary()}"
+        }
+        null
+      },
     )
   }
 
@@ -413,8 +431,10 @@ internal class RepositoryPusher(
           attributes.appendScopes(scopeRepository(name, ACTION_PULL, ACTION_PUSH))
         },
         onSuccess = { res -> res.status },
-        onError = {
-          logger.warn { "commit upload failed: $it" }
+        onError = { failure ->
+          logger.error {
+            "chunked blob upload could not be committed for ${expected.digest}: ${failure.summary()}"
+          }
           null
         },
       )
@@ -448,6 +468,12 @@ internal class RepositoryPusher(
               else -> null
             }
           },
+          onError = { failure ->
+            logger.error {
+              "blob upload session could not be started for ${descriptor.digest}: ${failure.summary()}"
+            }
+            null
+          },
         )
 
     if (prev.offset > 0) {
@@ -458,7 +484,12 @@ internal class RepositoryPusher(
             url(router.parseUploadLocation(prev.location))
             attributes.appendScopes(scopeRepository(name, ACTION_PULL))
           },
-          onError = { failure -> failure.status to null },
+          onError = { failure ->
+            logger.error {
+              "blob upload session status could not be refreshed for ${descriptor.digest}: ${failure.summary()}"
+            }
+            failure.status to null
+          },
           onSuccess = { res -> res.status to res.headers.toUploadStatus() },
         )
       val resume = outcome ?: return null

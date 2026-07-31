@@ -42,6 +42,7 @@ class HttpWrapperTest {
         w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { error("should not run") },
           onSuccess = { res -> res.bodyAsText() },
         )
       assertEquals("hello", outcome)
@@ -112,12 +113,13 @@ class HttpWrapperTest {
   }
 
   @Test
-  fun `default onError returns null for non-2xx responses`() = runTest {
+  fun `onError can return null for non-2xx responses`() = runTest {
     withWrapper({ respondError(HttpStatusCode.InternalServerError) }) { w ->
       val outcome =
         w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { null },
           onSuccess = { res -> res.bodyAsText() },
         )
       assertEquals(null, outcome)
@@ -133,6 +135,7 @@ class HttpWrapperTest {
         w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { error("should not run") },
           onSuccess = { res -> Pair(res.headers[HttpHeaders.ContentType], res.bodyAsText()) },
         )
       assertIs<Pair<String?, String>>(outcome)
@@ -159,6 +162,7 @@ class HttpWrapperTest {
           url("https://example.com/path")
           headers.append("X-Test", "value")
         },
+        onError = { error("should not run") },
         onSuccess = { res -> res.status.value },
       )
     }
@@ -175,6 +179,7 @@ class HttpWrapperTest {
         w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { error("should not run") },
           onSuccess = { it.bodyAsText() },
         )
       assertEquals(null, outcome)
@@ -188,6 +193,7 @@ class HttpWrapperTest {
         w.call<Unit>(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { error("should not run") },
           onSuccess = { _ -> error("decode blew up") },
         )
       assertEquals(null, outcome)
@@ -221,6 +227,7 @@ class HttpWrapperTest {
         w.call(
           operation = "op",
           buildRequest = { url("https://test/") },
+          onError = { error("should not run") },
           onSuccess = { it.bodyAsText() },
         )
       assertEquals(null, outcome)

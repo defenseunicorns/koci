@@ -14,6 +14,7 @@ import com.defenseunicorns.koci.internal.Regex.linkRegex
 import com.defenseunicorns.koci.internal.Router
 import com.defenseunicorns.koci.internal.SCOPE_REGISTRY_CATALOG
 import com.defenseunicorns.koci.internal.appendScopes
+import com.defenseunicorns.koci.internal.summary
 import io.ktor.client.call.body
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
@@ -68,6 +69,10 @@ internal constructor(
         operation = "registry.ping",
         buildRequest = { url(router.base()) },
         onSuccess = { true },
+        onError = { failure ->
+          logger.error { "registry ping failed for $url: ${failure.summary()}" }
+          false
+        },
       )
     return outcome ?: false
   }
@@ -102,6 +107,12 @@ internal constructor(
             val next = parseNextLink(res.headers[HttpHeaders.Link])
             val repos = res.body<CatalogResponse>().repositories.map { repo(it) }
             repos to next
+          },
+          onError = { failure ->
+            logger.error {
+              "registry catalog page could not be listed from $pageUrl: ${failure.summary()}"
+            }
+            null
           },
         )
 

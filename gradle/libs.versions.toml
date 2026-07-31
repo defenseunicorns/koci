@@ -1,17 +1,17 @@
 [versions]
-kotlin = "2.2.10"
+kotlin = "2.4.10"
 junit = "4.13.2"
-kotlinxCoroutinesCore = "1.10.2"
-kotlinxCoroutinesTest = "1.10.2"
-kotlinxSerializationJson = "1.9.0"
+kotlinxCoroutinesCore = "1.11.0"
+kotlinxCoroutinesTest = "1.11.0"
+kotlinxSerializationJson = "1.11.0"
 ktorClient = "3.2.3"
-kover = "0.9.1"
-detekt = "2.0.0-alpha.1"
-mavenPublish = "0.34.0"
-spotless = "8.0.0"
+kover = "0.9.9"
+detekt = "2.0.0-alpha.5"
+mavenPublish = "0.37.0"
+spotless = "8.9.0"
 binary-validator = "0.18.1"
-okio = "3.16.2"
-kermit = "2.0.4"
+okio = "3.18.1"
+kermit = "2.1.0"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }

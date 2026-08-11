@@ -8,13 +8,9 @@ console-reports:
   active: true
 comments:
   active: true
-  AbsentOrWrongFileLicense:
+  DocumentationOverPrivateFunction:
     active: false
-    licenseTemplateFile: license.template
-    licenseTemplateIsRegex: false
-  CommentOverPrivateFunction:
-    active: false
-  CommentOverPrivateProperty:
+  DocumentationOverPrivateProperty:
     active: false
   DeprecatedBlockTag:
     active: false
@@ -212,7 +208,7 @@ style:
     excludeLabeled: false
     excludeReturnFromLambda: true
     excludeGuardClauses: false
-  SpacingAfterPackageDeclaration:
+  SpacingAfterPackageAndImports:
     active: true
   UnusedPrivateProperty:
     active: false

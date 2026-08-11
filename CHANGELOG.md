@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1 (2026-08-11)
+
+## What's Changed
+* chore: dependabot ignores koci and now use library toml by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/179
+* ci(deps): bump the github-actions group across 1 directory with 4 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/181
+* build(deps): bump the gradle group across 1 directory with 25 updates by @dependabot[bot] in https://github.com/defenseunicorns/koci/pull/183
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.7.0...v0.7.1
+
 ## 0.7.0 (2026-07-31)
 
 ## What's Changed

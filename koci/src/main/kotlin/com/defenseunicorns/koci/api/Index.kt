@@ -40,7 +40,7 @@ public class Index(
   }
 
   override fun hashCode(): Int {
-    var result = schemaVersion.hashCode() ?: 0
+    var result = schemaVersion.hashCode()
     result = 31 * result + (mediaType?.hashCode() ?: 0)
     result = 31 * result + manifests.hashCode()
     result = 31 * result + (annotations?.hashCode() ?: 0)

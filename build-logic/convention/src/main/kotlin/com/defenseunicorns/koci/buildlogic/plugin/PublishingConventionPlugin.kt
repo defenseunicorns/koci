@@ -58,7 +58,7 @@ class PublishingConventionPlugin : Plugin<Project> {
   }
 
   private fun Project.readReleasePleaseVersion(): String {
-    val manifest = rootProject.file(".release-please-manifest.json")
+    val manifest = file("$rootDir/.release-please-manifest.json")
     val regex = Regex("\"\\.\"\\s*:\\s*\"([^\"]+)\"")
     return regex.find(manifest.readText())?.groupValues?.get(1)
       ?: error("Unable to read root version from ${manifest.path}")

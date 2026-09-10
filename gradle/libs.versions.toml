@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.4.10"
+kotlin = "2.4.20"
 junit = "4.13.2"
 kotlinxCoroutinesCore = "1.11.0"
 kotlinxCoroutinesTest = "1.11.0"
@@ -9,11 +9,11 @@ kover = "0.9.9"
 koci = "0.4.3"
 detekt = "2.0.0-alpha.6"
 mavenPublish = "0.37.0"
-spotless = "8.9.0"
-binary-validator = "0.18.1"
-okio = "3.18.1"
+spotless = "8.10.2"
+binary-validator = "0.18.2"
+okio = "3.18.2"
 kermit = "2.1.0"
-slf4jNop = "2.0.18"
+slf4jNop = "2.0.19"
 
 [libraries]
 detekt-library-rules = { module = "dev.detekt:detekt-rules-libraries", version.ref = "detekt" }

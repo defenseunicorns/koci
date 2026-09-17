@@ -286,10 +286,36 @@ class LayoutTest {
     val tmpPath = "/oci/blobs/.tmp/sha256-${desc.digest!!.hex}".toPath()
     fs.sink(tmpPath).buffer().use { it.write(bytes, 0, half) }
 
-    val ok = layout.push(desc, Buffer().apply { write(bytes) })
+    val ok = layout.push(desc, Buffer().apply { write(bytes, half, bytes.size - half) })
 
     assertTrue(ok)
     assertEquals("hello resumable world", layout.fetchBlob(desc) { it.readUtf8() })
+    assertFalse(fs.exists(tmpPath))
+  }
+
+  @Test
+  fun `push appends a ranged source to a partial temp file`() = runTest {
+    val fs = FakeFileSystem()
+    val layout = buildLayout(fs)
+    val bytes = ByteArray(117) { it.toByte() }
+    val desc =
+      Descriptor(
+        mediaType = "application/octet-stream",
+        digest = digestOf(bytes),
+        size = bytes.size.toLong(),
+      )
+    val partialSize = 100
+    val tmpPath = "/oci/blobs/.tmp/sha256-${desc.digest!!.hex}".toPath()
+    fs.sink(tmpPath).buffer().use { it.write(bytes, 0, partialSize) }
+
+    val ok =
+      layout.push(
+        descriptor = desc,
+        source = Buffer().apply { write(bytes, partialSize, bytes.size - partialSize) },
+      )
+
+    assertTrue(ok)
+    assertTrue(layout.fetchBlob(desc) { it.readByteArray() }.contentEquals(bytes))
     assertFalse(fs.exists(tmpPath))
   }
 

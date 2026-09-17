@@ -21,7 +21,6 @@ import okio.FileSystem
 import okio.HashingSource
 import okio.Path
 import okio.Source
-import okio.blackholeSink
 import okio.buffer
 
 /**
@@ -126,8 +125,8 @@ internal constructor(
    * atomically renamed to the final blob path. A digest mismatch deletes the temp file and returns
    * `false`.
    *
-   * If a temp file from a previous interrupted write exists, [source] is skipped past those bytes
-   * and the remainder is appended.
+   * If a temp file from a previous interrupted write exists, its bytes are included in the digest
+   * before the supplied remainder is appended.
    */
   @Suppress("detekt:CyclomaticComplexMethod", "detekt:LongMethod")
   internal suspend fun push(
@@ -148,11 +147,18 @@ internal constructor(
             is BlobState.Partial -> state.bytesOnDisk
           }
 
+        val digest = expectedDigest.algorithm.hasher()
+        if (skip > 0L) {
+          fileSystem.source(tmpPath).buffer().use { existing ->
+            val chunk = Buffer()
+            while (true) {
+              val read = existing.read(chunk, SizeConstants.IO_BUFFER_SIZE)
+              if (read == -1L) break
+              digest.update(chunk.readByteArray())
+            }
+          }
+        }
         val bufferedSource = source.buffer()
-        bufferedSource.skip(skip)
-
-        // Fresh writes hash inline so verification needs no second read; resumed writes
-        // can't hash the pre-existing prefix, so we re-read the temp file after appending.
         val hashingSource =
           when (skip) {
             0L ->
@@ -165,6 +171,7 @@ internal constructor(
           }
         val readSource = hashingSource?.buffer() ?: bufferedSource
 
+        var written = skip
         if (skip > 0L) {
             fileSystem.appendingSink(tmpPath)
           } else {
@@ -173,56 +180,37 @@ internal constructor(
           .buffer()
           .use { sink ->
             val chunk = Buffer()
-            var written = skip
             while (true) {
               val read = readSource.read(chunk, SizeConstants.IO_BUFFER_SIZE)
               if (read == -1L) break
-              sink.writeAll(chunk)
+              val bytes = chunk.readByteArray()
+              if (skip > 0L) digest.update(bytes)
+              sink.write(bytes)
               written += read
               onProgress(written)
             }
           }
 
-        when (hashingSource) {
-          null -> {
-            // Re-read the complete temp file to verify digest.
-            val computed =
-              fileSystem.source(tmpPath).buffer().use { src ->
-                val hs =
-                  when (expectedDigest.algorithm) {
-                    RegisteredAlgorithm.SHA256 -> HashingSource.sha256(src)
-                    RegisteredAlgorithm.SHA512 -> HashingSource.sha512(src)
-                  }
-                hs.buffer().use { it.readAll(blackholeSink()) }
-                Digest(algorithm = expectedDigest.algorithm, hex = hs.hash.hex())
-              }
-            when (computed == expectedDigest) {
-              true -> {
-                fileSystem.atomicMove(tmpPath, blobPath)
-                true
-              }
+        if (written < descriptor.size) return@withContext false
+        if (written > descriptor.size) {
+          fileSystem.delete(tmpPath)
+          return@withContext false
+        }
 
-              false -> {
-                fileSystem.delete(tmpPath)
-                false
-              }
-            }
+        val computed =
+          when (skip) {
+            0L -> Digest(algorithm = expectedDigest.algorithm, hex = hashingSource!!.hash.hex())
+            else -> Digest(algorithm = expectedDigest.algorithm, hex = digest.digest())
+          }
+        when (computed == expectedDigest) {
+          true -> {
+            fileSystem.atomicMove(tmpPath, blobPath)
+            true
           }
 
-          else -> {
-            val computed =
-              Digest(algorithm = expectedDigest.algorithm, hex = hashingSource.hash.hex())
-            when (computed == expectedDigest) {
-              true -> {
-                fileSystem.atomicMove(tmpPath, blobPath)
-                true
-              }
-
-              false -> {
-                fileSystem.delete(tmpPath)
-                false
-              }
-            }
+          false -> {
+            fileSystem.delete(tmpPath)
+            false
           }
         }
       }

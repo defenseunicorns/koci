@@ -32,6 +32,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import okio.Path.Companion.toPath
+import okio.buffer
 import okio.fakefilesystem.FakeFileSystem
 
 class RepositoryTest {
@@ -368,6 +370,70 @@ class RepositoryTest {
 
     val ref = Reference("registry.example.com", "myrepo", "latest")
     assertNotNull(store.resolveReference(ref))
+  }
+
+  @Test
+  fun `pull appends a partial content response to an interrupted blob`() = runTest {
+    val fs = FakeFileSystem()
+    val store = buildLayout(fs)
+    val blobBytes = ByteArray(117) { it.toByte() }
+    val blob =
+      Descriptor(
+        mediaType = "application/vnd.oci.image.config.v1+json",
+        digest = digestOf(blobBytes),
+        size = blobBytes.size.toLong(),
+      )
+    val manifestBytes =
+      testJson.encodeToString(Manifest(config = blob, layers = emptyList())).toByteArray()
+    val manifest =
+      Descriptor(
+        mediaType = ManifestConstants.OCI.mediaType,
+        digest = digestOf(manifestBytes),
+        size = manifestBytes.size.toLong(),
+      )
+    val partialSize = 100
+    val tmpPath = "/oci/blobs/.tmp/sha256-${blob.digest!!.hex}".toPath()
+    fs.sink(tmpPath).buffer().use { it.write(blobBytes, 0, partialSize) }
+    var requestedRange: String? = null
+    val repo =
+      fakeRepo(
+        store = store,
+        handler = { req ->
+          when {
+            req.method == HttpMethod.Get && req.url.encodedPath.contains("/manifests/") ->
+              respond(content = manifestBytes, status = HttpStatusCode.OK)
+
+            req.method == HttpMethod.Head && req.url.encodedPath.contains("/blobs/") ->
+              respond(
+                content = "",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.AcceptRanges, "bytes"),
+              )
+
+            req.method == HttpMethod.Get && req.url.encodedPath.contains("/blobs/") -> {
+              requestedRange = req.headers[HttpHeaders.Range]
+              respond(
+                content = blobBytes.copyOfRange(partialSize, blobBytes.size),
+                status = HttpStatusCode.PartialContent,
+                headers =
+                  headersOf(
+                    HttpHeaders.ContentRange,
+                    "bytes $partialSize-${blobBytes.lastIndex}/${blobBytes.size}",
+                  ),
+              )
+            }
+
+            else -> respondError(HttpStatusCode.NotFound)
+          }
+        },
+      )
+
+    val events = repo.pull(manifest).toList()
+
+    assertEquals("bytes=$partialSize-${blobBytes.lastIndex}", requestedRange)
+    assertEquals(TransferEvent.Progress(100), events.last())
+    assertTrue(store.fetchBlob(blob) { it.readByteArray() }.contentEquals(blobBytes))
+    assertFalse(fs.exists(tmpPath))
   }
 
   // ── fetch ───────────────────────────────────────────────────────────────────

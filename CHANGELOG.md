@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 (2026-09-17)
+
+## What's Changed
+* fix: fixed resumable downloads by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/191
+
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.7.1...v0.7.2
+
 ## 0.7.1 (2026-08-11)
 
 ## What's Changed

@@ -92,3 +92,32 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
 
+  notify-failure:
+    name: Notify Slack of scheduled failure
+    needs: [analyze]
+    if: ${{ always() && !cancelled() && github.event_name == 'schedule' && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-slim
+    steps:
+      - name: Build failure message
+        id: payload
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          failed_jobs=$(printf '%s\n' "$NEEDS_JSON" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')
+          payload=$(jq -cn \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$WORKFLOW_NAME" \
+            --arg jobs "$failed_jobs" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{text: (":red_circle: Scheduled CI failed in " + $repository + " / " + $workflow + " (jobs: " + $jobs + ", attempt: " + $attempt + "): <" + $url + "|view run>")}')
+          printf 'json=%s\n' "$payload" >> "$GITHUB_OUTPUT"
+
+      - name: Post failure to monitoring-uds-fleet
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          errors: true
+          webhook: ${{ secrets.MONITORING_UDS_FLEET_SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: ${{ steps.payload.outputs.json }}

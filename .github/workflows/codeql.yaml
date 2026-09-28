@@ -95,7 +95,7 @@ jobs:
   notify-failure:
     name: Notify Slack of scheduled failure
     needs: [analyze]
-    if: ${{ always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure') }}
+    if: ${{ always() && !cancelled() && github.event_name == 'schedule' && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-slim
     steps:
       - name: Build failure message

@@ -104,7 +104,7 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           WORKFLOW_NAME: ${{ github.workflow }}
         run: |
-          failed_jobs=$(jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")' <<< "$NEEDS_JSON")
+          failed_jobs=$(printf '%s\n' "$NEEDS_JSON" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')
           payload=$(jq -cn \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg workflow "$WORKFLOW_NAME" \

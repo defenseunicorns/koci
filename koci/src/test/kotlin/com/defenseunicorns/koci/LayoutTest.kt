@@ -183,6 +183,40 @@ class LayoutTest {
   }
 
   @Test
+  fun `remove by reference preserves shared manifest tagged by another repository`() = runTest {
+    val layout = buildLayout()
+    val configDesc =
+      layout.writeBlob("{}".toByteArray(), "application/vnd.oci.image.config.v1+json")
+    val manifestBytes =
+      testJson.encodeToString(Manifest(config = configDesc, layers = emptyList())).toByteArray()
+    val manifestDesc = layout.writeBlob(manifestBytes, ManifestConstants.OCI.mediaType)
+    val firstReference = Reference("registry.example.com", "first-repo", "v1")
+    val secondReference = Reference("registry.example.com", "second-repo", "v1")
+    layout.tag(manifestDesc, firstReference)
+    layout.tag(manifestDesc, secondReference)
+
+    assertFalse(layout.remove(manifestDesc))
+
+    assertNotNull(layout.resolveReference(firstReference))
+    assertNotNull(layout.resolveReference(secondReference))
+    assertNotNull(layout.fetchBlob(manifestDesc) { it.readUtf8() })
+    assertEquals(2, layout.catalog().size)
+
+    assertTrue(layout.remove(firstReference))
+
+    assertNull(layout.resolveReference(firstReference))
+    assertNotNull(layout.resolveReference(secondReference))
+    assertNotNull(layout.fetchBlob(manifestDesc) { it.readUtf8() })
+    assertEquals(1, layout.catalog().size)
+
+    assertTrue(layout.remove(secondReference))
+
+    assertNull(layout.fetchBlob(manifestDesc) { it.readUtf8() })
+    assertNull(layout.fetchBlob(configDesc) { it.readUtf8() })
+    assertEquals(emptyList(), layout.catalog())
+  }
+
+  @Test
   fun `remove manifest preserves shared layer still referenced by another manifest`() = runTest {
     val fs = FakeFileSystem()
     val layout = buildLayout(fs)

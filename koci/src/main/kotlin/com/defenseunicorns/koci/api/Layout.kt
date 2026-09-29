@@ -329,11 +329,34 @@ internal constructor(
           ManifestConstants.OCI.mediaType -> {
             val otherManifests =
               indexMutex.withLock {
-                val others = index.manifests.filter { it.digest != descriptor.digest }
-                index.manifests.removeAll { it.digest == descriptor.digest }
+                val matchingManifests = index.manifests.filter { it.digest == descriptor.digest }
+                val reference = descriptor.annotations?.annotationRefName
+                if (reference == null && matchingManifests.size > 1) return@withLock null
+
+                val referenceToRemove =
+                  reference ?: matchingManifests.singleOrNull()?.annotations?.annotationRefName
+                val others =
+                  index.manifests.filter {
+                    it.annotations?.annotationRefName != referenceToRemove ||
+                      it.digest != descriptor.digest
+                  }
+                index.manifests.removeIf { !others.contains(it) }
                 syncIndex()
                 others
               }
+
+            if (otherManifests == null) {
+              logger.warn {
+                "cannot remove manifest $descriptor by descriptor: multiple tagged references share its " +
+                  "digest"
+              }
+              return@withContext false
+            }
+
+            if (otherManifests.any { it.digest == descriptor.digest }) {
+              logger.debug { "manifest $descriptor still exists in index, skipping file removal" }
+              return@withContext true
+            }
 
             val allOtherLayers = expand(otherManifests)
 

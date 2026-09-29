@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.3 (2026-09-29)
+
+## What's Changed
+* ci: notify monitoring channel on scheduled CodeQL failures by @s-urbaniak in https://github.com/defenseunicorns/koci/pull/194
+* fix: removal is smarter when multiple refs target the same digest by @LandonPatmore in https://github.com/defenseunicorns/koci/pull/196
+
+## New Contributors
+* @s-urbaniak made their first contribution in https://github.com/defenseunicorns/koci/pull/194
+
+**Full Changelog**: https://github.com/defenseunicorns/koci/compare/v0.7.2...v0.7.3
+
 ## 0.7.2 (2026-09-17)
 
 ## What's Changed

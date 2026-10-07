@@ -97,6 +97,21 @@ class RepositoryTest {
   }
 
   @Test
+  fun `tags returns null list from empty repo`() = runTest {
+    val repo =
+      fakeRepo(
+        handler = {
+          respond(
+            content = """{"name":"myrepo","tags":null}""",
+            status = HttpStatusCode.OK,
+            headers = headersOf(HttpHeaders.ContentType, "application/json"),
+          )
+        }
+      )
+    assertEquals(emptyList(), repo.tags())
+  }
+
+  @Test
   fun `tags returns empty list on failure`() = runTest {
     val repo = fakeRepo(handler = { respondError(HttpStatusCode.InternalServerError) })
     assertEquals(emptyList(), repo.tags())
